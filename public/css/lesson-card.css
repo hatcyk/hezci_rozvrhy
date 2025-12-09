@@ -53,7 +53,7 @@
         rgba(90, 40, 50, 0.35) 100%);
     position: relative;
     opacity: 0.92;
-    overflow: hidden;
+    /* overflow: hidden; removed to allow diagonal line to display properly */
 }
 
 /* Diagonal line through entire removed card - smooth SVG */
