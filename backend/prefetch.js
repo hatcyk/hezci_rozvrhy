@@ -184,11 +184,24 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         return actualLessons;
     }
 
+    // Helper to create normalized key for comparison
+    const createNormalizedKey = (lesson) => {
+        // Normalize group name (e.g., "1. sk" -> "1.sk", "skupina 1" -> "1.sk")
+        const normalizedGroup = standardizeGroupName(lesson.group || '');
+        // Normalize subject (trim and lowercase)
+        const normalizedSubject = (lesson.subject || '').trim().toLowerCase();
+        // Normalize teacher (trim and lowercase)
+        const normalizedTeacher = (lesson.teacher || '').trim().toLowerCase();
+
+        return `${lesson.day}-${lesson.hour}-${normalizedSubject}-${normalizedTeacher}-${normalizedGroup}`;
+    };
+
     // Create a map of actual lessons by unique key (day-hour-subject-teacher-group)
     const actualLessonKeys = new Set();
     actualLessons.forEach(lesson => {
-        const key = `${lesson.day}-${lesson.hour}-${lesson.subject}-${lesson.teacher}-${lesson.group || ''}`;
+        const key = createNormalizedKey(lesson);
         actualLessonKeys.add(key);
+        console.log(`   [ACTUAL] ${key}`);
     });
 
     // Find lessons in permanent that are missing in actual
@@ -197,7 +210,8 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         // Skip if already marked as removed in permanent
         if (permLesson.type === 'removed') return;
 
-        const key = `${permLesson.day}-${permLesson.hour}-${permLesson.subject}-${permLesson.teacher}-${permLesson.group || ''}`;
+        const key = createNormalizedKey(permLesson);
+        console.log(`   [PERM] ${key} - exists in actual: ${actualLessonKeys.has(key)}`);
 
         // If this lesson exists in permanent but not in actual, it was removed
         if (!actualLessonKeys.has(key)) {

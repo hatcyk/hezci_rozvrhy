@@ -73,6 +73,38 @@ const axiosConfig = {
 };
 
 /**
+ * Standardize group name to normalized format
+ * @param {String} groupName - Raw group name from Bakalari
+ * @returns {String} Standardized name (e.g., "1.sk", "2.sk", "TVDi", "TVk1")
+ */
+function standardizeGroupName(groupName) {
+    if (!groupName) return '';
+
+    const lower = groupName.toLowerCase().trim();
+
+    // "celá třída" - return empty (handled by filterChangesByGroup)
+    if (lower.includes('celá') || lower === 'cela') {
+        return '';
+    }
+
+    // Special groups (TV, etc.) - keep as-is
+    // These start with letters followed by optional digits (TVk1, TVDi, TVCh, etc.)
+    // Don't convert these to "1.sk" format
+    if (/^[a-záčďéěíňóřšťúůýž]{2,}/i.test(lower)) {
+        return groupName; // Return original (preserve case)
+    }
+
+    // Extrahuj číslo: "1. sk", "skupina 1", "1.skupina" → "1.sk"
+    const groupMatch = lower.match(/^(\d+)[\.\s]*(?:skupina|sk)?$|^(?:skupina|sk)[\.\s]*(\d+)$/);
+    if (groupMatch) {
+        const groupNum = groupMatch[1] || groupMatch[2];
+        return `${groupNum}.sk`;
+    }
+
+    return groupName;
+}
+
+/**
  * Add removed lessons from permanent schedule to actual schedule
  * When a lesson exists in permanent but not in actual, add it as type="removed"
  */
@@ -81,9 +113,21 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         return actualLessons;
     }
 
+    // Helper to create normalized key for comparison
+    const createNormalizedKey = (lesson) => {
+        // Normalize group name (e.g., "1. sk" -> "1.sk", "skupina 1" -> "1.sk")
+        const normalizedGroup = standardizeGroupName(lesson.group || '');
+        // Normalize subject (trim and lowercase)
+        const normalizedSubject = (lesson.subject || '').trim().toLowerCase();
+        // Normalize teacher (trim and lowercase)
+        const normalizedTeacher = (lesson.teacher || '').trim().toLowerCase();
+
+        return `${lesson.day}-${lesson.hour}-${normalizedSubject}-${normalizedTeacher}-${normalizedGroup}`;
+    };
+
     const actualLessonKeys = new Set();
     actualLessons.forEach(lesson => {
-        const key = `${lesson.day}-${lesson.hour}-${lesson.subject}-${lesson.teacher}-${lesson.group || ''}`;
+        const key = createNormalizedKey(lesson);
         actualLessonKeys.add(key);
     });
 
@@ -91,7 +135,7 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
     permanentLessons.forEach(permLesson => {
         if (permLesson.type === 'removed') return;
 
-        const key = `${permLesson.day}-${permLesson.hour}-${permLesson.subject}-${permLesson.teacher}-${permLesson.group || ''}`;
+        const key = createNormalizedKey(permLesson);
 
         if (!actualLessonKeys.has(key)) {
             removedLessons.push({
