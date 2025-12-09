@@ -330,21 +330,22 @@ export function renderTimetable(data) {
                     if (lesson.changed) cardClass += ' changed';
 
                     // Add specific classes for removed/absent lessons
+                    const isRemovedOrAbsent = lesson.type === 'removed' || lesson.type === 'absent';
                     if (lesson.type === 'removed') cardClass += ' removed';
                     if (lesson.type === 'absent') cardClass += ' absent';
 
-                    // Zvýraznění aktuální hodiny (pouze v aktuálním rozvrhu)
-                    if (state.selectedScheduleType === 'actual' && dayIndex === todayIndex && hour === currentHour) {
+                    // Zvýraznění aktuální hodiny (pouze v aktuálním rozvrhu a ne pro zrušené hodiny)
+                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual' && dayIndex === todayIndex && hour === currentHour) {
                         cardClass += ' current-time';
                     }
 
-                    // Zvýraznění nadcházející hodiny (pouze v aktuálním rozvrhu)
-                    if (state.selectedScheduleType === 'actual' && dayIndex === todayIndex && hour === upcomingHour && hour !== currentHour) {
+                    // Zvýraznění nadcházející hodiny (pouze v aktuálním rozvrhu a ne pro zrušené hodiny)
+                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual' && dayIndex === todayIndex && hour === upcomingHour && hour !== currentHour) {
                         cardClass += ' upcoming';
                     }
 
-                    // Označení proběhlých hodin (pouze v aktuálním rozvrhu)
-                    if (state.selectedScheduleType === 'actual' && isPastLesson(dayIndex, hour)) {
+                    // Označení proběhlých hodin (pouze v aktuálním rozvrhu a ne pro zrušené hodiny)
+                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual' && isPastLesson(dayIndex, hour)) {
                         cardClass += ' past';
                     }
 
