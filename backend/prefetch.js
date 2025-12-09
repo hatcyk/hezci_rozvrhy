@@ -172,6 +172,56 @@ function standardizeGroupName(groupName) {
 }
 
 /**
+ * Add removed lessons from permanent schedule to actual schedule
+ * When a lesson exists in permanent but not in actual, add it as type="removed"
+ * This ensures removed group lessons are displayed with strikethrough
+ * @param {Array} actualLessons - Lessons from actual schedule
+ * @param {Array} permanentLessons - Lessons from permanent schedule
+ * @returns {Array} Actual lessons with removed lessons added
+ */
+function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
+    if (!permanentLessons || permanentLessons.length === 0) {
+        return actualLessons;
+    }
+
+    // Create a map of actual lessons by unique key (day-hour-subject-teacher-group)
+    const actualLessonKeys = new Set();
+    actualLessons.forEach(lesson => {
+        const key = `${lesson.day}-${lesson.hour}-${lesson.subject}-${lesson.teacher}-${lesson.group || ''}`;
+        actualLessonKeys.add(key);
+    });
+
+    // Find lessons in permanent that are missing in actual
+    const removedLessons = [];
+    permanentLessons.forEach(permLesson => {
+        // Skip if already marked as removed in permanent
+        if (permLesson.type === 'removed') return;
+
+        const key = `${permLesson.day}-${permLesson.hour}-${permLesson.subject}-${permLesson.teacher}-${permLesson.group || ''}`;
+
+        // If this lesson exists in permanent but not in actual, it was removed
+        if (!actualLessonKeys.has(key)) {
+            removedLessons.push({
+                ...permLesson,
+                type: 'removed',
+                changed: true,
+                changeInfo: {
+                    raw: 'Hodina odpadla',
+                    description: 'Hodina odpadla'
+                }
+            });
+        }
+    });
+
+    if (removedLessons.length > 0) {
+        console.log(`   📍 Added ${removedLessons.length} removed lessons from permanent schedule`);
+    }
+
+    // Return actual lessons + removed lessons from permanent
+    return [...actualLessons, ...removedLessons];
+}
+
+/**
  * Helper function to abbreviate teacher name from "Surname Firstname" format
  */
 function abbreviateTeacherName(fullName) {
@@ -556,9 +606,21 @@ async function prefetchAllData() {
 
                 try {
                     // Fetch timetable
-                    const timetableData = await fetchTimetable(task.type, task.entity.id, task.scheduleType);
+                    let timetableData = await fetchTimetable(task.type, task.entity.id, task.scheduleType);
 
                     const docKey = `${task.type}_${task.entity.id}_${task.scheduleType}`;
+
+                    // For Actual schedules of Classes, add removed lessons from Permanent schedule
+                    // This ensures removed group lessons are displayed with strikethrough
+                    if (task.scheduleType === 'Actual' && task.type === 'Class') {
+                        const permanentDocKey = `${task.type}_${task.entity.id}_Permanent`;
+                        const permanentDoc = await db.collection('timetables').doc(permanentDocKey).get();
+
+                        if (permanentDoc.exists) {
+                            const permanentData = permanentDoc.data().data;
+                            timetableData = addRemovedLessonsFromPermanent(timetableData, permanentData);
+                        }
+                    }
 
                     // Get previous snapshot for change detection
                     const previousDoc = await db.collection('timetables').doc(docKey).get();

@@ -72,6 +72,43 @@ const axiosConfig = {
     }) : undefined,
 };
 
+/**
+ * Add removed lessons from permanent schedule to actual schedule
+ * When a lesson exists in permanent but not in actual, add it as type="removed"
+ */
+function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
+    if (!permanentLessons || permanentLessons.length === 0) {
+        return actualLessons;
+    }
+
+    const actualLessonKeys = new Set();
+    actualLessons.forEach(lesson => {
+        const key = `${lesson.day}-${lesson.hour}-${lesson.subject}-${lesson.teacher}-${lesson.group || ''}`;
+        actualLessonKeys.add(key);
+    });
+
+    const removedLessons = [];
+    permanentLessons.forEach(permLesson => {
+        if (permLesson.type === 'removed') return;
+
+        const key = `${permLesson.day}-${permLesson.hour}-${permLesson.subject}-${permLesson.teacher}-${permLesson.group || ''}`;
+
+        if (!actualLessonKeys.has(key)) {
+            removedLessons.push({
+                ...permLesson,
+                type: 'removed',
+                changed: true,
+                changeInfo: {
+                    raw: 'Hodina odpadla',
+                    description: 'Hodina odpadla'
+                }
+            });
+        }
+    });
+
+    return [...actualLessons, ...removedLessons];
+}
+
 // Get timetable data
 router.get('/timetable', async (req, res) => {
     const { type, id, schedule, date } = req.query;
@@ -93,7 +130,7 @@ router.get('/timetable', async (req, res) => {
     try {
         const response = await axios.get(url, axiosConfig);
         const $ = cheerio.load(response.data);
-        const timetable = [];
+        let timetable = [];
 
         $('.bk-timetable-row').each((rowIndex, row) => {
             const dayName = $(row).find('.bk-day-day').text().trim();
@@ -174,6 +211,26 @@ router.get('/timetable', async (req, res) => {
                 });
             });
         });
+
+        // For Actual schedules of Classes, add removed lessons from Permanent schedule
+        // This ensures removed group lessons are displayed with strikethrough
+        if (scheduleType === 'Actual' && type === 'Class') {
+            try {
+                const { getFirestore } = require('../backend/firebase-admin-init');
+                const db = getFirestore();
+                const permanentDocKey = `Class_${id}_Permanent`;
+                const permanentDoc = await db.collection('timetables').doc(permanentDocKey).get();
+
+                if (permanentDoc.exists) {
+                    const permanentData = permanentDoc.data().data;
+                    timetable = addRemovedLessonsFromPermanent(timetable, permanentData);
+                    console.log(`[API] Added removed lessons from permanent schedule`);
+                }
+            } catch (err) {
+                console.error('[API] Failed to load permanent schedule for comparison:', err.message);
+                // Continue with timetable without removed lessons
+            }
+        }
 
         res.json(timetable);
     } catch (error) {
