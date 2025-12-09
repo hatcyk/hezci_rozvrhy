@@ -156,7 +156,9 @@
     position: relative;
 }
 
-.lesson-cell > .lesson-card + .lesson-card::before {
+/* Separator between multiple lesson cards - but NOT for removed/absent lessons */
+/* They use ::before for diagonal line, so we exclude them */
+.lesson-cell > .lesson-card + .lesson-card:not(.removed):not(.absent)::before {
     content: '';
     position: absolute;
     top: -6px;

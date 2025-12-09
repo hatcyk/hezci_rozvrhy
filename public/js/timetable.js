@@ -299,6 +299,26 @@ export function renderTimetable(data) {
                 // Najdeme všechny hodiny pro tento den a hodinu
                 let lessons = data.filter(d => d.day === dayIndex && d.hour === hour);
 
+                // Skrýt removed hodiny, pokud existuje náhradní hodina pro stejnou skupinu
+                lessons = lessons.filter(lesson => {
+                    // Ponechat všechny ne-removed hodiny
+                    if (lesson.type !== 'removed') return true;
+
+                    // Pro removed hodiny zkontrolovat, jestli existuje náhrada
+                    const groupToMatch = lesson.group || ''; // Prázdná skupina = celá třída
+
+                    // Najít jinou hodinu ve stejném slotu se stejnou skupinou, která není removed/absent
+                    const hasReplacement = lessons.some(other =>
+                        other !== lesson && // Jiná hodina
+                        (other.group || '') === groupToMatch && // Stejná skupina
+                        other.type !== 'removed' && // Není removed
+                        other.type !== 'absent' // Není absent
+                    );
+
+                    // Skrýt removed hodinu pokud má náhradu, jinak zobrazit
+                    return !hasReplacement;
+                });
+
                 // Seřadit hodiny podle skupiny (1. sk., 2. sk., atd.)
                 lessons.sort((a, b) => {
                     // Pokud jedna hodina nemá skupinu, ta půjde první
