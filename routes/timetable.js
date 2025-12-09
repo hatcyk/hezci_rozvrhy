@@ -125,8 +125,11 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         return `${lesson.day}-${lesson.hour}-${normalizedSubject}-${normalizedTeacher}-${normalizedGroup}`;
     };
 
+    // First, filter out any existing removed lessons from actual schedule
+    const actualNonRemoved = actualLessons.filter(lesson => lesson.type !== 'removed');
+
     const actualLessonKeys = new Set();
-    actualLessons.forEach(lesson => {
+    actualNonRemoved.forEach(lesson => {
         const key = createNormalizedKey(lesson);
         actualLessonKeys.add(key);
     });
@@ -150,7 +153,7 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         }
     });
 
-    return [...actualLessons, ...removedLessons];
+    return [...actualNonRemoved, ...removedLessons];
 }
 
 // Get timetable data

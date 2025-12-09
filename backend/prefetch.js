@@ -196,9 +196,13 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         return `${lesson.day}-${lesson.hour}-${normalizedSubject}-${normalizedTeacher}-${normalizedGroup}`;
     };
 
+    // First, filter out any existing removed lessons from actual schedule
+    // (Bakalari API might already mark some as removed, we want to rebuild this from scratch)
+    const actualNonRemoved = actualLessons.filter(lesson => lesson.type !== 'removed');
+
     // Create a map of actual lessons by unique key (day-hour-subject-teacher-group)
     const actualLessonKeys = new Set();
-    actualLessons.forEach(lesson => {
+    actualNonRemoved.forEach(lesson => {
         const key = createNormalizedKey(lesson);
         actualLessonKeys.add(key);
         console.log(`   [ACTUAL] ${key}`);
@@ -229,10 +233,13 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
 
     if (removedLessons.length > 0) {
         console.log(`   📍 Added ${removedLessons.length} removed lessons from permanent schedule`);
+        removedLessons.forEach(lesson => {
+            console.log(`      - ${lesson.subject} (${lesson.teacher}) - ${lesson.group || 'celá třída'}`);
+        });
     }
 
-    // Return actual lessons + removed lessons from permanent
-    return [...actualLessons, ...removedLessons];
+    // Return actual lessons (non-removed only) + removed lessons from permanent
+    return [...actualNonRemoved, ...removedLessons];
 }
 
 /**
