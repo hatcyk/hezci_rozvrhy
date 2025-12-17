@@ -13,10 +13,10 @@ function getNotificationConfig() {
         minutesBefore: parseInt(process.env.LESSON_REMINDER_MINUTES_BEFORE) || 5,
 
         // Window start (how early can we send? minutes before lesson)
-        windowStartMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_START) || 7,
+        windowStartMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_START) || 15,
 
         // Window end (how late can we send? minutes before lesson)
-        windowEndMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_END) || 3,
+        windowEndMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_END) || 1,
 
         // Feature flag
         enabled: process.env.LESSON_REMINDER_ENABLED !== 'false',
