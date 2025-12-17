@@ -530,6 +530,7 @@ async function sendLessonReminders(options = {}) {
 
 module.exports = {
     sendLessonReminders,
+    getPragueTime,
     getPragueTimeInfo, // Re-export for compatibility
     lessonTimes
 };
