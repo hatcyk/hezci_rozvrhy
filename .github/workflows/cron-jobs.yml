@@ -7,7 +7,7 @@ on:
     # Process notifications: Every 10 minutes, offset by 2 minutes
     - cron: '2-59/10 * * * *'
     # Lesson reminders: Every 3 minutes
-    - cron: '*/3 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
