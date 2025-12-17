@@ -4,6 +4,8 @@ on:
   schedule:
     # Prefetch: Every 10 minutes
     - cron: '*/10 * * * *'
+    # Process notifications: Every 10 minutes, offset by 2 minutes
+    - cron: '2-59/10 * * * *'
     # Lesson reminders: Every 3 minutes
     - cron: '*/3 * * * *'
   workflow_dispatch: # Allow manual triggering
@@ -38,6 +40,34 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VERCEL: 'true'
         run: node scripts/run-prefetch.js
+
+  process-notifications:
+    name: Process Change Notifications
+    runs-on: ubuntu-latest
+    # Run only on the offset 10-minute schedule
+    if: github.event.schedule == '2-59/10 * * * *' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NPM_CONFIG_RETRY: '3'
+          NPM_CONFIG_RETRY_DELAY: '1000'
+
+      - name: Process pending notifications
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          VERCEL: 'true'
+        run: node scripts/process-notifications.js
 
   lesson-reminders:
     name: Send Lesson Reminders

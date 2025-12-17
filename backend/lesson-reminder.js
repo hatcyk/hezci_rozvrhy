@@ -255,17 +255,39 @@ function standardizeGroupName(groupName) {
 }
 
 /**
+ * Get correct Czech plural form for minutes
+ * @param {Number} minutes - Number of minutes
+ * @returns {String} Correct Czech word (minuta/minuty/minut)
+ */
+function getCzechMinutePlural(minutes) {
+    if (minutes === 0) return 'minut';        // 0 minut
+    if (minutes === 1) return 'minuta';       // 1 minuta
+    if (minutes >= 2 && minutes <= 4) return 'minuty';  // 2-4 minuty
+    return 'minut';                           // 5+ minut
+}
+
+/**
  * Format lesson notification
  * @param {Object} lesson - Lesson data
  * @param {String} startTime - Start time label (e.g., "8:00")
+ * @param {Number} minutesUntilLesson - Actual minutes until lesson starts
  * @returns {Object} { title, body, data }
  */
-function formatLessonNotification(lesson, startTime) {
+function formatLessonNotification(lesson, startTime, minutesUntilLesson) {
     const subjectAbbr = abbreviateSubject(lesson.subject);
     const room = lesson.room || '?';
     const teacher = lesson.teacher || '?';
 
-    const title = `Za 5 minut: ${subjectAbbr}`;
+    // Calculate time text with proper Czech plural
+    let timeText;
+    if (minutesUntilLesson <= 0) {
+        timeText = 'Právě začíná';  // Starting now
+    } else {
+        const pluralForm = getCzechMinutePlural(minutesUntilLesson);
+        timeText = `Za ${minutesUntilLesson} ${pluralForm}`;
+    }
+
+    const title = `${timeText}: ${subjectAbbr}`;
     const body = `${room} • ${subjectAbbr} • ${teacher}`;
 
     return {
@@ -277,6 +299,7 @@ function formatLessonNotification(lesson, startTime) {
             teacher: lesson.teacher,
             room: room,
             startTime: startTime,
+            minutesUntilLesson: minutesUntilLesson.toString(),
             timestamp: new Date().toISOString()
         }
     };
@@ -437,7 +460,11 @@ async function sendLessonReminders(options = {}) {
                     console.log(`📚 [TIMETABLE] User ${user.userId} has lesson: ${lesson.subject}`);
                     console.log(`   Room: ${lesson.room}, Teacher: ${lesson.teacher}`);
 
-                    const notification = formatLessonNotification(lesson, lessonWindow.lessonStartFormatted);
+                    const notification = formatLessonNotification(
+                        lesson,
+                        lessonWindow.lessonStartFormatted,
+                        lessonWindow.minutesUntilLesson
+                    );
 
                     if (!dryRun) {
                         const result = await sendNotificationToTokens(user.tokens, notification);
