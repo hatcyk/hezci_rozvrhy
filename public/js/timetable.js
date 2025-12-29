@@ -113,6 +113,11 @@ function updateActiveDayButton() {
 async function selectDay(index) {
     updateState('selectedDayIndex', index);
     updateActiveDayButton();
+
+    // Reset card view index when switching days
+    const { updateLayoutPreference } = await import('./layout-manager.js');
+    updateLayoutPreference('card-view', { cardIndex: 0 });
+
     await updateMobileDayView();
 }
 
@@ -449,8 +454,11 @@ export async function loadTimetable() {
         createDaySelector();
         renderTimetable(filteredData);
 
+        // Reset card view index when switching timetables
+        const { applyLayout, updateLayoutPreference } = await import('./layout-manager.js');
+        updateLayoutPreference('card-view', { cardIndex: 0 });
+
         // ✓ Aplikovat layout po vygenerování HTML
-        const { applyLayout } = await import('./layout-manager.js');
         await applyLayout();
 
     } catch (e) {

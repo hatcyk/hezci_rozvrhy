@@ -10,6 +10,10 @@ import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
 import { renderTimetable } from './timetable.js';
 
+// AbortControllers for cleanup of event listeners
+let swipeController = null;
+let navigationController = null;
+
 /**
  * Render Single Day Layout (original behavior)
  * Shows only the selected day's lessons in table format
@@ -225,7 +229,16 @@ export function renderCardLayout() {
     });
 
     const hours = Object.keys(lessonsByHour).sort((a, b) => parseInt(a) - parseInt(b));
-    const currentCardIndex = state.layoutPreferences['card-view'].cardIndex || 0;
+
+    // Validate cardIndex against actual card count
+    const rawCardIndex = state.layoutPreferences['card-view'].cardIndex || 0;
+    const maxCardIndex = Math.max(0, hours.length - 1);
+    const currentCardIndex = Math.max(0, Math.min(rawCardIndex, maxCardIndex));
+
+    // Reset cardIndex in state if it was clamped
+    if (rawCardIndex !== currentCardIndex) {
+        updateLayoutPreference('card-view', { cardIndex: currentCardIndex });
+    }
 
     let html = `<div class="card-view-wrapper" style="transform: translateX(-${currentCardIndex * 100}%)">`;
 
@@ -272,7 +285,7 @@ export function renderCardLayout() {
                     <polyline points="15 18 9 12 15 6"></polyline>
                 </svg>
             </button>
-            <button class="card-view-nav-btn" id="cardNextBtn" ${currentCardIndex === dayLessons.length - 1 ? 'disabled' : ''}>
+            <button class="card-view-nav-btn" id="cardNextBtn" ${currentCardIndex >= hours.length - 1 ? 'disabled' : ''}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
@@ -292,20 +305,29 @@ export function renderCardLayout() {
  * Initialize card view navigation buttons and dots
  */
 function initCardViewNavigation(totalCards) {
+    // Abort previous navigation listeners if they exist
+    if (navigationController) {
+        navigationController.abort();
+    }
+
+    // Create new AbortController
+    navigationController = new AbortController();
+    const signal = navigationController.signal;
+
     const prevBtn = document.getElementById('cardPrevBtn');
     const nextBtn = document.getElementById('cardNextBtn');
     const dots = document.querySelectorAll('.card-view-dot');
 
     if (prevBtn) {
-        prevBtn.addEventListener('click', () => navigateCard(-1, totalCards));
+        prevBtn.addEventListener('click', () => navigateCard(-1, totalCards), { signal });
     }
 
     if (nextBtn) {
-        nextBtn.addEventListener('click', () => navigateCard(1, totalCards));
+        nextBtn.addEventListener('click', () => navigateCard(1, totalCards), { signal });
     }
 
     dots.forEach((dot, index) => {
-        dot.addEventListener('click', () => navigateToCard(index, totalCards));
+        dot.addEventListener('click', () => navigateToCard(index, totalCards), { signal });
     });
 }
 
@@ -351,6 +373,15 @@ function initCardViewSwipe(totalCards) {
     const container = document.querySelector('.timetable-container.card-view-mode');
     if (!container) return;
 
+    // Abort previous swipe listeners if they exist
+    if (swipeController) {
+        swipeController.abort();
+    }
+
+    // Create new AbortController
+    swipeController = new AbortController();
+    const signal = swipeController.signal;
+
     let startX = 0;
     let startY = 0;
     let isDragging = false;
@@ -359,7 +390,7 @@ function initCardViewSwipe(totalCards) {
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
         isDragging = true;
-    }, { passive: true });
+    }, { passive: true, signal });
 
     container.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
@@ -373,7 +404,7 @@ function initCardViewSwipe(totalCards) {
         if (diffX > diffY) {
             e.preventDefault();
         }
-    }, { passive: false });
+    }, { passive: false, signal });
 
     container.addEventListener('touchend', (e) => {
         if (!isDragging) return;
@@ -394,7 +425,7 @@ function initCardViewSwipe(totalCards) {
                 navigateToCard(currentIndex - 1, totalCards);
             }
         }
-    }, { passive: true });
+    }, { passive: true, signal });
 }
 
 /**

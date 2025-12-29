@@ -6,6 +6,67 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.4] - 2025-12-29
+### fix(card-view): oprava násobení scrollování, validace a resetování cardIndex
+
+### Opraveno
+- **Event listeners se akumulovaly při přepínání rozvrhů** (KRITICKÝ BUG)
+  - Každé kliknutí na aktuální/stálý/příští přidávalo nové event listeners bez odstranění starých
+  - Výsledek: scrollování se násobilo (0→200%, 400%, 600% místo 0→100%, 200%)
+  - Řešení: Implementován **AbortController** pro automatický cleanup listenerů
+
+- **cardIndex se neresetoval při načtení nového rozvrhu**
+  - cardIndex zůstával uložený v state i po přepnutí na rozvrh s jiným počtem hodin
+  - Scénář: Třída s 8 hodinami (cardIndex: 5) → Učitel s 0 hodinami → stále scrollovalo na index 5
+  - Řešení: Validace cardIndex proti skutečnému počtu karet s automatickým clampingem
+
+- **cardIndex persistoval při přepínání mezi rozvrhy a dny** (NOVÝ FIX)
+  - Po přepnutí rozvrhu nebo dne uživatel mohl scrollovat na počet hodin z předchozího rozvrhu
+  - Scénář: Pondělí s 5 hodinami (karta 3) → Úterý s 2 hodinami → transform stále -300%
+  - Řešení: Explicitní reset cardIndex na 0 při přepnutí rozvrhu nebo dne
+
+- **Disabled state navigation buttons používal špatný počet**
+  - Next button porovnával cardIndex s `dayLessons.length` (celkový počet lekcí) místo `hours.length` (počet karet)
+  - Řešení: Opraven na `currentCardIndex >= hours.length - 1`
+
+### Změněno
+- **`public/js/timetable.js`**:
+  - `selectDay()` (řádek 113-122):
+    - Přidán reset cardIndex na 0 při přepnutí dne
+  - `loadTimetable()` (řádek 457-462):
+    - Přidán reset cardIndex na 0 při načtení nového rozvrhu
+
+- **`public/js/layout-renderers.js`**:
+  - Přidány module-level proměnné: `swipeController`, `navigationController` (řádky 14-15)
+  - `initCardViewSwipe()` (řádek 354-411):
+    - Abort starého controlleru před vytvořením nového
+    - Přidán `signal` parameter do všech addEventListener()
+  - `initCardViewNavigation()` (řádek 298-323):
+    - Abort starého controlleru před vytvořením nového
+    - Přidán `signal` parameter do všech addEventListener()
+  - `renderCardLayout()` (řádky 233-241):
+    - Validace cardIndex: `Math.max(0, Math.min(rawCardIndex, maxCardIndex))`
+    - Automatický reset v state pokud byl cardIndex mimo rozsah
+  - Navigation button disabled state (řádek 288):
+    - Změněno z `dayLessons.length - 1` na `hours.length - 1`
+
+### Technické detaily
+- **AbortController pattern**: Moderní přístup k cleanup event listenerů
+  - Automaticky odstraní VŠECHNY listeners při `controller.abort()`
+  - Není nutné ukládat reference na jednotlivé handler funkce
+  - Čistší a bezpečnější než manuální `removeEventListener()`
+
+- **cardIndex validace**:
+  - `rawCardIndex` načten ze state
+  - `maxCardIndex = Math.max(0, hours.length - 1)` vypočítán z aktuálního počtu karet
+  - `currentCardIndex = Math.max(0, Math.min(rawCardIndex, maxCardIndex))` - clamping do validního rozsahu
+  - Pokud `rawCardIndex !== currentCardIndex`, state je aktualizován
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - AbortController cleanup, validace cardIndex, fixed disabled state
+
+---
+
 ## [1.3] - 2025-12-29
 ### feat(layout): modernizace card view layoutu s SVG ikonami a responzivním designem
 
@@ -185,3 +246,4 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 - `public/js/state.js` - přidány layoutMode a layoutPreferences
 - `public/js/timetable.js` - delegování na layout manager
 - `public/js/main.js` - inicializace layout systému
+
