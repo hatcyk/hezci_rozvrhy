@@ -45,19 +45,20 @@ export function populateValueSelect() {
 export function initWeekViewToggle() {
     if (!dom.weekViewToggle) return;
 
-    dom.weekViewToggle.addEventListener('click', () => {
-        // Toggle the state
-        updateState('showWholeWeek', !state.showWholeWeek);
+    dom.weekViewToggle.addEventListener('click', async () => {
+        // ✓ Měnit layoutMode, ne showWholeWeek (deprecated)
+        const newMode = state.layoutMode === 'single-day' ? 'week-view' : 'single-day';
 
         // Update button appearance
-        if (state.showWholeWeek) {
+        if (newMode === 'week-view') {
             dom.weekViewToggle.classList.add('active');
         } else {
             dom.weekViewToggle.classList.remove('active');
         }
 
-        // Update the view
-        updateMobileDayView();
+        // Switch layout (volá applyLayout interně)
+        const { switchLayout } = await import('./layout-manager.js');
+        await switchLayout(newMode);
     });
 }
 
@@ -109,47 +110,23 @@ function updateActiveDayButton() {
 }
 
 // Select day on mobile
-function selectDay(index) {
+async function selectDay(index) {
     updateState('selectedDayIndex', index);
     updateActiveDayButton();
-    updateMobileDayView();
+
+    // Reset card view index when switching days
+    const { updateLayoutPreference } = await import('./layout-manager.js');
+    updateLayoutPreference('card-view', { cardIndex: 0 });
+
+    await updateMobileDayView();
 }
 
 // Update mobile day view
-function updateMobileDayView() {
-    const rows = document.querySelectorAll('.timetable-row');
-
-    if (state.showWholeWeek) {
-        // Show all days when whole week view is active
-        rows.forEach(row => row.classList.add('active'));
-        // Hide day selector with animation when showing whole week
-        if (dom.daySelector) {
-            dom.daySelector.classList.add('hiding');
-            setTimeout(() => {
-                dom.daySelector.classList.add('hide-day-selector');
-                dom.daySelector.classList.remove('hiding');
-            }, 300); // Match CSS transition duration
-        }
-    } else {
-        // Show only selected day (original behavior)
-        rows.forEach((row, index) => {
-            if (index === state.selectedDayIndex) {
-                row.classList.add('active');
-            } else {
-                row.classList.remove('active');
-            }
-        });
-        // Show day selector with animation when showing single day
-        if (dom.daySelector) {
-            dom.daySelector.classList.remove('hide-day-selector');
-            // Force reflow to trigger animation
-            dom.daySelector.offsetHeight;
-            dom.daySelector.classList.add('showing');
-            setTimeout(() => {
-                dom.daySelector.classList.remove('showing');
-            }, 300);
-        }
-    }
+// DEPRECATED - now handled by layout-manager.js
+async function updateMobileDayView() {
+    // Delegate to layout manager
+    const { applyLayout } = await import('./layout-manager.js');
+    await applyLayout();
 }
 
 // Render timetable
@@ -387,7 +364,18 @@ export function renderTimetable(data) {
                         cardContent = `
                             <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
                             <div class="lesson-details">
-                                ${lesson.room ? `<span>${lesson.room}</span>` : ''}
+                                ${lesson.room ? `
+                                    <span class="lesson-detail-item">
+                                        <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M11 20H2"/>
+                                            <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                            <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                            <path d="M14 12h.01"/>
+                                            <path d="M22 20h-3"/>
+                                        </svg>
+                                        ${lesson.room}
+                                    </span>
+                                ` : ''}
                             </div>
                             ${className ? `<div class="lesson-group">${className}</div>` : ''}
                         `;
@@ -406,7 +394,18 @@ export function renderTimetable(data) {
                             <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
                             <div class="lesson-details">
                                 ${lesson.teacher ? `<span title="${lesson.teacher}">${displayTeacher}</span>` : ''}
-                                ${lesson.room ? `<span>${lesson.room}</span>` : ''}
+                                ${lesson.room ? `
+                                    <span class="lesson-detail-item">
+                                        <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M11 20H2"/>
+                                            <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                            <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                            <path d="M14 12h.01"/>
+                                            <path d="M22 20h-3"/>
+                                        </svg>
+                                        ${lesson.room}
+                                    </span>
+                                ` : ''}
                             </div>
                             ${lesson.group ? `<div class="lesson-group">${displayGroup}</div>` : ''}
                         `;
@@ -429,7 +428,8 @@ export function renderTimetable(data) {
     });
 
     // Aktualizovat viditelnost dnů na mobilu
-    updateMobileDayView();
+    // REMOVED: updateMobileDayView() - způsobovalo nekonečný loop
+    // Layout se aplikuje v layout-manager.js přes applyLayout()
 }
 
 // Load timetable
@@ -475,6 +475,13 @@ export async function loadTimetable() {
         updateState('currentTimetableData', filteredData);
         createDaySelector();
         renderTimetable(filteredData);
+
+        // Reset card view index when switching timetables
+        const { applyLayout, updateLayoutPreference } = await import('./layout-manager.js');
+        updateLayoutPreference('card-view', { cardIndex: 0 });
+
+        // ✓ Aplikovat layout po vygenerování HTML
+        await applyLayout();
 
     } catch (e) {
         dom.errorDiv.textContent = e.message;

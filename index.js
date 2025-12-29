@@ -75,16 +75,5 @@ app.listen(PORT, HOST, () => {
 
     if (DEBUG) {
         console.log('\n🔧 DEBUG MODE ENABLED');
-        console.log('   Debug endpoints available at /api/debug/*');
-        console.log('   - POST /api/debug/test-notification-all');
-        console.log('   - POST /api/debug/simulate-change');
-        console.log('   - GET  /api/debug/pending-changes');
-        console.log('   - DELETE /api/debug/clear-changes');
-        console.log('   - GET  /api/debug/users');
-        console.log('   - GET  /api/debug/status\n');
     }
-
-    // Start cron job for automatic prefetching
-    console.log('🔄 Starting automatic prefetch cron job...\n');
-    startCronJob();
 });

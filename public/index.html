@@ -15,6 +15,9 @@
     <link rel="stylesheet" href="css/theme-warning.css">
     <link rel="stylesheet" href="css/notifications.css">
     <link rel="stylesheet" href="css/settings.css">
+    <link rel="stylesheet" href="css/layout-modal.css">
+    <link rel="stylesheet" href="css/layout-card-view.css">
+    <link rel="stylesheet" href="css/layout-compact-list.css">
     <link rel="stylesheet" href="css/outage.css">
     <link rel="stylesheet" href="css/footer.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -353,21 +356,20 @@
                     </svg>
                 </div>
 
-                <div class="settings-option" id="settingsCalendar">
+                <div class="settings-option" id="settingsLayout">
                     <div class="settings-option-icon">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="16" y1="2" x2="16" y2="6"></line>
-                            <line x1="8" y1="2" x2="8" y2="6"></line>
-                            <line x1="3" y1="10" x2="21" y2="10"></line>
-                            <path d="M8 14h.01"></path>
-                            <path d="M12 14h.01"></path>
-                            <path d="M16 14h.01"></path>
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
                         </svg>
                     </div>
                     <div class="settings-option-content">
-                        <div class="settings-option-title">Zobrazit celý týden</div>
-                        <div class="settings-option-description">Přepnout mezi jedním dnem a celým týdnem</div>
+                        <div class="settings-option-title">Rozvržení</div>
+                        <div class="settings-option-description" id="currentLayoutDescription">
+                            Denní zobrazení
+                        </div>
                     </div>
                     <svg class="settings-option-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="9 18 15 12 9 6"></polyline>
@@ -396,6 +398,19 @@
                         <polyline points="9 18 15 12 9 6"></polyline>
                     </svg>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layout Selection Modal (Mobile Only) -->
+    <div class="modal-overlay hidden" id="layoutModal" style="display: none;">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Vyberte Rozvržení</h2>
+                <button class="modal-close" id="layoutModalClose">&times;</button>
+            </div>
+            <div class="modal-content" id="layoutOptionsContainer">
+                <!-- Dynamically generated from LAYOUT_REGISTRY -->
             </div>
         </div>
     </div>

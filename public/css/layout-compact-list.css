@@ -1,0 +1,269 @@
+/**
+ * Compact List Layout Styles
+ */
+
+/* Compact List Mode */
+.timetable-container.compact-list-mode {
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+}
+
+.compact-list-wrapper {
+    padding: 0;
+}
+
+.compact-day-header {
+    padding: 12px 16px;
+    background: var(--header-bg);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.compact-day-date {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    font-weight: 400;
+}
+
+.compact-lesson-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    min-height: 80px;
+}
+
+.compact-lesson-item:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transform: translateX(4px);
+}
+
+.compact-lesson-item:active {
+    transform: translateX(2px);
+}
+
+.compact-lesson-badge {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    background: linear-gradient(135deg, var(--spsd-orange) 0%, #d94e37 100%);
+    color: white;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 1.2rem;
+    box-shadow: 0 2px 8px rgba(235, 93, 67, 0.3);
+}
+
+.compact-lesson-time {
+    flex-shrink: 0;
+    min-width: 70px;
+    text-align: center;
+    font-weight: 600;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.compact-lesson-time-label {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-weight: 500;
+}
+
+.compact-lesson-content {
+    flex: 1;
+    min-width: 0;
+    padding-right: 80px;
+}
+
+.compact-lesson-subject {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.compact-lesson-details {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.compact-lesson-details span {
+    white-space: nowrap;
+}
+
+.compact-detail-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.compact-detail-icon {
+    width: 16px;
+    height: 16px;
+    stroke: var(--text-dim);
+    flex-shrink: 0;
+}
+
+/* Status Indicators */
+.compact-lesson-item.current-time {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, var(--card-bg) 100%);
+}
+
+.compact-lesson-item.current-time .compact-lesson-badge {
+    background: rgba(239, 68, 68, 0.8);
+}
+
+.compact-lesson-item.upcoming {
+    background: linear-gradient(90deg, rgba(235, 93, 67, 0.1) 0%, var(--card-bg) 100%);
+}
+
+.compact-lesson-item.past {
+    opacity: 0.5;
+}
+
+.compact-lesson-item.removed {
+    opacity: 0.6;
+}
+
+.compact-lesson-item.removed::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        to bottom right,
+        transparent 0%,
+        transparent calc(50% - 1px),
+        rgba(220, 53, 69, 0.8) calc(50% - 1px),
+        rgba(220, 53, 69, 0.8) calc(50% + 1px),
+        transparent calc(50% + 1px),
+        transparent 100%
+    );
+    border-radius: 12px;
+    pointer-events: none;
+}
+
+.compact-lesson-item.removed .compact-lesson-subject {
+    color: var(--text-dim);
+}
+
+.compact-lesson-item.changed::after {
+    content: '';
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 20px;
+    height: 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFC107' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/%3E%3Cline x1='12' y1='9' x2='12' y2='13'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+}
+
+/* Empty State */
+.compact-empty-day {
+    padding: 32px 16px;
+    text-align: center;
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.compact-empty-day svg {
+    opacity: 0.5;
+}
+
+.compact-empty-day p {
+    margin: 0;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .timetable-container.compact-list-mode {
+        padding: 8px;
+    }
+
+    .compact-lesson-item {
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .compact-lesson-badge {
+        width: 40px;
+        height: 40px;
+        font-size: 1rem;
+    }
+
+    .compact-lesson-time {
+        min-width: 60px;
+    }
+
+    .compact-lesson-subject {
+        font-size: 1rem;
+    }
+
+    .compact-lesson-details {
+        font-size: 0.8rem;
+        gap: 8px;
+    }
+}
+
+/* Group Badge */
+.compact-group-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    font-size: 0.85rem;
+    color: white;
+    padding: 6px 12px;
+    background: var(--spsd-orange);
+    border-radius: 8px;
+    font-weight: 700;
+    display: inline-block;
+    box-shadow: 0 2px 6px rgba(235, 93, 67, 0.4);
+    z-index: 5;
+}
+
+/* Scrollbar Styling */
+.timetable-container.compact-list-mode::-webkit-scrollbar {
+    width: 8px;
+}
+
+.timetable-container.compact-list-mode::-webkit-scrollbar-track {
+    background: var(--bg);
+}
+
+.timetable-container.compact-list-mode::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+}
+
+.timetable-container.compact-list-mode::-webkit-scrollbar-thumb:hover {
+    background: var(--text-dim);
+}
