@@ -6,6 +6,56 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.7] - 2025-12-29
+### fix(layouts): oprava scroll pozice a zarovnání ikon při přepínání layoutů
+
+### Opraveno
+- **Scroll pozice se přenášela mezi layouty** (BUG)
+  - Dříve: Při horizontálním scrollu v týdenním/denním zobrazení a následném přepnutí na kartový layout zůstala scroll pozice uložená
+  - Problém: Kartový layout se zobrazil posunutý doprava, karty nezačínaly od začátku
+  - Nyní: Při každém přepnutí layoutu se resetuje `scrollLeft` i `scrollTop` na 0
+  - Výsledek: Všechny layouty vždy začínají s čistou scroll pozicí
+
+- **Ikona učitele moc daleko od textu u skupinových hodin v card-view** (UX)
+  - Dříve: V kartovém layoutu u split lessons (skupinových hodin) byla mezera mezi ikonou učitele a textem 8px
+  - Problém: Vizuálně příliš velká mezera, ikona působila odděleně od textu
+  - Nyní: Mezera zmenšena na 4px specificky pro `.card-lesson-half .card-detail-item`
+  - Výsledek: Kompaktnější a vizuálně příjemnější zobrazení detailů u skupinových hodin
+
+### Změněno
+- **`public/js/layout-manager.js`** (řádky 115-117):
+  - `applyLayout()` funkce: Přidán reset scroll pozice
+  - `container.scrollLeft = 0;` - Reset horizontálního scrollu
+  - `container.scrollTop = 0;` - Reset vertikálního scrollu
+
+- **`public/css/layout-card-view.css`** (řádek 180):
+  - `.card-lesson-half .card-detail-item`: Přidán `gap: 4px`
+  - Zmenšena mezera mezi ikonou a textem ze 8px na 4px pro split lessons
+
+### Technické detaily
+**Scénář bug 1 - scroll pozice:**
+1. Uživatel otevře týdenní zobrazení s mnoha hodinami
+2. Scrollne horizontálně doprava (`.timetable-container` má `overflow-x: auto`)
+3. Přepne na kartový layout
+4. **Bug:** Kartový layout byl posunutý, protože `scrollLeft` nebyl resetován
+5. **Fix:** `scrollLeft` a `scrollTop` se resetují při každém přepnutí layoutu
+
+**Scénář bug 2 - gap u ikony:**
+1. Uživatel otevře kartový layout s grupovou hodinou (např. TVD 1.sk, 2.sk)
+2. **Bug:** Ikona učitele byla vizuálně moc daleko od jména učitele
+3. **Fix:** Gap zmenšen z 8px na 4px pro lepší kompaktnost
+
+### Vizuální změny
+- Kartový layout vždy začíná od první karty po přepnutí z jiného layoutu
+- Ikony učitelů jsou blíže k textům u skupinových hodin
+- Konzistentnější UX při přepínání mezi layouty
+
+### Modifikované soubory
+- `public/js/layout-manager.js` - reset scroll pozice
+- `public/css/layout-card-view.css` - zmenšení gap u detail-item
+
+---
+
 ## [1.6.9] - 2025-12-29
 ### fix(card-view): oprava offsetu karty při přepnutí z jiných layoutů
 

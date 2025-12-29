@@ -106,7 +106,6 @@
 }
 
 .card-detail-item {
-    font-size: 0.9rem;
     color: var(--text-dim);
     line-height: 1.4;
     display: flex;
@@ -177,6 +176,7 @@
 .card-lesson-half .card-detail-item {
     justify-content: center;
     font-size: 0.85rem;
+    gap: 4px; /* Menší mezera mezi ikonou a textem pro split lessons */
 }
 
 .card-lesson-half.lesson-removed {
@@ -369,10 +369,6 @@
 
     .card-subject {
         font-size: 1.4rem !important;
-    }
-
-    .card-detail-item {
-        font-size: 0.9rem !important;
     }
 
     /* Hide navigation buttons on mobile - swipe only */

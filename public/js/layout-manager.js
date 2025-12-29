@@ -112,6 +112,10 @@ export async function applyLayout() {
     // Add current layout class
     container.classList.add(`${layout.id}-mode`);
 
+    // Reset scroll position when switching layouts
+    container.scrollLeft = 0;
+    container.scrollTop = 0;
+
     // Show/hide day selector based on layout
     const daySelector = document.getElementById('daySelector');
     if (daySelector) {
