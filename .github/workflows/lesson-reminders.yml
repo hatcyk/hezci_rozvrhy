@@ -2,8 +2,8 @@ name: Send Lesson Reminders
 
 on:
   schedule:
-    # Every 5 minutes (GitHub Actions minimum)
-    - cron: '*/5 * * * *'
+    # Every 5 minutes (GitHub Actions minimum) | Prázdninový provoz: Every 60 minutes
+    - cron: '0 * * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:

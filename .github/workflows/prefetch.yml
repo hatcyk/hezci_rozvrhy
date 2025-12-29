@@ -2,8 +2,8 @@ name: Prefetch Timetable Data
 
 on:
   schedule:
-    # Every 60 minutes
-    - cron: '*/60 * * * *'
+    # Every 15 minutes | Prázdninový provoz: Every 60 minutes
+    - cron: '0 * * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
