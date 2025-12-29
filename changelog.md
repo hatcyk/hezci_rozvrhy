@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.7.2] - 2025-12-30
+### fix(ui): přidána ikona učitele do všech zobrazení rozvrhu
+
+### Opraveno
+- **Chybějící ikona učitele v týdenním, denním a compact list zobrazení** (UX BUG)
+  - Dříve: Ikona učitele se zobrazovala pouze v kartovém zobrazení (card view)
+  - Problém: Nekonzistentní UX - místnost měla ikonu, učitel ne
+  - V normal view (týdenní/denní) byl učitel zobrazený pouze jako text bez ikony
+  - V compact list view byl učitel zobrazený pouze jako text bez ikony
+  - Nyní: SVG ikona učitele (osobička) se zobrazuje ve všech layoutech
+  - Výsledek: Konzistentní zobrazení ikon napříč všemi pohledy
+
+### Změněno
+- **`public/js/layout-renderers.js`** (řádky 551-558):
+  - `renderCompactListLayout()` - Compact list layout:
+    - Přidán wrapper `<span class="compact-detail-item">` s SVG ikonou učitele
+    - Ikona učitele nyní zobrazena stejně jako ikona místnosti
+    - Použita stejná SVG ikona jako v card view (user icon - osobička)
+
+- **`public/js/timetable.js`**:
+  - Room view (řádky 387-395):
+    - Přidán wrapper `<span class="lesson-detail-item">` s SVG ikonou učitele
+    - Ikona zobrazena před zkráceným jménem učitele
+  - Class view (řádky 404-412):
+    - Přidán wrapper `<span class="lesson-detail-item">` s SVG ikonou učitele
+    - Ikona zobrazena před zkráceným jménem učitele
+    - Stejný vizuální styl jako ikona místnosti
+
+### Vizuální konzistence
+Ikona učitele je nyní jednotná napříč VŠEMI layouty:
+- ✅ Card view (swipeable cards) - již fungovala
+- ✅ Compact list (vertikální seznam) - **OPRAVENO**
+- ✅ Week view (týdenní zobrazení) - **OPRAVENO**
+- ✅ Single-day view (denní zobrazení) - **OPRAVENO**
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - přidána ikona učitele do compact list
+- `public/js/timetable.js` - přidána ikona učitele do week/single-day view (Room a Class view)
+
+---
+
 ## [1.7.1] - 2025-12-29
 ### fix(layouts): oprava blokovaného scrollu v týdenním zobrazení po přepnutí z karet
 

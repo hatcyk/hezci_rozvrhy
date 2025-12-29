@@ -548,7 +548,15 @@ export function renderCompactListLayout() {
                 <div class="compact-lesson-content">
                     <div class="compact-lesson-subject">${lesson.subject}</div>
                     <div class="compact-lesson-details">
-                        ${lesson.teacher ? `<span>${lesson.teacher}</span>` : ''}
+                        ${lesson.teacher ? `
+                            <span class="compact-detail-item">
+                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="12" cy="7" r="4"/>
+                                </svg>
+                                ${lesson.teacher}
+                            </span>
+                        ` : ''}
                         ${lesson.room ? `
                             <span class="compact-detail-item">
                                 <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

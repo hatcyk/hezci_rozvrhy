@@ -384,7 +384,15 @@ export function renderTimetable(data) {
                         cardContent = `
                             <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
                             <div class="lesson-details">
-                                ${lesson.teacher ? `<span title="${lesson.teacher}">${displayTeacher}</span>` : ''}
+                                ${lesson.teacher ? `
+                                    <span class="lesson-detail-item" title="${lesson.teacher}">
+                                        <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                            <circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                        ${displayTeacher}
+                                    </span>
+                                ` : ''}
                             </div>
                             ${className ? `<div class="lesson-group">${className}</div>` : ''}
                         `;
@@ -393,7 +401,15 @@ export function renderTimetable(data) {
                         cardContent = `
                             <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
                             <div class="lesson-details">
-                                ${lesson.teacher ? `<span title="${lesson.teacher}">${displayTeacher}</span>` : ''}
+                                ${lesson.teacher ? `
+                                    <span class="lesson-detail-item" title="${lesson.teacher}">
+                                        <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                            <circle cx="12" cy="7" r="4"/>
+                                        </svg>
+                                        ${displayTeacher}
+                                    </span>
+                                ` : ''}
                                 ${lesson.room ? `
                                     <span class="lesson-detail-item">
                                         <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
