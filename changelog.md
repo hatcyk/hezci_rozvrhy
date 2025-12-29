@@ -6,6 +6,51 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.7] - 2025-12-29
+### fix(lesson-card): zašednutí a z-index group badge u zrušených hodin
+
+### Opraveno
+- **Z-index group badge u zrušených hodin**
+  - Dříve: Group badge byl nad červenou diagonální čárou (`z-index: 5`)
+  - Problém: Badge byl viditelný přes čáru, což bylo vizuálně matoucí
+  - Nyní: Group badge je pod červenou čárou (`z-index: 1`)
+  - Červená čára překrývá badge, což jasně indikuje zrušenou hodinu
+
+- **Zašednutí group badge u zrušených hodin**
+  - Dříve: Oranžový badge byl výrazný i u zrušených hodin
+  - Problém: Matoucí - badge byl stejně výrazný jako u aktivních hodin
+  - Nyní: Badge je zašedlý a ztlumený u zrušených hodin
+  - Jasně indikuje, že skupina je také zrušena
+
+### Změněno
+- **`public/css/lesson-card.css`**:
+  - `.lesson-group` (řádek 193):
+    - `z-index: 5` → `z-index: 1`
+    - Badge je nyní pod diagonální čárou
+  - Nové pravidlo `.lesson-card.removed .lesson-group` (řádky 197-202):
+    - `background: rgba(128, 128, 128, 0.5)` - šedé pozadí místo oranžové
+    - `color: rgba(255, 255, 255, 0.7)` - ztlumený bílý text
+    - `box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2)` - jemnější stín
+    - `opacity: 0.6` - snížená celková viditelnost
+
+### Z-index hierarchie
+Nové pořadí vrstev (od nejvyšší po nejnižší):
+1. Exclamation mark (removed::after): `z-index: 3` - červený vykřičník vždy nahoře
+2. Crossing line (removed::before): `z-index: 2` - červená diagonální čára
+3. Group badge (.lesson-group): `z-index: 1` - badge pod čárou
+
+### Vizuální změny
+- U zrušených hodin je group badge zašedlý a ztlumený
+- Badge je přeškrtnutý červenou čárou (pod čárou v z-index)
+- Jasná vizuální indikace, že celá hodina včetně skupiny je zrušena
+- Konzistentní napříč všemi layouty (single-day, week-view)
+- U aktivních hodin zůstává badge výrazný a oranžový
+
+### Modifikované soubory
+- `public/css/lesson-card.css` - změna z-index a zašednutí badge pro removed lessons
+
+---
+
 ## [1.6.6] - 2025-12-29
 ### fix(compact-list): výrazný group badge v pravém dolním rohu a oprava překrývání
 
