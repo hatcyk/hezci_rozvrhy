@@ -175,7 +175,7 @@
 
 .card-lesson-half .card-detail-item {
     justify-content: center;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     gap: 4px; /* Menší mezera mezi ikonou a textem pro split lessons */
 }
 
