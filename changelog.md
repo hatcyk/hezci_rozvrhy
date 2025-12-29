@@ -7,7 +7,7 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 ---
 
 ## [1.6.6] - 2025-12-29
-### fix(compact-list): výrazný group badge v pravém dolním rohu
+### fix(compact-list): výrazný group badge v pravém dolním rohu a oprava překrývání
 
 ### Opraveno
 - **Group badge (indikátor skupiny) v compact list layoutu**
@@ -15,6 +15,15 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
   - Problém: Nevýrazné, těžko viditelné, nekonzistentní s card view
   - Nyní: Výrazný oranžový badge v pravém dolním rohu
   - Konzistentní styling napříč všemi layouty
+
+- **Překrývání group badge s obsahem a warning ikonou** (KRITICKÝ VIZUÁLNÍ BUG)
+  - Problém: Group badge se překrýval s textem předmětu a warning ikonou
+  - Text předmětu a detailů šel pod badge
+  - U změněných/zrušených hodin se badge překrýval s warning ikonou v pravém horním rohu
+  - Řešení:
+    - Přidán `padding-right: 80px` do `.compact-lesson-content` pro rezervaci místa pro badge
+    - Přidán `min-height: 80px` do `.compact-lesson-item` pro dostatečnou výšku karty
+    - Zajištěno, že warning ikona (top-right) a group badge (bottom-right) se nepřekrývají
 
 ### Změněno
 - **`public/js/layout-renderers.js`**:
@@ -25,6 +34,10 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
     - Přidána na konec `.compact-lesson-item` pro absolutní pozicování
 
 - **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-item` (řádek 47):
+    - Přidán `min-height: 80px` pro zajištění dostatečné výšky
+  - `.compact-lesson-content` (řádek 94):
+    - Přidán `padding-right: 80px` pro rezervaci místa pro group badge
   - Nová CSS třída `.compact-group-badge` (řádky 236-249):
     - `position: absolute; bottom: 8px; right: 8px`
     - `background: var(--spsd-orange)` (oranžový gradient)
@@ -39,10 +52,12 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 - Bílý text na oranžovém pozadí pro maximální čitelnost
 - Konzistentní s designem card view a lesson-card layoutů
 - Stín pro zvýraznění a oddělení od pozadí
+- Text předmětu a detailů nikdy nejde pod badge (rezervován prostor vpravo)
+- Warning ikona a group badge se nikdy nepřekrývají (dostatečná výška karty)
 
 ### Modifikované soubory
 - `public/js/layout-renderers.js` - přesun group badge z inline do samostatného elementu
-- `public/css/layout-compact-list.css` - styling pro výrazný badge
+- `public/css/layout-compact-list.css` - styling pro výrazný badge, fix překrývání
 
 ---
 
