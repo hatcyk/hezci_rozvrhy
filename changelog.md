@@ -6,6 +6,70 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.3] - 2025-12-29
+### feat(layout): modernizace card view layoutu s SVG ikonami a responzivním designem
+
+### Přidáno
+- **Moderní design karet s vizuální hierarchií**:
+  - Velké číslo hodiny (1.3rem font, font-weight 800) v card-header-row
+  - Barevný status dot (8px průměr) - oranžový gradient pro změny, červený pro zrušené hodiny
+  - Nová struktura: card-header-row, lesson-subject-name, card-details, card-badges
+  - Groupování lekcí po hodinách (řeší problém "13 hodin vedle sebe")
+
+- **Split layout pro hodiny po skupinách**:
+  - Automatické seskupení lekcí stejné hodiny s více skupinami
+  - Split zobrazení 50/50 pro 2+ skupiny v rámečcích `.card-lesson-half`
+  - Group badges nahoře (oranžové, bílý text)
+  - Diagonální čára přes zrušené hodiny (CSS gradient `::after`)
+
+- **SVG ikony místo emoji**:
+  - Badge ikony: Warning trojúhelník (⚠️ → SVG) a Ban kruh (🚫 → SVG)
+  - Detail ikony: Učitel (user icon), Místnost (door icon), Skupina (users icon)
+  - Lepší škálovatelnost a profesionální vzhled
+
+- **Responzivní navigace**:
+  - Mobile (max-width: 768px): Navigation šipky skryté, jen swipe gestures + dots
+  - Desktop (min-width: 769px): Navigation šipky viditelné
+  - Enhanced dots na mobilu (větší velikost pro lepší touch target)
+  - Vylepšený swipe handler s threshold 30px a horizontal/vertical detection
+
+### Změněno
+- **Unified design pro single a split hodiny**:
+  - Single hodiny nyní používají stejný `.card-lesson-half` container jako split hodiny
+  - Konzistentní vizuální styl: border, padding, box-shadow, centered layout
+  - Flexbox s `:only-child` selector pro full-width single lessons
+
+- **CSS (`public/css/layout-card-view.css`)**:
+  - Přepsány styly pro `.lesson-card-full` - min/max-width: calc(100% - 16px)
+  - Card header row s flexbox: subject (hodina) + time-meta (čas + status dot)
+  - Status dot s box-shadow glow efektem
+  - Split layout styly: `.card-lessons-split`, `.card-lesson-half`, `.lesson-group-badge`
+  - Diagonal line pro removed lessons pomocí gradient v `::after`
+  - Media query pro mobil: skrytí `.card-view-navigation`, zvětšení dots
+
+- **JavaScript (`public/js/layout-renderers.js`)**:
+  - Přidán grouping algorithm: `lessonsByHour` seskupuje lekce podle `lesson.hour`
+  - `renderSingleLesson()` - nyní používá `.card-lesson-half` wrapper (unified design)
+  - `renderSplitLessons()` - helper pro split layout s group badges
+  - Conditional rendering: `lessons.length === 1 ? renderSingleLesson() : renderSplitLessons()`
+  - Swipe gestures s touchstart/touchmove/touchend event listeners
+  - Click handlers pro modal otevření - separate pro single i split lessons
+
+### UI/UX vylepšení
+- Čitelnější struktura: hodina + čas na jednom řádku
+- Barevná vizuální indikace změn/zrušení pomocí status dots s glow efektem
+- Minimalistický design s lepším spacing (gap: 12px)
+- Touch-friendly na mobilu (swipe only, žádné šipky, lower threshold)
+- Profesionální vzhled se SVG ikonami místo emoji
+- Konzistentní design mezi single a split hodinami (stejný rámečkový styl)
+- Group badges viditelné v dark mode (SPŠD orange + white text)
+
+### Modifikované soubory
+- `public/css/layout-card-view.css` - kompletní redesign stylů, split layout, unified design
+- `public/js/layout-renderers.js` - grouping algorithm, renderSingleLesson/renderSplitLessons helpers, unified wrapper
+
+---
+
 ## [1.2] - 2025-12-29
 ### fix(layout): kompletní oprava layout rendering systému
 

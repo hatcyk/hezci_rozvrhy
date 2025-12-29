@@ -8,30 +8,211 @@
     position: relative;
     min-height: 400px;
     padding: 20px 0;
+    touch-action: pan-y;
 }
 
 .card-view-wrapper {
     display: flex;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    touch-action: pan-y;
+    touch-action: none;
 }
 
 .lesson-card-full {
-    min-width: 100%;
-    padding: 24px;
+    min-width: calc(100% - 16px);
+    max-width: calc(100% - 16px);
+    min-height: 280px;
+    padding: 20px;
     background: var(--card-bg);
     border: 2px solid var(--border);
     border-radius: 16px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 16px var(--shadow);
     margin: 0 8px;
     cursor: pointer;
     transition: transform 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex-shrink: 0;
 }
 
 .lesson-card-full:active {
     transform: scale(0.98);
 }
 
+/* Card Header Row (Hour + Time) */
+.card-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.card-subject {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.2;
+}
+
+/* Lesson Subject Name */
+.lesson-subject-name {
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: var(--text-main);
+    line-height: 1.2;
+    margin-bottom: 8px;
+}
+
+.lesson-subject-name.removed {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.card-time-meta {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    font-weight: 600;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.card-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.card-status-dot.changed {
+    background: var(--spsd-orange);
+    box-shadow: 0 0 8px rgba(235, 93, 67, 0.5);
+}
+
+.card-status-dot.removed {
+    background: var(--spsd-red);
+    box-shadow: 0 0 8px rgba(255, 0, 51, 0.5);
+}
+
+/* Card Details */
+.card-details {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+}
+
+.card-detail-item {
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    stroke: var(--text-dim);
+    opacity: 0.8;
+}
+
+/* Card Badges Container */
+.card-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Split Lessons (multiple groups in same time slot) */
+.card-lessons-split {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.card-lesson-half {
+    flex: 1;
+    padding: 16px;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px var(--shadow-light);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Single lesson (only one child) - ensure proper styling */
+.card-lessons-split:has(.card-lesson-half:only-child) {
+    justify-content: center;
+}
+
+.card-lesson-half:only-child {
+    max-width: 100%;
+}
+
+.card-lesson-half .lesson-subject-name {
+    font-size: 1.2rem;
+    text-align: center;
+    margin-bottom: 4px;
+}
+
+.card-lesson-half .card-details {
+    width: 100%;
+    gap: 4px;
+    align-items: center;
+}
+
+.card-lesson-half .card-detail-item {
+    justify-content: center;
+    font-size: 0.85rem;
+}
+
+.card-lesson-half.lesson-removed {
+    opacity: 0.6;
+    border-color: var(--spsd-red);
+}
+
+.card-lesson-half.lesson-removed::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        to top right,
+        transparent calc(50% - 1px),
+        var(--spsd-red) calc(50% - 1px),
+        var(--spsd-red) calc(50% + 1px),
+        transparent calc(50% + 1px)
+    );
+    pointer-events: none;
+}
+
+.lesson-group-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    background: var(--spsd-orange);
+    color: white;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    order: -1;
+}
+
+/* Legacy support for old lesson-time/details classes */
 .lesson-card-full .lesson-time {
     font-size: 1rem;
     color: var(--accent);
@@ -63,24 +244,39 @@
 }
 
 .card-badge {
-    display: inline-block;
-    padding: 8px 16px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
     border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 700;
-    margin-top: 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.badge-icon {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
 }
 
 .card-badge.changed {
-    background: rgba(255, 193, 7, 0.2);
-    color: #FFC107;
-    border: 1px solid rgba(255, 193, 7, 0.4);
+    background: rgba(235, 93, 67, 0.15);
+    color: var(--spsd-orange);
+    border: 1px solid rgba(235, 93, 67, 0.3);
+}
+
+.card-badge.changed .badge-icon {
+    stroke: var(--spsd-orange);
 }
 
 .card-badge.removed {
-    background: rgba(255, 107, 107, 0.2);
-    color: #FF6B6B;
-    border: 1px solid rgba(255, 107, 107, 0.4);
+    background: rgba(255, 0, 51, 0.15);
+    color: var(--spsd-red);
+    border: 1px solid rgba(255, 0, 51, 0.3);
+}
+
+.card-badge.removed .badge-icon {
+    stroke: var(--spsd-red);
 }
 
 /* Navigation Dots */
@@ -164,17 +360,47 @@
     }
 
     .lesson-card-full {
-        padding: 20px;
-        margin: 0 4px;
+        padding: 16px;
+        gap: 12px;
     }
 
-    .lesson-card-full .lesson-subject {
-        font-size: 1.5rem;
+    .card-hour {
+        font-size: 1.8rem !important;
     }
 
-    .card-view-nav-btn {
-        width: 40px;
-        height: 40px;
+    .card-subject {
+        font-size: 1.4rem !important;
+    }
+
+    .card-detail-item {
+        font-size: 0.9rem !important;
+    }
+
+    /* Hide navigation buttons on mobile - swipe only */
+    .card-view-navigation {
+        display: none !important;
+    }
+
+    /* Enhance dots visibility on mobile */
+    .card-view-dots {
+        margin-top: 24px;
+        margin-bottom: 8px;
+    }
+
+    .card-view-dot {
+        width: 10px;
+        height: 10px;
+    }
+
+    .card-view-dot.active {
+        width: 28px;
+    }
+}
+
+/* Desktop: Keep navigation buttons visible */
+@media (min-width: 769px) {
+    .card-view-navigation {
+        display: flex;
     }
 }
 

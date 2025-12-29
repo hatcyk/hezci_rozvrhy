@@ -69,6 +69,118 @@ export async function renderWeekLayout() {
 }
 
 /**
+ * Render single lesson content
+ */
+function renderSingleLesson(lesson) {
+    const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+    const isChanged = lesson.changed;
+
+    return `
+        <div class="card-lessons-split">
+            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''}">
+                ${lesson.group ? `<div class="lesson-group-badge">${lesson.group}</div>` : ''}
+
+                <div class="lesson-subject-name">${lesson.subject}</div>
+
+                <!-- Details with SVG Icons -->
+                <div class="card-details">
+                    ${lesson.teacher ? `
+                        <div class="card-detail-item">
+                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            <span>${lesson.teacher}</span>
+                        </div>
+                    ` : ''}
+                    ${lesson.room ? `
+                        <div class="card-detail-item">
+                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <circle cx="10" cy="13" r="2"/>
+                                <path d="M10 17v-2"/>
+                            </svg>
+                            <span>${lesson.room}</span>
+                        </div>
+                    ` : ''}
+                </div>
+
+                <!-- Status Badges -->
+                ${isChanged || isRemoved ? `
+                    <div class="card-badges">
+                        ${isChanged ? `
+                            <div class="card-badge changed">
+                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                                    <line x1="12" y1="9" x2="12" y2="13"/>
+                                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                                </svg>
+                                <span>Změna v rozvrhu</span>
+                            </div>
+                        ` : ''}
+                        ${isRemoved ? `
+                            <div class="card-badge removed">
+                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="15" y1="9" x2="9" y2="15"/>
+                                    <line x1="9" y1="9" x2="15" y2="15"/>
+                                </svg>
+                                <span>Hodina zrušena</span>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Render split lessons (multiple groups in same time slot)
+ */
+function renderSplitLessons(lessons) {
+    let html = '<div class="card-lessons-split">';
+
+    lessons.forEach(lesson => {
+        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+
+        html += `
+            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''}">
+                ${lesson.group ? `<div class="lesson-group-badge">${lesson.group}</div>` : ''}
+                <div class="lesson-subject-name">${lesson.subject}</div>
+
+                <div class="card-details">
+                    ${lesson.teacher ? `
+                        <div class="card-detail-item">
+                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            <span>${lesson.teacher}</span>
+                        </div>
+                    ` : ''}
+                    ${lesson.room ? `
+                        <div class="card-detail-item">
+                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <circle cx="10" cy="13" r="2"/>
+                                <path d="M10 17v-2"/>
+                            </svg>
+                            <span>${lesson.room}</span>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    });
+
+    html += '</div>';
+    return html;
+}
+
+/**
  * Render Card View Layout (swipeable cards)
  * Shows lessons as swipeable cards
  */
@@ -103,28 +215,42 @@ export function renderCardLayout() {
         return;
     }
 
+    // Group lessons by hour (for handling multiple groups in same time slot)
+    const lessonsByHour = {};
+    dayLessons.forEach(lesson => {
+        if (!lessonsByHour[lesson.hour]) {
+            lessonsByHour[lesson.hour] = [];
+        }
+        lessonsByHour[lesson.hour].push(lesson);
+    });
+
+    const hours = Object.keys(lessonsByHour).sort((a, b) => parseInt(a) - parseInt(b));
     const currentCardIndex = state.layoutPreferences['card-view'].cardIndex || 0;
 
     let html = `<div class="card-view-wrapper" style="transform: translateX(-${currentCardIndex * 100}%)">`;
 
-    dayLessons.forEach((lesson, index) => {
-        const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
+    hours.forEach((hour, cardIndex) => {
+        const lessons = lessonsByHour[hour];
+        const timeInfo = lessonTimes.find(t => t.hour === parseInt(hour));
         const timeLabel = timeInfo ? timeInfo.label : '';
 
-        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-        const isChanged = lesson.changed;
+        // Check if any lesson has change/removed status
+        const hasChanged = lessons.some(l => l.changed);
+        const hasRemoved = lessons.some(l => l.type === 'removed' || l.type === 'absent');
 
         html += `
-            <div class="lesson-card-full" data-card-index="${index}" data-lesson-id="${lesson.day}-${lesson.hour}">
-                <div class="lesson-time">${lesson.hour}. hodina - ${timeLabel}</div>
-                <div class="lesson-subject ${isRemoved ? 'removed' : ''}">${lesson.subject}</div>
-                <div class="lesson-details">
-                    ${lesson.teacher ? `<div><strong>Učitel:</strong> ${lesson.teacher}</div>` : ''}
-                    ${lesson.room ? `<div><strong>Místnost:</strong> ${lesson.room}</div>` : ''}
-                    ${lesson.group ? `<div><strong>Skupina:</strong> ${lesson.group}</div>` : ''}
+            <div class="lesson-card-full" data-card-index="${cardIndex}" data-lesson-id="${lessons[0].day}-${hour}">
+                <!-- Header: Hour + Time -->
+                <div class="card-header-row">
+                    <div class="card-subject">${hour}. hodina</div>
+                    <div class="card-time-meta">
+                        ${timeLabel}
+                        ${hasRemoved || hasChanged ? `<span class="card-status-dot ${hasRemoved ? 'removed' : 'changed'}"></span>` : ''}
+                    </div>
                 </div>
-                ${isChanged ? '<div class="card-badge changed">⚠️ Změna v rozvrhu</div>' : ''}
-                ${isRemoved ? '<div class="card-badge removed">🚫 Hodina zrušena</div>' : ''}
+
+                <!-- Lessons (split if multiple groups) -->
+                ${lessons.length === 1 ? renderSingleLesson(lessons[0]) : renderSplitLessons(lessons)}
             </div>
         `;
     });
@@ -133,7 +259,7 @@ export function renderCardLayout() {
 
     // Add navigation dots
     html += '<div class="card-view-dots">';
-    dayLessons.forEach((_, index) => {
+    hours.forEach((_, index) => {
         html += `<div class="card-view-dot ${index === currentCardIndex ? 'active' : ''}" data-dot-index="${index}"></div>`;
     });
     html += '</div>';
@@ -157,9 +283,9 @@ export function renderCardLayout() {
     container.innerHTML = html;
 
     // Add event listeners
-    initCardViewNavigation(dayLessons.length);
-    initCardViewSwipe(container, dayLessons.length);
-    addCardClickListeners(dayLessons);
+    initCardViewNavigation(hours.length);
+    initCardViewSwipe(hours.length);
+    addCardClickListeners(lessonsByHour);
 }
 
 /**
@@ -221,35 +347,51 @@ function navigateToCard(index, totalCards) {
 /**
  * Initialize card view swipe gestures
  */
-function initCardViewSwipe(container, totalCards) {
+function initCardViewSwipe(totalCards) {
+    const container = document.querySelector('.timetable-container.card-view-mode');
+    if (!container) return;
+
     let startX = 0;
-    let currentX = 0;
+    let startY = 0;
     let isDragging = false;
 
     container.addEventListener('touchstart', (e) => {
         startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
         isDragging = true;
     }, { passive: true });
 
     container.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
-        currentX = e.touches[0].clientX;
-    }, { passive: true });
 
-    container.addEventListener('touchend', () => {
+        // Prevent vertical scroll while swiping horizontally
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        const diffX = Math.abs(currentX - startX);
+        const diffY = Math.abs(currentY - startY);
+
+        if (diffX > diffY) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    container.addEventListener('touchend', (e) => {
         if (!isDragging) return;
         isDragging = false;
 
-        const diff = startX - currentX;
-        const threshold = 50;
+        const endX = e.changedTouches[0].clientX;
+        const diff = startX - endX;
+        const threshold = 30; // Lower threshold for easier swiping
 
         if (Math.abs(diff) > threshold) {
-            if (diff > 0) {
+            const currentIndex = state.layoutPreferences['card-view'].cardIndex || 0;
+
+            if (diff > 0 && currentIndex < totalCards - 1) {
                 // Swipe left - next card
-                navigateCard(1, totalCards);
-            } else {
+                navigateToCard(currentIndex + 1, totalCards);
+            } else if (diff < 0 && currentIndex > 0) {
                 // Swipe right - previous card
-                navigateCard(-1, totalCards);
+                navigateToCard(currentIndex - 1, totalCards);
             }
         }
     }, { passive: true });
@@ -258,11 +400,37 @@ function initCardViewSwipe(container, totalCards) {
 /**
  * Add click listeners to cards to open modal
  */
-function addCardClickListeners(dayLessons) {
-    document.querySelectorAll('.lesson-card-full').forEach((card, index) => {
-        card.addEventListener('click', () => {
-            showLessonModal(dayLessons[index]);
-        });
+function addCardClickListeners(lessonsByHour) {
+    document.querySelectorAll('.lesson-card-full').forEach((card) => {
+        // For single lesson cards
+        const singleLesson = card.querySelector('.card-lesson-single');
+        if (singleLesson) {
+            card.addEventListener('click', () => {
+                const lessonId = card.dataset.lessonId;
+                const [day, hour] = lessonId.split('-');
+                const lessons = lessonsByHour[hour];
+                if (lessons && lessons[0]) {
+                    showLessonModal(lessons[0]);
+                }
+            });
+        }
+
+        // For split lesson cards - click on individual halves
+        const lessonHalves = card.querySelectorAll('.card-lesson-half');
+        if (lessonHalves.length > 0) {
+            const lessonId = card.dataset.lessonId;
+            const [day, hour] = lessonId.split('-');
+            const lessons = lessonsByHour[hour];
+
+            lessonHalves.forEach((half, index) => {
+                half.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent card click
+                    if (lessons && lessons[index]) {
+                        showLessonModal(lessons[index]);
+                    }
+                });
+            });
+        }
     });
 }
 
