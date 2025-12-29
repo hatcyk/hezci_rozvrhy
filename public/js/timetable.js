@@ -364,7 +364,16 @@ export function renderTimetable(data) {
                         cardContent = `
                             <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
                             <div class="lesson-details">
-                                ${lesson.room ? `<span>${lesson.room}</span>` : ''}
+                                ${lesson.room ? `
+                                    <span class="lesson-detail-item">
+                                        <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                            <path d="M9 3v18"/>
+                                            <circle cx="15" cy="12" r="1" fill="currentColor"/>
+                                        </svg>
+                                        ${lesson.room}
+                                    </span>
+                                ` : ''}
                             </div>
                             ${className ? `<div class="lesson-group">${className}</div>` : ''}
                         `;
@@ -383,7 +392,16 @@ export function renderTimetable(data) {
                             <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
                             <div class="lesson-details">
                                 ${lesson.teacher ? `<span title="${lesson.teacher}">${displayTeacher}</span>` : ''}
-                                ${lesson.room ? `<span>${lesson.room}</span>` : ''}
+                                ${lesson.room ? `
+                                    <span class="lesson-detail-item">
+                                        <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                            <path d="M9 3v18"/>
+                                            <circle cx="15" cy="12" r="1" fill="currentColor"/>
+                                        </svg>
+                                        ${lesson.room}
+                                    </span>
+                                ` : ''}
                             </div>
                             ${lesson.group ? `<div class="lesson-group">${displayGroup}</div>` : ''}
                         `;

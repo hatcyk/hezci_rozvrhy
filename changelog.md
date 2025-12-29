@@ -6,6 +6,42 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.2] - 2025-12-29
+### feat(icons): jednotná ikona dveří pro místnost ve všech layoutech
+
+### Přidáno
+- **Ikona dveří pro místnost v single-day a week-view layoutech**
+  - Dříve: Místnost zobrazena pouze jako prostý text
+  - Nyní: SVG ikona dveří před číslem místnosti
+  - Konzistentní s card-view a compact-list layouty
+  - Lepší vizuální hierarchie a rozpoznatelnost
+
+### Změněno
+- **`public/js/timetable.js`**:
+  - Teacher view (řádky 367-376):
+    - Přidán wrapper `<span class="lesson-detail-item">` s SVG ikonu dveří
+  - Class view (řádky 395-404):
+    - Přidán wrapper `<span class="lesson-detail-item">` s SVG ikonu dveří
+  - SVG ikona: Stejná jako v card-view (door icon)
+
+- **`public/css/lesson-card.css`**:
+  - Nové CSS pravidla (řádky 168-179):
+    - `.lesson-detail-item`: flex container pro SVG ikony (gap: 4px)
+    - `.lesson-detail-icon`: 14x14px SVG s `stroke: var(--text-dim)`
+
+### Vizuální konzistence
+Ikona dveří je nyní jednotná napříč všemi layouty:
+- ✓ Single-day view (timetable grid)
+- ✓ Week view (timetable grid)
+- ✓ Card view (swipeable cards)
+- ✓ Compact list view (vertical list)
+
+### Modifikované soubory
+- `public/js/timetable.js` - přidání SVG ikony pro místnost
+- `public/css/lesson-card.css` - CSS pro ikonu
+
+---
+
 ## [1.6.1] - 2025-12-29
 ### fix(compact-list): oprava left border a status indikátorů
 

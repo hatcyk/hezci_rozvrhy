@@ -165,6 +165,19 @@
     transition: color var(--theme-transition);
 }
 
+.lesson-detail-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.lesson-detail-icon {
+    width: 14px;
+    height: 14px;
+    stroke: var(--text-dim);
+    flex-shrink: 0;
+}
+
 .lesson-group {
     font-size: 0.75rem;
     color: white;
