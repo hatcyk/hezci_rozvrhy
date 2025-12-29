@@ -1,0 +1,103 @@
+/**
+ * Layout Selection Modal Styles
+ */
+
+#layoutModal .modal {
+    max-width: 500px;
+    width: calc(100% - 32px);
+    margin: 16px;
+}
+
+.layout-option {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+    background: linear-gradient(135deg, rgba(0, 43, 79, 0.05) 0%, rgba(0, 43, 79, 0.02) 100%);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-bottom: 14px;
+    position: relative;
+}
+
+.layout-option:hover {
+    background: linear-gradient(135deg, rgba(0, 43, 79, 0.12) 0%, rgba(0, 43, 79, 0.06) 100%);
+    border-color: rgba(235, 93, 67, 0.4);
+    transform: translateY(-2px);
+}
+
+.layout-option.active {
+    background: linear-gradient(135deg, rgba(235, 93, 67, 0.15) 0%, rgba(235, 93, 67, 0.08) 100%);
+    border-color: var(--accent);
+    box-shadow: 0 4px 12px rgba(235, 93, 67, 0.2);
+}
+
+.layout-option.active::after {
+    content: '✓';
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    font-weight: 900;
+}
+
+.layout-option-icon {
+    flex-shrink: 0;
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #EB5D43 0%, #d94e37 100%);
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+}
+
+.layout-option-icon svg {
+    stroke: white;
+}
+
+.layout-option-content {
+    flex: 1;
+}
+
+.layout-option-title {
+    font-size: 1.1em;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 6px;
+}
+
+.layout-option-description {
+    font-size: 0.88em;
+    color: var(--text-dim);
+    line-height: 1.5;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    #layoutModal .modal {
+        width: calc(100% - 24px);
+        margin: 12px;
+    }
+
+    .layout-option {
+        padding: 16px;
+        gap: 12px;
+    }
+
+    .layout-option-icon {
+        width: 48px;
+        height: 48px;
+    }
+}

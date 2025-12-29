@@ -116,40 +116,11 @@ function selectDay(index) {
 }
 
 // Update mobile day view
-function updateMobileDayView() {
-    const rows = document.querySelectorAll('.timetable-row');
-
-    if (state.showWholeWeek) {
-        // Show all days when whole week view is active
-        rows.forEach(row => row.classList.add('active'));
-        // Hide day selector with animation when showing whole week
-        if (dom.daySelector) {
-            dom.daySelector.classList.add('hiding');
-            setTimeout(() => {
-                dom.daySelector.classList.add('hide-day-selector');
-                dom.daySelector.classList.remove('hiding');
-            }, 300); // Match CSS transition duration
-        }
-    } else {
-        // Show only selected day (original behavior)
-        rows.forEach((row, index) => {
-            if (index === state.selectedDayIndex) {
-                row.classList.add('active');
-            } else {
-                row.classList.remove('active');
-            }
-        });
-        // Show day selector with animation when showing single day
-        if (dom.daySelector) {
-            dom.daySelector.classList.remove('hide-day-selector');
-            // Force reflow to trigger animation
-            dom.daySelector.offsetHeight;
-            dom.daySelector.classList.add('showing');
-            setTimeout(() => {
-                dom.daySelector.classList.remove('showing');
-            }, 300);
-        }
-    }
+// DEPRECATED - now handled by layout-manager.js
+async function updateMobileDayView() {
+    // Delegate to layout manager
+    const { applyLayout } = await import('./layout-manager.js');
+    applyLayout();
 }
 
 // Render timetable

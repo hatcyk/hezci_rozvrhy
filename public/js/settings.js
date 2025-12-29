@@ -1,7 +1,11 @@
 /**
  * Settings Modal Module (Mobile Only)
- * Handles the settings modal that shows notifications, calendar, and theme options on mobile
+ * Handles the settings modal that shows notifications, layout, and theme options on mobile
  */
+
+import { state } from './state.js';
+import { switchLayout } from './layout-manager.js';
+import { getAvailableLayouts, getLayoutById } from './layout-registry.js';
 
 /**
  * Show settings modal
@@ -77,14 +81,11 @@ export function initSettings() {
         });
     }
 
-    if (settingsCalendar) {
-        settingsCalendar.addEventListener('click', () => {
+    const settingsLayout = document.getElementById('settingsLayout');
+    if (settingsLayout) {
+        settingsLayout.addEventListener('click', () => {
             closeSettingsModal();
-            // Trigger week view toggle
-            const weekViewToggle = document.getElementById('weekViewToggle');
-            if (weekViewToggle) {
-                weekViewToggle.click();
-            }
+            showLayoutModal();
         });
     }
 
@@ -95,6 +96,122 @@ export function initSettings() {
             const themeToggle = document.getElementById('themeToggle');
             if (themeToggle) {
                 themeToggle.click();
+            }
+        });
+    }
+
+    // Initialize layout modal
+    initLayoutModal();
+
+    // Update layout description on page load
+    updateLayoutDescription(state.layoutMode);
+}
+
+/**
+ * Show layout selection modal
+ */
+export function showLayoutModal() {
+    const modal = document.getElementById('layoutModal');
+    if (!modal) return;
+
+    // Populate layout options
+    populateLayoutOptions();
+
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+}
+
+/**
+ * Close layout modal
+ */
+export function closeLayoutModal() {
+    const modal = document.getElementById('layoutModal');
+    if (!modal) return;
+
+    // Add closing animation class
+    modal.classList.add('closing');
+
+    const onAnimationEnd = () => {
+        modal.classList.add('hidden');
+        modal.classList.remove('closing');
+        modal.style.display = 'none';
+        modal.removeEventListener('animationend', onAnimationEnd);
+    };
+
+    modal.addEventListener('animationend', onAnimationEnd);
+}
+
+/**
+ * Populate layout options in modal
+ */
+function populateLayoutOptions() {
+    const container = document.getElementById('layoutOptionsContainer');
+    if (!container) return;
+
+    const layouts = getAvailableLayouts('mobile');
+    const currentLayout = state.layoutMode;
+
+    let html = '';
+
+    layouts.forEach(layout => {
+        const isActive = layout.id === currentLayout;
+
+        html += `
+            <div class="layout-option ${isActive ? 'active' : ''}" data-layout-id="${layout.id}">
+                <div class="layout-option-icon">
+                    ${layout.icon}
+                </div>
+                <div class="layout-option-content">
+                    <div class="layout-option-title">${layout.name}</div>
+                    <div class="layout-option-description">${layout.description}</div>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+
+    // Add click listeners
+    container.querySelectorAll('.layout-option').forEach(option => {
+        option.addEventListener('click', () => {
+            const layoutId = option.dataset.layoutId;
+            switchLayout(layoutId);
+
+            // Update current layout description in settings modal
+            updateLayoutDescription(layoutId);
+
+            closeLayoutModal();
+        });
+    });
+}
+
+/**
+ * Update layout description in settings modal
+ */
+export function updateLayoutDescription(layoutId) {
+    const layout = getLayoutById(layoutId);
+    const descElement = document.getElementById('currentLayoutDescription');
+
+    if (descElement) {
+        descElement.textContent = layout.name;
+    }
+}
+
+/**
+ * Initialize layout modal listeners
+ */
+function initLayoutModal() {
+    const layoutModalClose = document.getElementById('layoutModalClose');
+    const layoutModal = document.getElementById('layoutModal');
+
+    if (layoutModalClose) {
+        layoutModalClose.addEventListener('click', closeLayoutModal);
+    }
+
+    if (layoutModal) {
+        layoutModal.addEventListener('click', (e) => {
+            if (e.target === layoutModal) {
+                closeLayoutModal();
             }
         });
     }

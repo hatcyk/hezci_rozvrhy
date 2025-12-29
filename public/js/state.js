@@ -7,9 +7,16 @@ export const state = {
     selectedScheduleType: 'actual',
     weekOffset: 0,
     teacherAbbreviationMap: null,
-    showWholeWeek: false,
+    showWholeWeek: false, // DEPRECATED - use layoutMode instead
     notificationsEnabled: false,
-    watchedTimetables: []
+    watchedTimetables: [],
+    layoutMode: 'single-day',
+    layoutPreferences: {
+        'single-day': {},
+        'week-view': {},
+        'card-view': { cardIndex: 0 },
+        'compact-list': { scrollPosition: 0 }
+    }
 };
 
 export function updateState(key, value) {

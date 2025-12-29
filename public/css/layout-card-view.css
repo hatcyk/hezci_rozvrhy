@@ -1,0 +1,186 @@
+/**
+ * Card View Layout Styles
+ */
+
+/* Card View Mode */
+.timetable-container.card-view-mode {
+    overflow: hidden;
+    position: relative;
+    min-height: 400px;
+    padding: 20px 0;
+}
+
+.card-view-wrapper {
+    display: flex;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    touch-action: pan-y;
+}
+
+.lesson-card-full {
+    min-width: 100%;
+    padding: 24px;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    margin: 0 8px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.lesson-card-full:active {
+    transform: scale(0.98);
+}
+
+.lesson-card-full .lesson-time {
+    font-size: 1rem;
+    color: var(--accent);
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+
+.lesson-card-full .lesson-subject {
+    font-size: 1.8rem;
+    font-weight: 800;
+    margin-bottom: 16px;
+    color: var(--text-main);
+}
+
+.lesson-card-full .lesson-subject.removed {
+    text-decoration: line-through;
+    opacity: 0.6;
+}
+
+.lesson-card-full .lesson-details {
+    font-size: 1rem;
+    color: var(--text-dim);
+    line-height: 1.8;
+}
+
+.lesson-card-full .lesson-details strong {
+    color: var(--text-main);
+    font-weight: 700;
+}
+
+.card-badge {
+    display: inline-block;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-top: 16px;
+}
+
+.card-badge.changed {
+    background: rgba(255, 193, 7, 0.2);
+    color: #FFC107;
+    border: 1px solid rgba(255, 193, 7, 0.4);
+}
+
+.card-badge.removed {
+    background: rgba(255, 107, 107, 0.2);
+    color: #FF6B6B;
+    border: 1px solid rgba(255, 107, 107, 0.4);
+}
+
+/* Navigation Dots */
+.card-view-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+.card-view-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.card-view-dot:hover {
+    background: var(--text-dim);
+}
+
+.card-view-dot.active {
+    background: var(--accent);
+    width: 24px;
+    border-radius: 4px;
+}
+
+/* Navigation Buttons */
+.card-view-navigation {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 16px;
+    pointer-events: none;
+}
+
+.card-view-nav-btn {
+    width: 44px;
+    height: 44px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: all;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.card-view-nav-btn:hover:not(:disabled) {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.card-view-nav-btn:active:not(:disabled) {
+    transform: scale(0.95);
+}
+
+.card-view-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.card-view-nav-btn svg {
+    stroke: white;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .timetable-container.card-view-mode {
+        min-height: 350px;
+        padding: 16px 0;
+    }
+
+    .lesson-card-full {
+        padding: 20px;
+        margin: 0 4px;
+    }
+
+    .lesson-card-full .lesson-subject {
+        font-size: 1.5rem;
+    }
+
+    .card-view-nav-btn {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+    .lesson-card-full {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    }
+}
