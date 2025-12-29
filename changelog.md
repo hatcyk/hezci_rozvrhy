@@ -6,6 +6,37 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.3] - 2025-12-29
+### feat(ui): vylepšení group badge - přesun do pravého dolního rohu
+
+### Vylepšeno
+- **Group badge (indikátor skupiny) přesunut do pravého dolního rohu**
+  - Dříve: Badge byl v levém horním rohu s menším stylingem
+  - Nyní: Badge je v pravém dolním rohu s výraznějším designem
+  - Inspirováno stylingem z card view
+  - Lepší viditelnost a konzistence napříč layouty
+
+### Změněno
+- **`public/css/lesson-card.css`**:
+  - `.lesson-group` (řádky 181-194):
+    - Přidáno `position: absolute; bottom: 6px; right: 6px`
+    - Font-size: 0.75rem → 0.85rem (větší)
+    - Padding: 3px 8px → 5px 10px (větší)
+    - Border-radius: 6px → 8px (zaoblenější)
+    - Box-shadow: silnější stín `0 2px 6px rgba(235, 93, 67, 0.4)`
+    - Přidán `z-index: 5` (vždy navrchu)
+    - Odstraněno `margin-top` a `align-self` (již nepotřebné)
+
+### Vizuální změny
+- Badge je nyní výraznější a lépe viditelný
+- Pozice v pravém dolním rohu lépe odděluje skupinu od ostatních informací
+- Konzistentní s designem card view layoutu
+
+### Modifikované soubory
+- `public/css/lesson-card.css` - přesun a vylepšení group badge
+
+---
+
 ## [1.6.2] - 2025-12-29
 ### feat(icons): jednotná ikona dveří pro místnost ve všech layoutech
 
