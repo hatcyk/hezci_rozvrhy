@@ -4,16 +4,34 @@
  */
 
 import { state } from './state.js';
+import { dom } from './dom.js';
 import { days, lessonTimes } from './constants.js';
 import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
+import { renderTimetable } from './timetable.js';
 
 /**
  * Render Single Day Layout (original behavior)
  * Shows only the selected day's lessons in table format
  */
-export function renderSingleDayLayout() {
-    const rows = document.querySelectorAll('.timetable-row');
+export async function renderSingleDayLayout() {
+    let rows = document.querySelectorAll('.timetable-row');
+
+    // If no rows exist, regenerate the timetable
+    if (rows.length === 0) {
+        // Card/compact layouts destroy #timetable element, need to recreate it
+        const container = document.querySelector('.timetable-container');
+        container.innerHTML = '<div class="timetable-grid" id="timetable"></div>';
+
+        // Update dom reference to new element
+        dom.timetableGrid = document.getElementById('timetable');
+
+        // Regenerovat tabulku
+        renderTimetable(state.currentTimetableData);
+
+        // Query again after regeneration
+        rows = document.querySelectorAll('.timetable-row');
+    }
 
     rows.forEach((row, index) => {
         if (index === state.selectedDayIndex) {
@@ -28,8 +46,25 @@ export function renderSingleDayLayout() {
  * Render Week View Layout (show all days)
  * Shows all 5 working days in table format
  */
-export function renderWeekLayout() {
-    const rows = document.querySelectorAll('.timetable-row');
+export async function renderWeekLayout() {
+    let rows = document.querySelectorAll('.timetable-row');
+
+    // If no rows exist, regenerate the timetable
+    if (rows.length === 0) {
+        // Card/compact layouts destroy #timetable element, need to recreate it
+        const container = document.querySelector('.timetable-container');
+        container.innerHTML = '<div class="timetable-grid" id="timetable"></div>';
+
+        // Update dom reference to new element
+        dom.timetableGrid = document.getElementById('timetable');
+
+        // Regenerovat tabulku
+        renderTimetable(state.currentTimetableData);
+
+        // Query again after regeneration
+        rows = document.querySelectorAll('.timetable-row');
+    }
+
     rows.forEach(row => row.classList.add('active'));
 }
 

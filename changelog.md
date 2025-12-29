@@ -6,6 +6,49 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.2] - 2025-12-29
+### fix(layout): kompletní oprava layout rendering systému
+
+### Opraveno
+- **7 kritických bugů v layout rendering systému**:
+
+  1. **První načtení stránky** - den se nezobrazoval ani po refreshi
+     - Příčina: `loadTimetable()` nevolal `applyLayout()` po vygenerování HTML
+     - Řešení: Přidán `await applyLayout()` na konec `loadTimetable()`
+
+  2. **Week view button nefungoval** - při kliknutí se nezobrazil celý týden
+     - Příčina: `initWeekViewToggle()` měnil deprecated `showWholeWeek` místo `layoutMode`
+     - Řešení: Přepsán na `switchLayout()` s `layoutMode`
+
+  3. **DaySelector zmizel** - při přepínání layoutů zmizely day buttony (PO, ÚT, ST...)
+     - Příčina: `renderSingleDayLayout()` a `renderWeekLayout()` mažou `.timetable-container` včetně daySelectoru
+     - Řešení: Odstraněno mazání containeru, mazat se má jen grid
+
+  4. **Race conditions** - asynchronní operace bez await
+     - Příčina: `selectDay()` a `updateMobileDayView()` volaly `applyLayout()` bez await
+     - Řešení: Přidány async/await všude kde chyběly
+
+  5. **State mismatch** - dva systémy vedle sebe
+     - Příčina: `showWholeWeek` vs `layoutMode`
+     - Řešení: Unifikováno na `layoutMode`, `showWholeWeek` je deprecated
+
+  6. **Nekonečný loop** (již opraveno dříve)
+     - Příčina: `renderTimetable()` volal `updateMobileDayView()` → loop
+     - Řešení: Odstraněno volání, což vytvořilo problém #1 (nyní opraven)
+
+### Změněno
+- `loadTimetable()` nyní volá `await applyLayout()` po renderování HTML
+- `initWeekViewToggle()` nyní mění `layoutMode` a volá `switchLayout()`
+- `renderSingleDayLayout()` a `renderWeekLayout()` již nemažou `.timetable-container`
+- `selectDay()` je nyní async funkce s `await updateMobileDayView()`
+- `updateMobileDayView()` nyní používá `await applyLayout()`
+
+### Modifikované soubory
+- `public/js/timetable.js` - opraveny loadTimetable, initWeekViewToggle, selectDay, updateMobileDayView
+- `public/js/layout-renderers.js` - odstraněno mazání containeru
+
+---
+
 ## [1.1] - 2025-12-29
 ### fix(ui): odstranění hover animací a lokalizace layout systému
 

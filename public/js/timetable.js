@@ -45,19 +45,20 @@ export function populateValueSelect() {
 export function initWeekViewToggle() {
     if (!dom.weekViewToggle) return;
 
-    dom.weekViewToggle.addEventListener('click', () => {
-        // Toggle the state
-        updateState('showWholeWeek', !state.showWholeWeek);
+    dom.weekViewToggle.addEventListener('click', async () => {
+        // ✓ Měnit layoutMode, ne showWholeWeek (deprecated)
+        const newMode = state.layoutMode === 'single-day' ? 'week-view' : 'single-day';
 
         // Update button appearance
-        if (state.showWholeWeek) {
+        if (newMode === 'week-view') {
             dom.weekViewToggle.classList.add('active');
         } else {
             dom.weekViewToggle.classList.remove('active');
         }
 
-        // Update the view
-        updateMobileDayView();
+        // Switch layout (volá applyLayout interně)
+        const { switchLayout } = await import('./layout-manager.js');
+        await switchLayout(newMode);
     });
 }
 
@@ -109,10 +110,10 @@ function updateActiveDayButton() {
 }
 
 // Select day on mobile
-function selectDay(index) {
+async function selectDay(index) {
     updateState('selectedDayIndex', index);
     updateActiveDayButton();
-    updateMobileDayView();
+    await updateMobileDayView();
 }
 
 // Update mobile day view
@@ -120,7 +121,7 @@ function selectDay(index) {
 async function updateMobileDayView() {
     // Delegate to layout manager
     const { applyLayout } = await import('./layout-manager.js');
-    applyLayout();
+    await applyLayout();
 }
 
 // Render timetable
@@ -400,7 +401,8 @@ export function renderTimetable(data) {
     });
 
     // Aktualizovat viditelnost dnů na mobilu
-    updateMobileDayView();
+    // REMOVED: updateMobileDayView() - způsobovalo nekonečný loop
+    // Layout se aplikuje v layout-manager.js přes applyLayout()
 }
 
 // Load timetable
@@ -446,6 +448,10 @@ export async function loadTimetable() {
         updateState('currentTimetableData', filteredData);
         createDaySelector();
         renderTimetable(filteredData);
+
+        // ✓ Aplikovat layout po vygenerování HTML
+        const { applyLayout } = await import('./layout-manager.js');
+        await applyLayout();
 
     } catch (e) {
         dom.errorDiv.textContent = e.message;

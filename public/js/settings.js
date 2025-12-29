@@ -173,9 +173,9 @@ function populateLayoutOptions() {
 
     // Add click listeners
     container.querySelectorAll('.layout-option').forEach(option => {
-        option.addEventListener('click', () => {
+        option.addEventListener('click', async () => {
             const layoutId = option.dataset.layoutId;
-            switchLayout(layoutId);
+            await switchLayout(layoutId);
 
             // Update current layout description in settings modal
             updateLayoutDescription(layoutId);

@@ -64,7 +64,7 @@ function migrateOldShowWholeWeek() {
  * Switch to a new layout
  * @param {string} layoutId - ID of the layout to switch to
  */
-export function switchLayout(layoutId) {
+export async function switchLayout(layoutId) {
     const layout = getLayoutById(layoutId);
 
     if (!layout) {
@@ -81,7 +81,7 @@ export function switchLayout(layoutId) {
     saveLayoutPreference(layoutId);
 
     // Apply layout to DOM
-    applyLayout();
+    await applyLayout();
 
     // TODO: Sync to Firestore (optional)
     // syncLayoutToFirestore(layoutId);
@@ -145,7 +145,7 @@ export async function applyLayout() {
         const renderer = rendererMap[layout.renderer];
 
         if (renderer) {
-            renderer();
+            await renderer();
         } else {
             console.error(`Renderer not found: ${layout.renderer}`);
         }
