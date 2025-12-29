@@ -6,6 +6,50 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.9] - 2025-12-29
+### fix(card-view): oprava offsetu karty při přepnutí z jiných layoutů
+
+### Opraveno
+- **CardIndex není resetován při přepnutí layoutu** (KRITICKÝ BUG)
+  - Dříve: Při přepnutí z week-view na card-view zůstával starý `cardIndex` v state
+  - Problém: Karta se zobrazila s offsetem (např. na pozici 3 místo 0)
+  - Body (scroll dots) byly zobrazeny správně, ale aktivní byl nesprávný bod
+  - Uživatel očekával zobrazení první karty, ale viděl kartu uprostřed
+  - Nyní: Při přepnutí NA card-view se `cardIndex` resetuje na 0
+  - Karta vždy začne na první pozici
+
+### Změněno
+- **`public/js/layout-manager.js`**:
+  - `switchLayout()` funkce (řádky 80-83):
+    - Přidána kontrola: `if (layoutId === 'card-view')`
+    - Přidán reset: `updateLayoutPreference('card-view', { cardIndex: 0 })`
+    - Resetuje cardIndex na 0 při každém přepnutí NA card-view
+
+### Technické detaily
+**Scénář který způsoboval bug:**
+1. Uživatel v card-view posune na kartu 3 (cardIndex = 3)
+2. Přepne na week-view (cardIndex = 3 zůstává v state)
+3. Přepne zpět na card-view
+4. **Bug:** Karta se zobrazí na pozici 3 (transform: `translateX(-300%)`)
+5. **Fix:** Nyní se cardIndex resetuje, karta začne na pozici 0
+
+**Konzistence s existujícím chováním:**
+- cardIndex se již resetoval při přepnutí dne (timetable.js:119)
+- cardIndex se již resetoval při přepnutí rozvrhu (timetable.js:481)
+- **Nově:** cardIndex se resetuje i při přepnutí layoutu
+
+### Vizuální změny
+- Při přepnutí na card-view se vždy zobrazí první karta
+- První bod (scroll dot) je aktivní
+- Transform je vždy `translateX(0%)` po přepnutí layoutu
+- Navigační šipky mají správný disabled state
+- Konzistentní UX napříč všemi způsoby navigace
+
+### Modifikované soubory
+- `public/js/layout-manager.js` - přidání cardIndex reset do switchLayout()
+
+---
+
 ## [1.6.8] - 2025-12-29
 ### fix(timetable): širší kartičky v denním a týdenním zobrazení (desktop i mobil)
 

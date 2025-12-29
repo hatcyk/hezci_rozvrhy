@@ -77,6 +77,11 @@ export async function switchLayout(layoutId) {
     // Update state
     updateState('layoutMode', layoutId);
 
+    // Reset card-view index when switching TO card-view
+    if (layoutId === 'card-view') {
+        updateLayoutPreference('card-view', { cardIndex: 0 });
+    }
+
     // Save to localStorage
     saveLayoutPreference(layoutId);
 
