@@ -6,6 +6,72 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.6] - 2025-12-29
+### fix(compact-list): výrazný group badge v pravém dolním rohu
+
+### Opraveno
+- **Group badge (indikátor skupiny) v compact list layoutu**
+  - Dříve: Skupina zobrazena inline v detailech s malou ikonou uživatelů
+  - Problém: Nevýrazné, těžko viditelné, nekonzistentní s card view
+  - Nyní: Výrazný oranžový badge v pravém dolním rohu
+  - Konzistentní styling napříč všemi layouty
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Compact list rendering (řádek 552):
+    - Skupina přesunuta z `.compact-lesson-details` ven z `.compact-lesson-content`
+    - Změněna z `<span class="compact-detail-item">` na `<div class="compact-group-badge">`
+    - Odstraněna SVG ikona uživatelů (již nepotřebná)
+    - Přidána na konec `.compact-lesson-item` pro absolutní pozicování
+
+- **`public/css/layout-compact-list.css`**:
+  - Nová CSS třída `.compact-group-badge` (řádky 236-249):
+    - `position: absolute; bottom: 8px; right: 8px`
+    - `background: var(--spsd-orange)` (oranžový gradient)
+    - `color: white` (bílý text)
+    - `font-size: 0.85rem; font-weight: 700`
+    - `padding: 6px 12px; border-radius: 8px`
+    - `box-shadow: 0 2px 6px rgba(235, 93, 67, 0.4)`
+    - `z-index: 5` (vždy nahoře)
+
+### Vizuální změny
+- Badge je nyní výrazný oranžový obdélník v pravém dolním rohu
+- Bílý text na oranžovém pozadí pro maximální čitelnost
+- Konzistentní s designem card view a lesson-card layoutů
+- Stín pro zvýraznění a oddělení od pozadí
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - přesun group badge z inline do samostatného elementu
+- `public/css/layout-compact-list.css` - styling pro výrazný badge
+
+---
+
+## [1.6.5] - 2025-12-29
+### fix(card-view): přesun navigačních šipek k dolním indikátorům
+
+### Změněno
+- **Navigační šipky přesunuty z vertikálního středu dolů k indikátorům**
+  - Dříve: Šipky byly vertikálně vycentrované (`top: 50%; transform: translateY(-50%)`)
+  - Nyní: Šipky jsou v dolní části zarovnané s tečkovými indikátory (`bottom: 20px`)
+  - Lepší vizuální soudržnost - šipky a indikátory jsou nyní na stejné úrovni
+  - Uvolněn prostor v horní části pro lepší zobrazení obsahu karty
+
+### Aktualizované soubory
+- **`public/css/layout-card-view.css`**:
+  - `.card-view-navigation` (řádky 310-318):
+    - Změněno z `top: 50%; transform: translateY(-50%);` na `bottom: 20px;`
+    - Odstraněn `transform: translateY(-50%)` (již nepotřebný)
+
+### Vizuální změny
+- Navigační tlačítka (prev/next) jsou nyní zarovnána s `.card-view-dots` indikátory
+- Šipky jsou na stejné vertikální úrovni jako tečky ukazující aktuální kartu
+- Čistší a konzistentnější layout s lepším využitím prostoru
+
+### Modifikované soubory
+- `public/css/layout-card-view.css` - změna pozice navigačních tlačítek
+
+---
+
 ## [1.6.4] - 2025-12-29
 ### feat(icons): aktualizace ikony dveří na Lucide door-open
 

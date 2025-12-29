@@ -309,8 +309,7 @@
 /* Navigation Buttons */
 .card-view-navigation {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
+    bottom: 20px;
     width: 100%;
     display: flex;
     justify-content: space-between;
