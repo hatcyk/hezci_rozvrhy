@@ -6,6 +6,75 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.5] - 2025-12-29
+### fix(ui): vylepšení ikon a viditelnosti v dark mode
+
+### Opraveno
+- **Ikona místnosti (room) nahrazena za ikonu dveří**
+  - Původní ikona dokumentu s klíčem byla matoucí
+  - Nová ikona: čistý design dveří s klikou, konzistentní se stávajícími SVG ikonami
+  - Aplikováno v card-view i compact-list layoutech
+
+- **Viditelnost vybraného layoutu v dark mode** (KRITICKÝ UX BUG)
+  - Checkmark na vybraném layoutu byl špatně viditelný (tmavě modrý na tmavém pozadí)
+  - Border vybraného layoutu byl téměř neviditelný v dark mode
+  - Řešení:
+    - Checkmark background změněn z `var(--accent)` (#002B4F) na `var(--spsd-orange)` (#EB5D43)
+    - Zvětšen checkmark z 28px na 32px pro lepší viditelnost
+    - Border změněn na oranžovou barvu (`--spsd-orange`) se zvětšením na 3px
+    - Přidán silnější box-shadow pro zvýraznění
+
+- **X tlačítko (zavřít) v modálním okně**
+  - Offset při hoveru způsobený transform rotate
+  - Řešení: Přidán scale(1.1) a jemné pozadí pro lepší vizuální feedback
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Řádky 100-110, 167-177: Aktualizována SVG ikona pro místnost (room)
+    - Nový design: `<rect>` + vertikální linie + kruh pro kliku
+
+- **`public/css/layout-modal.css`**:
+  - `.layout-option.active` (řádek 72-77):
+    - `border-color: var(--spsd-orange)` místo `var(--accent)`
+    - `border-width: 3px` pro výraznější ohraničení
+  - `.layout-option.active::after` (řádek 79-95):
+    - `background: var(--spsd-orange)` místo `var(--accent)`
+    - Velikost zvětšena z 28px na 32px
+    - Font-size zvětšen z 1rem na 1.2rem
+    - Přidán `box-shadow: 0 2px 8px rgba(235, 93, 67, 0.4)`
+  - `#layoutModal .modal-close:hover` (řádek 43-48):
+    - Přidán `scale(1.1)` k transformaci
+    - Přidáno pozadí `rgba(255, 255, 255, 0.1)`
+    - Přidán `border-radius: 8px`
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - aktualizace ikony místnosti
+- `public/css/layout-modal.css` - zlepšení viditelnosti v dark mode
+
+---
+
+## [1.4.1] - 2025-12-29
+### fix(card-view): cleanup event listeners při prázdném rozvrhu
+
+### Opraveno
+- **Event listeners přetrvávaly při přepnutí na prázdný rozvrh** (KRITICKÝ BUG)
+  - Scénář: Rozvrh A s hodinami → Rozvrh B s 0 hodinami → stále lze scrollovat
+  - `renderCardLayout()` při 0 hodinách dělal early return bez abortu starých listenerů
+  - Swipe a navigation listeners z předchozího rozvrhu zůstávaly aktivní na prázdném rozvrhu
+  - Řešení: Abort `swipeController` a `navigationController` před early return
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - `renderCardLayout()` (řádek 201-228):
+    - Přidán cleanup event listeners před early return při 0 hodinách
+    - Kontrola a abort obou controllerů pokud existují
+    - Nastavení na null pro cleanup
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - cleanup listeners při prázdném rozvrhu
+
+---
+
 ## [1.4] - 2025-12-29
 ### fix(card-view): oprava násobení scrollování, validace a resetování cardIndex
 

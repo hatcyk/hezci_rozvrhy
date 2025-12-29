@@ -42,7 +42,9 @@
 
 #layoutModal .modal-close:hover {
     opacity: 1;
-    transform: rotate(90deg);
+    transform: rotate(90deg) scale(1.1);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
 }
 
 #layoutModal .modal-content {
@@ -71,8 +73,9 @@
 
 .layout-option.active {
     background: linear-gradient(135deg, rgba(235, 93, 67, 0.15) 0%, rgba(235, 93, 67, 0.08) 100%);
-    border-color: var(--accent);
-    box-shadow: 0 4px 12px rgba(235, 93, 67, 0.2);
+    border-color: var(--spsd-orange);
+    border-width: 3px;
+    box-shadow: 0 4px 12px rgba(235, 93, 67, 0.3);
 }
 
 .layout-option.active::after {
@@ -80,16 +83,17 @@
     position: absolute;
     top: 12px;
     right: 12px;
-    width: 28px;
-    height: 28px;
-    background: var(--accent);
+    width: 32px;
+    height: 32px;
+    background: var(--spsd-orange);
     color: white;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1rem;
+    font-size: 1.2rem;
     font-weight: 900;
+    box-shadow: 0 2px 8px rgba(235, 93, 67, 0.4);
 }
 
 .layout-option-icon {
