@@ -85,6 +85,17 @@ export async function switchLayout(layoutId) {
     // Save to localStorage
     saveLayoutPreference(layoutId);
 
+    // Cleanup event listeners from previous layout
+    const { cleanupLayoutEventListeners } = await import('./layout-renderers.js');
+    cleanupLayoutEventListeners();
+
+    // Reset scroll position when switching layouts
+    const container = document.querySelector('.timetable-container');
+    if (container) {
+        container.scrollLeft = 0;
+        container.scrollTop = 0;
+    }
+
     // Apply layout to DOM
     await applyLayout();
 
@@ -111,10 +122,6 @@ export async function applyLayout() {
 
     // Add current layout class
     container.classList.add(`${layout.id}-mode`);
-
-    // Reset scroll position when switching layouts
-    container.scrollLeft = 0;
-    container.scrollTop = 0;
 
     // Show/hide day selector based on layout
     const daySelector = document.getElementById('daySelector');

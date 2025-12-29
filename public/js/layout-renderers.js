@@ -15,6 +15,20 @@ let swipeController = null;
 let navigationController = null;
 
 /**
+ * Cleanup all event listeners from previous layouts
+ */
+export function cleanupLayoutEventListeners() {
+    if (swipeController) {
+        swipeController.abort();
+        swipeController = null;
+    }
+    if (navigationController) {
+        navigationController.abort();
+        navigationController = null;
+    }
+}
+
+/**
  * Render Single Day Layout (original behavior)
  * Shows only the selected day's lessons in table format
  */

@@ -1,8 +1,77 @@
 # Changelog
 
-Všechny změny v projektu budou zaznamenány v tomto souboru.
+## [1.7.1] - 2025-12-29
+### fix(layouts): oprava blokovaného scrollu v týdenním zobrazení po přepnutí z karet
 
-Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
+### Opraveno
+- **Scroll nefungoval v týdenním/denním zobrazení po přepnutí z kartového layoutu** (KRITICKÝ BUG)
+  - Dříve: Touch event listenery z card-view zůstávaly aktivní i po přepnutí na week-view/single-day
+  - Problém: Touch listenery preventovaly default scroll behavior (`e.preventDefault()` v touchmove)
+  - Výsledek: Horizontální scroll v týdenním zobrazení nefungoval, bylo nutné refreshnout browser
+  - Nyní: Event listenery se čistí při každém přepnutí layoutu pomocí `cleanupLayoutEventListeners()`
+  - Scroll v týdnu/dnu funguje normálně ✅
+
+- **Scroll se resetoval i při načtení nových dat** (REGRESSION)
+  - Dříve: Reset scrollu byl v `applyLayout()`, která se volá i při `loadTimetable()`
+  - Problém: Při každém načtení dat (změna třídy) se scroll resetoval, i když uživatel scrolloval
+  - Nyní: Reset scrollu POUZE v `switchLayout()` při explicitním přepnutí layoutu
+  - Scroll se resetuje jen když to má ✅
+
+### Změněno
+- **`public/js/layout-renderers.js`** (řádky 17-29):
+  - Nová exportovaná funkce `cleanupLayoutEventListeners()`
+  - Abortuje `swipeController` a `navigationController` pro odstranění event listenerů
+  - Nastaví controllery na `null` pro garbage collection
+
+- **`public/js/layout-manager.js`** (řádky 88-97):
+  - `switchLayout()`: Přidán cleanup event listenerů PŘED aplikací nového layoutu
+  - `switchLayout()`: Přesunut reset scroll pozice ze `applyLayout()` sem
+  - `applyLayout()`: Odstraněn reset scrollu (řádky 115-117 už neexistují)
+
+### Technické detaily
+**Problém 1 - Touch event listenery:**
+1. Card-view používá touch listenery pro swipe navigaci (layout-renderers.js:384-441)
+2. V `touchmove` event handleru: `if (diffX > diffY) e.preventDefault()` - blokuje default scroll
+3. Listenery používají `AbortController` pro cleanup, ale `abort()` se nevolalo při přepnutí layoutu
+4. Když se přepnulo Z card-view NA week-view, listenery zůstaly aktivní
+5. Result: Horizontální scroll v týdenním zobrazení nefungoval
+
+**Problém 2 - Reset scrollu:**
+1. Reset scrollu byl v `applyLayout()` (layout-manager.js:115-117)
+2. `applyLayout()` se volá i z `loadTimetable()` při načtení nových dat
+3. Při každém načtení dat se scroll resetoval
+4. Result: Uživatel nemohl scrollovat, protože se to neustále resetovalo
+
+**Řešení:**
+1. Vytvořit `cleanupLayoutEventListeners()` exportovanou funkci
+2. Volat ji v `switchLayout()` PŘED aplikací nového layoutu
+3. Přesunout reset scrollu ze `applyLayout()` do `switchLayout()`
+4. Tím se cleanup i reset dějí POUZE při explicitním přepnutí layoutu
+
+**Tok při přepnutí layoutu:**
+```
+User clicks layout button
+  ↓
+switchLayout('week-view')
+  ↓
+cleanupLayoutEventListeners() → abort card-view touch listeners ✅
+  ↓
+container.scrollLeft = 0 → reset scroll ✅
+  ↓
+applyLayout() → render week-view
+  ↓
+Week-view s funkčním scrollem bez blokování ✅
+```
+
+### Vizuální změny
+- Scroll v týdenním/denním zobrazení funguje i po přepnutí z karet
+- Scroll se neresetuje při načtení nových dat (změna třídy/učitele)
+- Karty fungují normálně (swipe navigace)
+- Původní bug fix (scroll se přenáší mezi layouty) zůstává funkční
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - přidána cleanup funkce
+- `public/js/layout-manager.js` - přesunut reset scrollu a přidán cleanup do switchLayout()
 
 ---
 
