@@ -506,16 +506,8 @@ export function renderCompactListLayout() {
         return;
     }
 
-    // Get day name
-    const dayName = days[selectedDay];
-
     // Start HTML
     let html = '<div class="compact-list-wrapper">';
-    html += `
-        <div class="compact-day-header">
-            <span>${dayName}</span>
-        </div>
-    `;
 
     // Add lessons
     dayLessons.forEach(lesson => {
@@ -533,15 +525,33 @@ export function renderCompactListLayout() {
             <div class="${itemClasses}" data-lesson-id="${lesson.day}-${lesson.hour}">
                 <div class="compact-lesson-badge">${lesson.hour}</div>
                 <div class="compact-lesson-time">
-                    <div style="font-size: 0.9rem;">${lesson.hour}.</div>
                     <div class="compact-lesson-time-label">${timeLabel}</div>
                 </div>
                 <div class="compact-lesson-content">
                     <div class="compact-lesson-subject">${lesson.subject}</div>
                     <div class="compact-lesson-details">
                         ${lesson.teacher ? `<span>${lesson.teacher}</span>` : ''}
-                        ${lesson.room ? `<span>📍 ${lesson.room}</span>` : ''}
-                        ${lesson.group ? `<span>👥 ${lesson.group}</span>` : ''}
+                        ${lesson.room ? `
+                            <span class="compact-detail-item">
+                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                    <path d="M9 3v18"/>
+                                    <circle cx="15" cy="12" r="1" fill="currentColor"/>
+                                </svg>
+                                ${lesson.room}
+                            </span>
+                        ` : ''}
+                        ${lesson.group ? `
+                            <span class="compact-detail-item">
+                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                    <circle cx="9" cy="7" r="4"/>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                </svg>
+                                ${lesson.group}
+                            </span>
+                        ` : ''}
                     </div>
                 </div>
             </div>

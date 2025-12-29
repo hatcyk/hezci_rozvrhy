@@ -6,6 +6,161 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.1] - 2025-12-29
+### fix(compact-list): oprava left border a status indikátorů
+
+### Opraveno
+- **Odstranění levého borderu (KRITICKÝ VIZUÁLNÍ BUG)**
+  - Všechny lesson items měly žlutý/oranžový levý border (4px)
+  - Border byl redundantní a rušivý
+  - Řešení: Odstraněn `border-left` z `.compact-lesson-item`, `.compact-lesson-item.current-time`, `.compact-lesson-item.upcoming`, a `.compact-lesson-item.changed`
+
+- **Překrývání ikon changed a removed**
+  - `.compact-lesson-item.changed` používal `::before`
+  - `.compact-lesson-item.removed` používal `::after`
+  - Když byla lekce zároveň changed i removed, zobrazovaly se obě ikony na stejném místě
+  - Řešení:
+    - Changed přesunut z `::before` na `::after` (warning triangle)
+    - Removed přesunut z `::after` na `::before` (diagonal line)
+    - Nyní se nepřekrývají
+
+- **Přepracování zrušené/odstraněné lekce**
+  - Dříve: Pouze škrtnutý text předmětu
+  - Problém: Vizuálně nedostatečné, nebylo jasné, že celá lekce je zrušena
+  - Řešení: Diagonální červená linie přes celou kartu
+    - Použit `linear-gradient` s průhledností
+    - Linie od top-left do bottom-right
+    - Šířka: 2px (calc(50% ± 1px))
+    - Barva: `rgba(220, 53, 69, 0.8)` (červená)
+    - Border-radius: 12px (kopíruje kartu)
+    - `pointer-events: none` (nečeká na kliknutí)
+
+### Změněno
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-item` (řádek 42):
+    - Odstraněn `border-left: 4px solid var(--border)`
+  - `.compact-lesson-item.current-time` (řádek 132-134):
+    - Odstraněn `border-left: 4px solid rgba(239, 68, 68, 0.8)`
+  - `.compact-lesson-item.upcoming` (řádek 140-142):
+    - Odstraněn `border-left: 4px solid var(--accent)`
+  - `.compact-lesson-item.removed::before` (řádky 152-170):
+    - Změněno z `::after` na `::before` (aby se nepřekrývalo s changed)
+    - Nahrazeno X icon → diagonal line gradient
+    - Pokrývá celou kartu (top/left/right/bottom: 0)
+  - `.compact-lesson-item.removed .compact-lesson-subject` (řádky 172-174):
+    - Odstraněn `text-decoration: line-through`
+  - `.compact-lesson-item.changed::after` (řádky 176-186):
+    - Změněno z `::before` na `::after`
+
+### Modifikované soubory
+- `public/css/layout-compact-list.css` - odstranění left border, fix status indikátorů
+
+---
+
+## [1.6] - 2025-12-29
+### redesign(compact-list): kompletní přepracování seznamu layoutu
+
+### Přejmenováno
+- **"Kompaktní seznam" → "Seznam"**
+  - Jednodušší a stručnější název v nastavení layoutu
+  - Lepší čitelnost na mobilních zařízeních
+
+### Opraveno
+- **Redundantní hlavička dne (KRITICKÝ UX BUG)**
+  - Zobrazoval se "Pondělí" header nad seznamem, i když je den již vybraný v day pickeru
+  - Řešení: Kompletně odstraněna hlavička dne z renderování
+  - Šetří prostor a eliminuje duplicitu
+
+- **Duplicitní zobrazení čísla lekce**
+  - Badge: "1", Čas: "1. 8:00-8:45" → zobrazeno dvakrát
+  - Řešení: Odstraněno "1." z časové sekce, zůstává pouze v badge
+  - Čistší a logičtější zobrazení
+
+- **Emoji ikony nahrazeny SVG ikonami**
+  - Problém: 📍 (room) a 👥 (group) emoji se špatně zobrazovaly na některých zařízeních
+  - Řešení: SVG ikony konzistentní s card-view layoutem
+  - Room: SVG ikona dveří (stejná jako v card-view)
+  - Group: SVG ikona skupiny uživatelů
+  - Lepší viditelnost v dark mode díky `stroke: var(--text-dim)`
+
+- **Bugged warning emoji v pravém horním rohu** (KRITICKÝ BUG)
+  - `.compact-lesson-item.changed::before` používal `position: absolute` bez `position: relative` na rodiči
+  - Emoji se zobrazoval mimo element nebo na špatné pozici
+  - Řešení:
+    - Přidán `position: relative` na `.compact-lesson-item`
+    - Nahrazeno emoji za SVG warning triangle icon
+    - Přidána podobná SVG ikona (X) pro removed lessons
+
+### Vylepšeno
+- **Redesign vizuální hierarchie**
+  - Badge:
+    - Velikost: 36px → 44px (desktop), 32px → 40px (mobile)
+    - Barva: tmavě modrá → oranžový gradient (`var(--spsd-orange)`)
+    - Font: 700 / 1rem → 800 / 1.2rem
+    - Přidán box-shadow pro zvýraznění
+  - Čas:
+    - Odstraněno duplicitní číslo lekce
+    - Font: 700 / 0.7rem → 600 / 0.85rem
+    - Lepší centrování pomocí flexbox
+  - Status ikony:
+    - Changed: SVG warning triangle (žlutá)
+    - Removed: SVG X icon (červená)
+    - Konzistentní velikost 20x20px
+    - Správné pozicování v pravém horním rohu
+
+### Změněno
+- **`public/js/layout-registry.js`**:
+  - Řádek 52: `name: 'Seznam'` (změněno z 'Kompaktní seznam')
+
+- **`public/js/layout-renderers.js`**:
+  - `renderCompactListLayout()` (řádek 509-511):
+    - Odstraněna hlavička dne (`compact-day-header`)
+    - Odstraněna proměnná `dayName`
+  - Řádek 527-529: Odstraněno duplicitní `${lesson.hour}.` z časové sekce
+  - Řádky 534-554: Nahrazeny emoji za SVG ikony
+    - Room: SVG door icon s `compact-detail-item` wrapperem
+    - Group: SVG users icon s `compact-detail-item` wrapperem
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-item` (řádek 36): Přidán `position: relative`
+  - `.compact-lesson-badge` (řádky 60-73):
+    - Velikost: 36px → 44px
+    - Background: `var(--accent)` → `linear-gradient(135deg, var(--spsd-orange), #d94e37)`
+    - Border-radius: 8px → 12px
+    - Font: 700 / 1rem → 800 / 1.2rem
+    - Přidán `box-shadow: 0 2px 8px rgba(235, 93, 67, 0.3)`
+  - `.compact-lesson-time` (řádky 75-84):
+    - Width: 60px → min-width: 70px
+    - Font: 700 → 600
+    - Přidán flexbox pro lepší centrování
+  - `.compact-lesson-time-label` (řádky 86-90):
+    - Font-size: 0.7rem → 0.85rem
+    - Font-weight: 400 → 500
+    - Odstraněn margin-top (již není potřeba)
+  - Nové CSS pravidla (řádky 119-130):
+    - `.compact-detail-item`: flex container pro SVG ikony
+    - `.compact-detail-icon`: 16x16px SVG s `stroke: var(--text-dim)`
+  - `.compact-lesson-item.removed` (řádky 151-170):
+    - Zjednodušen design: pouze opacity 0.6
+    - Odstraněn background gradient
+    - Odstraněna border změna
+    - Přidán `::after` s SVG X icon
+  - `.compact-lesson-item.changed::before` (řádky 176-186):
+    - Content: '⚠️' → '' (prázdný)
+    - Přidán SVG warning triangle jako background-image
+    - Velikost: 1rem → 20px
+    - Pozice: 8px → 12px (better spacing)
+  - Mobile responsive (řádky 215-223):
+    - Badge: 32px → 40px, font 0.9rem → 1rem
+    - Time: width 50px → min-width 60px
+
+### Modifikované soubory
+- `public/js/layout-registry.js` - přejmenování layoutu
+- `public/js/layout-renderers.js` - odstranění hlavičky, SVG ikony, cleanup duplicit
+- `public/css/layout-compact-list.css` - redesign, fix positioning, SVG ikony
+
+---
+
 ## [1.5] - 2025-12-29
 ### fix(ui): vylepšení ikon a viditelnosti v dark mode
 
