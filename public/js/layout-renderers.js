@@ -100,9 +100,11 @@ function renderSingleLesson(lesson) {
                     ${lesson.room ? `
                         <div class="card-detail-item">
                             <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                <path d="M9 3v18"/>
-                                <circle cx="15" cy="12" r="1" fill="currentColor"/>
+                                <path d="M11 20H2"/>
+                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                <path d="M14 12h.01"/>
+                                <path d="M22 20h-3"/>
                             </svg>
                             <span>${lesson.room}</span>
                         </div>
@@ -166,9 +168,11 @@ function renderSplitLessons(lessons) {
                     ${lesson.room ? `
                         <div class="card-detail-item">
                             <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                <path d="M9 3v18"/>
-                                <circle cx="15" cy="12" r="1" fill="currentColor"/>
+                                <path d="M11 20H2"/>
+                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                <path d="M14 12h.01"/>
+                                <path d="M22 20h-3"/>
                             </svg>
                             <span>${lesson.room}</span>
                         </div>
@@ -534,9 +538,11 @@ export function renderCompactListLayout() {
                         ${lesson.room ? `
                             <span class="compact-detail-item">
                                 <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                                    <path d="M9 3v18"/>
-                                    <circle cx="15" cy="12" r="1" fill="currentColor"/>
+                                    <path d="M11 20H2"/>
+                                    <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                    <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                    <path d="M14 12h.01"/>
+                                    <path d="M22 20h-3"/>
                                 </svg>
                                 ${lesson.room}
                             </span>

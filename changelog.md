@@ -6,6 +6,39 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.4] - 2025-12-29
+### feat(icons): aktualizace ikony dveří na Lucide door-open
+
+### Změněno
+- **Ikona dveří nahrazena za Lucide door-open icon**
+  - Dříve: Jednoduchá ikona obdélníku s vertikální linií a klikou
+  - Nyní: Detailnější ikona otevřených dveří z Lucide icon setu
+  - Realističtější a profesionálnější vzhled
+  - Jednotná napříč všemi layouty
+
+### Aktualizované soubory
+- **`public/js/layout-renderers.js`**:
+  - Card view - renderSingleLesson() a renderSplitLessons()
+  - Compact list - renderCompactListLayout()
+  - Nová SVG cesta pro door-open icon
+
+- **`public/js/timetable.js`**:
+  - Teacher view - zobrazení místnosti
+  - Class view - zobrazení místnosti
+  - Nová SVG cesta pro door-open icon
+
+### Vizuální změny
+Ikona nyní zobrazuje otevřené dveře místo zavřených:
+- Více detailů (rám dveří, klika, podlaha)
+- Lepší rozpoznatelnost jako ikona místnosti
+- Konzistentní s moderními icon sety (Lucide)
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - aktualizace SVG ikony (3 místa)
+- `public/js/timetable.js` - aktualizace SVG ikony (2 místa)
+
+---
+
 ## [1.6.3] - 2025-12-29
 ### feat(ui): vylepšení group badge - přesun do pravého dolního rohu
 
