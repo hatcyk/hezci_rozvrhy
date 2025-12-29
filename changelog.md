@@ -6,6 +6,62 @@ Formát verzování: +0.1 pro menší změny, +1.0 pro větší změny.
 
 ---
 
+## [1.6.8] - 2025-12-29
+### fix(timetable): širší kartičky v denním a týdenním zobrazení (desktop i mobil)
+
+### Opraveno
+- **Příliš úzké lesson cards v grid layoutu (Desktop)**
+  - Dříve: Kartičky měly `min-width: 160px`
+  - Problém: V týdenním a denním zobrazení byly kartičky sotva viditelné, text byl stísněný
+  - Nyní: Kartičky mají `min-width: 220px` (+37.5% šířky)
+  - Lepší čitelnost všech informací (předmět, učitel, místnost, skupina)
+
+- **Příliš úzké lesson cards na mobilu** (KRITICKÝ UX BUG)
+  - Dříve: Kartičky měly `min-width: 120px` na mobilu
+  - Problém: V týdenním zobrazení na mobilu se sotva vešly informace, text byl stísněný
+  - Nyní: Kartičky mají `min-width: 150px` (+25% šířky)
+  - Optimalizován padding a velikosti fontů pro mobil
+
+### Změněno
+- **`public/css/timetable.css`**:
+  - `.lesson-cell` (řádek 121):
+    - `min-width: 160px` → `min-width: 220px` (desktop)
+    - Zvětšení šířky buněk o 60px (37.5%)
+
+- **`public/css/mobile.css`**:
+  - `.lesson-cell` (řádek 256):
+    - `min-width: 120px` → `min-width: 150px` (mobil)
+    - Zvětšení šířky buněk o 30px (25%)
+  - `.lesson-card` (řádek 244):
+    - `padding: 12px` → `padding: 10px` (úspora místa)
+  - `.lesson-subject` (řádek 248):
+    - `font-size: 1rem` → `font-size: 0.95rem` (menší pro mobil)
+  - Nová pravidla `.lesson-details` (řádek 252):
+    - `font-size: 0.7rem` (menší detaily na mobilu)
+  - Nová pravidla `.lesson-group` (řádky 259-264):
+    - `font-size: 0.75rem` (menší badge)
+    - `padding: 4px 8px` (místo 5px 10px)
+    - `bottom: 4px; right: 4px` (těsnější pozice)
+
+### Vizuální změny
+**Desktop:**
+- Kartičky v denním zobrazení jsou nyní širší a čitelnější
+- Kartičky v týdenním zobrazení (celý týden) jsou širší
+- Text předmětu, učitele, místnosti a skupiny má více místa
+- Lepší využití prostoru na širších obrazovkách
+
+**Mobil:**
+- Kartičky jsou širší (150px místo 120px)
+- Menší padding a fonty pro lepší využití prostoru
+- Group badge je menší a více kompaktní
+- Lepší čitelnost i při horizontálním scrollování
+
+### Modifikované soubory
+- `public/css/timetable.css` - zvětšení min-width lesson cells (desktop)
+- `public/css/mobile.css` - zvětšení min-width a optimalizace pro mobil
+
+---
+
 ## [1.6.7] - 2025-12-29
 ### fix(lesson-card): zašednutí a z-index group badge u zrušených hodin
 

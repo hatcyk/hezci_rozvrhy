@@ -241,15 +241,26 @@
     }
 
     .lesson-card {
-        padding: 12px;
+        padding: 10px;
     }
 
     .lesson-subject {
-        font-size: 1rem;
+        font-size: 0.95rem;
+    }
+
+    .lesson-details {
+        font-size: 0.7rem;
     }
 
     .lesson-cell {
-        min-width: 120px;
+        min-width: 150px;
+    }
+
+    .lesson-group {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        bottom: 4px;
+        right: 4px;
     }
 
     .modal-content {
