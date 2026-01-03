@@ -30,38 +30,38 @@
 }
 
 #settingsModal .modal-header {
-    background: linear-gradient(135deg, #002B4F 0%, #003d6b 100%);
+    background: linear-gradient(135deg, var(--header-bg) 0%, var(--sidebar-accent) 100%);
     padding: 24px;
     border-radius: 16px 16px 0 0;
     position: sticky;
     top: 0;
     z-index: 10;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    border-bottom: 2px solid var(--border);
+    transition: background var(--theme-transition), border-color var(--theme-transition);
 }
 
 #settingsModal .modal-header h2 {
-    color: white;
-    font-size: 1.5em;
-    font-weight: 800;
+    color: var(--text-main);
+    font-size: 1.5rem;
+    font-weight: 700;
     margin: 0;
-    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    transition: color var(--theme-transition);
 }
 
 #settingsModal .modal-close {
-    color: white;
-    opacity: 0.9;
-    font-size: 32px;
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
+    color: var(--text-dim);
+    padding: 8px;
+    border-radius: 8px;
+    transition: color var(--theme-transition), background 0.2s ease, transform 0.2s ease;
 }
 
 #settingsModal .modal-close:hover {
-    opacity: 1;
+    color: var(--text-main);
     transform: rotate(90deg);
+    background: var(--border);
 }
 
 #settingsModal .modal-content {

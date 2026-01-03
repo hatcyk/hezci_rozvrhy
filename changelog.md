@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.7.6] - 2026-01-03
+### fix(ui): konzistence modal headers a zavíracích tlačítek
+
+### Opraveno
+- **Zavírací tlačítka v modálech**
+  - Problém: `&times;` mělo velký hover background (36x36px) který neseděl k velikosti X
+  - Oprava: Nahrazeno SVG ikonami (24x24px) sjednocenými napříč všemi modály
+  - Padding: 8px, border-radius: 8px (konzistentní s base modal-close class)
+  - Hover background přesně sedí kolem ikony X
+  - Konzistentní rotace (90deg) při hoveru
+
+- **Chybějící ikony v headerech**
+  - Settings modal: Přidána ikona user-cog (👤⚙️) - lépe vystihuje uživatelská nastavení
+  - Layout modal: Přidána ikona rozvržení (⊞ grid)
+  - Notifications modal: Již mělo ikonu zvonečku (🔔)
+
+- **Nekonzistentní barvy napříč modály**
+  - Dříve: Settings a Layout měly hardcoded modrý gradient (#002B4F)
+  - Nyní: Všechny modály používají CSS proměnné
+  - `var(--header-bg)` a `var(--sidebar-accent)` pro gradient
+  - `var(--text-main)` pro text, `var(--text-dim)` pro close button
+  - Theme-aware: Automaticky se přizpůsobí světlému/tmavému režimu
+
+- **Nekonzistentní font sizes v headerech**
+  - Sjednoceno: `font-size: 1.5rem`, `font-weight: 700`
+  - Odstraněno: `letter-spacing`, `font-weight: 800`
+  - Přidáno: `display: flex`, `align-items: center` pro správné zarovnání ikon
+
+### Modifikované soubory
+- **`public/index.html`**:
+  - Settings modal (řádky 338-351): Přidána ikona a SVG close button
+  - Layout modal (řádky 424-439): Přidána ikona a SVG close button
+
+- **`public/css/settings.css`** (řádky 32-70):
+  - Header: CSS proměnné místo hardcoded barev
+  - Close button: Zmenšeno z 36px na 32px, SVG místo &times;
+  - Přidán border-bottom a theme transitions
+
+- **`public/css/layout-modal.css`** (řádky 13-51):
+  - Header: CSS proměnné místo hardcoded barev
+  - Close button: Zmenšeno z 36px na 32px, SVG místo &times;
+  - Přidán border-bottom a theme transitions
+
+### Výhody
+- ✅ Konzistentní UX napříč všemi modály
+- ✅ Přesnější hover targeting na close buttonu
+- ✅ Theme-aware barvy (automatické přizpůsobení)
+- ✅ Lepší vizuální hierarchie s ikonami v headerech
+- ✅ Menší, elegantnější close button
+
+---
+
 ## [1.7.5] - 2026-01-03
 ### feat(ui): přesun footeru do nastavení a skrytí refresh tlačítka
 
