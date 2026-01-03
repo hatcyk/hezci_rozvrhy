@@ -1,5 +1,78 @@
 # Changelog
 
+## [1.7.3] - 2026-01-03
+### fix(ui): přesunuta skupinová indikace do pravého horního rohu karty
+
+### Změněno
+- **Pozice skupinového badge (1.sk, 2.sk, atd.) přesunuta z dolního do horního pravého rohu**
+  - Dříve: Skupinový indikátor byl v dolním pravém rohu (`bottom: 6px/8px`)
+  - Nyní: Skupinový indikátor je v horním pravém rohu (`top: 6px/8px`)
+  - Inteligentní pozicování: Pokud je přítomen i indikátor změny/zrušení hodiny, skupinový badge se automaticky posune níž, aby nedocházelo k překrytí
+
+### Opraveno
+- **Velikost skupinového badge v compact list layoutu**
+  - Problém: Badge byl příliš velký a zakrýval většinu pravé části karty
+  - Oprava: Optimalizována velikost, padding a font-size pro kompaktní zobrazení
+
+### Modifikované soubory
+- **`public/css/lesson-card.css`**:
+  - `.lesson-group`: Změněno `bottom: 6px` → `top: 6px`
+  - Přidáno inteligentní pozicování při konfliktu s change/removed indikátory (`top: 34px`)
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-group-badge`: Změněno `bottom: 8px` → `top: 8px`
+  - Optimalizována velikost: `font-size: 0.75rem`, `padding: 4px 8px`, `border-radius: 6px`
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap` pro správné rozměry
+  - Přidáno inteligentní pozicování při konfliktu s change indikátorem (`top: 38px`)
+
+### Dotčené layouty
+- ✅ Week view (týdenní zobrazení)
+- ✅ Single-day view (denní zobrazení)
+- ✅ Compact list (seznam)
+
+---
+
+## [1.7.2] - 2025-12-30
+### fix(ui): přidána ikona učitele do všech zobrazení rozvrhu
+
+### Opraveno
+- **Chybějící ikona učitele v týdenním, denním a compact list zobrazení** (UX BUG)
+  - Dříve: Ikona učitele se zobrazovala pouze v kartovém zobrazení (card view)
+  - Problém: Nekonzistentní UX - místnost měla ikonu, učitel ne
+  - V normal view (týdenní/denní) byl učitel zobrazený pouze jako text bez ikony
+  - V compact list view byl učitel zobrazený pouze jako text bez ikony
+  - Nyní: SVG ikona učitele (osobička) se zobrazuje ve všech layoutech
+  - Výsledek: Konzistentní zobrazení ikon napříč všemi pohledy
+
+### Změněno
+- **`public/js/layout-renderers.js`** (řádky 551-558):
+  - `renderCompactListLayout()` - Compact list layout:
+    - Přidán wrapper `<span class="compact-detail-item">` s SVG ikonou učitele
+    - Ikona učitele nyní zobrazena stejně jako ikona místnosti
+    - Použita stejná SVG ikona jako v card view (user icon - osobička)
+
+- **`public/js/timetable.js`**:
+  - Room view (řádky 387-395):
+    - Přidán wrapper `<span class="lesson-detail-item">` s SVG ikonou učitele
+    - Ikona zobrazena před zkráceným jménem učitele
+  - Class view (řádky 404-412):
+    - Přidán wrapper `<span class="lesson-detail-item">` s SVG ikonou učitele
+    - Ikona zobrazena před zkráceným jménem učitele
+    - Stejný vizuální styl jako ikona místnosti
+
+### Vizuální konzistence
+Ikona učitele je nyní jednotná napříč VŠEMI layouty:
+- ✅ Card view (swipeable cards) - již fungovala
+- ✅ Compact list (vertikální seznam) - **OPRAVENO**
+- ✅ Week view (týdenní zobrazení) - **OPRAVENO**
+- ✅ Single-day view (denní zobrazení) - **OPRAVENO**
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - přidána ikona učitele do compact list
+- `public/js/timetable.js` - přidána ikona učitele do week/single-day view (Room a Class view)
+
+---
+
 ## [1.7.1] - 2025-12-29
 ### fix(layouts): oprava blokovaného scrollu v týdenním zobrazení po přepnutí z karet
 
