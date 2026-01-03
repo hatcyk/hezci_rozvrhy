@@ -7,7 +7,7 @@ import { fetchDefinitions, checkBakalariStatus } from './api.js';
 import { initCustomDropdown, setDropdownValue, getDropdownValue, openDropdown } from './dropdown.js';
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek } from './utils.js';
 import { initSunData } from './suntime.js';
-import { initializeFirebase, authenticateWithFirebase } from './firebase-client.js';
+import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from './firebase-client.js';
 import { registerServiceWorker, initializeMessaging, initNotificationButton, showNotificationModal, closeNotificationModal, enableNotifications, disableNotificationsHandler, toggleMultiselect, filterMultiselectOptions, setupMultiselectGlobalListeners } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
@@ -51,6 +51,28 @@ async function cleanupOldServiceWorkers() {
         }
     } catch (error) {
         console.error('❌ Failed to cleanup Service Workers:', error);
+    }
+}
+
+// Update outage banner text with last fetch time
+async function updateOutageBannerText() {
+    const textElement = document.getElementById('outageBannerText');
+    if (!textElement) return;
+
+    try {
+        const lastUpdate = await getLastUpdateTime();
+
+        if (lastUpdate && lastUpdate.seconds) {
+            const date = new Date(lastUpdate.seconds * 1000);
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            textElement.textContent = `Bakaláři nedostupní - data z ${hours}:${minutes}`;
+        } else {
+            textElement.textContent = 'Bakaláři nedostupní - zobrazuji uložená data';
+        }
+    } catch (error) {
+        console.error('Failed to get last update time:', error);
+        textElement.textContent = 'Bakaláři nedostupní - zobrazuji uložená data';
     }
 }
 
@@ -160,6 +182,7 @@ async function init() {
         // Check for outage (API is down)
         if (!isBakalariUp && dom.outageBanner) {
             console.warn('⚠️ Bakaláři API is down - showing outage banner');
+            await updateOutageBannerText();
             dom.outageBanner.classList.remove('hidden');
         } else if (dom.outageBanner) {
             dom.outageBanner.classList.add('hidden');
@@ -172,6 +195,7 @@ async function init() {
                 if (dom.outageBanner.classList.contains('hidden')) {
                     console.warn('⚠️ Bakaláři API went down - showing outage banner');
                 }
+                await updateOutageBannerText();
                 dom.outageBanner.classList.remove('hidden');
             } else if (dom.outageBanner) {
                 if (!dom.outageBanner.classList.contains('hidden')) {

@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.7.7] - 2026-01-03
+### feat(ui): dynamická outage banner s časem posledního fetch
+
+### Změněno
+- **Outage banner nyní zobrazuje čas posledních dat**
+  - Dříve: Zobrazoval generickou zprávu "Alfa verze systému"
+  - Nyní: "Bakaláři nedostupní - data z HH:MM" když API nefunguje
+  - Dynamicky načítá `lastPrefetch` timestamp z Firebase
+  - Zobrazuje přesný čas posledního úspěšného fetchnání dat
+
+### Modifikované soubory
+- **`public/index.html`** (řádek 130):
+  - Přidáno `id="outageBannerText"` na `<span>` pro dynamickou aktualizaci
+  - Změněn výchozí text z "Alfa verze..." na "Bakaláři nedostupní..."
+
+- **`public/js/main.js`** (řádky 10, 57-77, 163, 176):
+  - Import `getLastUpdateTime` z firebase-client.js
+  - Nová funkce `updateOutageBannerText()`:
+    - Načítá `lastPrefetch` timestamp z Firebase metadata kolekce
+    - Formátuje čas ve formátu HH:MM (padded)
+    - Aktualizuje text banneru: "Bakaláři nedostupní - data z {čas}"
+    - Fallback: "Bakaláři nedostupní - zobrazuji uložená data" pokud timestamp chybí
+  - Volá se automaticky při zobrazení banneru (Bakaláři API je down)
+  - Volá se periodicky každé 2 minuty při kontrole statusu
+
+### Výhody
+- ✅ Uživatel vidí, jak stará data zobrazuje
+- ✅ Transparentnější informace o stavu systému
+- ✅ Automatická aktualizace času při každé kontrole API statusu
+- ✅ Graceful fallback pokud timestamp není dostupný
+
+---
+
 ## [1.7.6] - 2026-01-03
 ### fix(ui): konzistence modal headers a zavíracích tlačítek
 
