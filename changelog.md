@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.7.4] - 2026-01-03
+### fix(ui): optimalizace velikosti skupinových badge
+
+### Opraveno
+- **Velikost skupinového badge ve všech layoutech**
+  - Problém: Badge byl příliš velký a zakrýval část karty (desktop i mobile)
+  - Oprava: Optimalizována velikost, padding a font-size pro kompaktní zobrazení
+  - Desktop: `font-size: 0.75rem`, `padding: 4px 8px`, `border-radius: 6px`
+  - Mobile: `font-size: 0.7rem`, `padding: 3px 7px`, `border-radius: 6px`
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap` pro zabránění roztažení přes celou výšku karty
+
+### Modifikované soubory
+- **`public/css/lesson-card.css`**:
+  - `.lesson-group`: Optimalizována velikost (font-size: 0.85rem → 0.75rem, padding: 5px 10px → 4px 8px)
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap`
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-group-badge`: Již optimalizováno v 1.7.3, přidány constraints pro správné rozměry
+
+- **`public/css/mobile.css`**:
+  - `.lesson-group`: Optimalizována velikost pro mobil (font-size: 0.75rem → 0.7rem, padding: 4px 8px → 3px 7px)
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap`, `border-radius: 6px`
+
+### Dotčené platformy
+- ✅ Desktop (PC)
+- ✅ Mobile (mobilní zařízení)
+
+---
+
 ## [1.7.3] - 2026-01-03
 ### fix(ui): přesunuta skupinová indikace do pravého horního rohu karty
 
@@ -9,11 +38,6 @@
   - Nyní: Skupinový indikátor je v horním pravém rohu (`top: 6px/8px`)
   - Inteligentní pozicování: Pokud je přítomen i indikátor změny/zrušení hodiny, skupinový badge se automaticky posune níž, aby nedocházelo k překrytí
 
-### Opraveno
-- **Velikost skupinového badge v compact list layoutu**
-  - Problém: Badge byl příliš velký a zakrýval většinu pravé části karty
-  - Oprava: Optimalizována velikost, padding a font-size pro kompaktní zobrazení
-
 ### Modifikované soubory
 - **`public/css/lesson-card.css`**:
   - `.lesson-group`: Změněno `bottom: 6px` → `top: 6px`
@@ -21,9 +45,10 @@
 
 - **`public/css/layout-compact-list.css`**:
   - `.compact-group-badge`: Změněno `bottom: 8px` → `top: 8px`
-  - Optimalizována velikost: `font-size: 0.75rem`, `padding: 4px 8px`, `border-radius: 6px`
-  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap` pro správné rozměry
   - Přidáno inteligentní pozicování při konfliktu s change indikátorem (`top: 38px`)
+
+- **`public/css/mobile.css`**:
+  - `.lesson-group`: Změněno `bottom: 4px` → `top: 4px`
 
 ### Dotčené layouty
 - ✅ Week view (týdenní zobrazení)
