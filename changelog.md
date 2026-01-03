@@ -1,5 +1,61 @@
 # Changelog
 
+## [1.7.8] - 2026-01-03
+### feat(ui): responzivní logo pomocí HTML5 `<picture>` elementu
+
+### Přidáno
+- **Responzivní logo systém s automatickým přepínáním**
+  - Desktop/Tablet (>768px): Dlouhé logo (`spsd_long_white.png`, `spsd_long_dark.png`)
+  - Mobile (≤768px): Krátké logo (`spsd_logo_white.png`, `spsd_logo_dark.png`)
+  - Použit HTML5 `<picture>` element s `<source>` media queries
+  - Pouze 2 elementy v DOM místo 4 (čistší HTML)
+  - Zachována podpora dark/light theme u obou verzí
+
+### Změněno
+- **`public/index.html`** (řádky 32-41):
+  - Použit `<picture>` element místo 4 samostatných `<img>` tagů
+  - Dark mode logo: `<source media="(max-width: 768px)" srcset="spsd_logo_white.png">` + fallback `spsd_long_white.png`
+  - Light mode logo: `<source media="(max-width: 768px)" srcset="spsd_logo_dark.png">` + fallback `spsd_long_dark.png`
+  - Responzivita řešena nativně v HTML, ne přes CSS display: none
+
+- **`public/css/header.css`** (řádky 37-70):
+  - Zjednodušený CSS - odstraněna pravidla pro `.logo-long` a `.logo-short`
+  - Přidáno `.logo img { height: 100%; width: auto; }` pro správné škálování
+  - Media query jen pro změnu velikosti: `@media (max-width: 768px) { .logo { height: 40px; } }`
+  - Zachována dark/light theme logika (`[data-theme="light"]`)
+
+- **`public/css/mobile.css`** (řádky 29-32):
+  - Odstraněno `height: 40px` (nyní v header.css media query)
+  - Zachováno jen `position: absolute; left: 0;` pro pozicování na mobilu
+
+### Technické detaily
+**HTML5 `<picture>` element:**
+```html
+<picture class="logo logo-dark">
+    <source media="(max-width: 768px)" srcset="spsd_logo_white.png">
+    <img src="spsd_long_white.png" alt="SPŠD Logo">
+</picture>
+```
+- Browser automaticky vybere správný obrázek podle media query
+- Žádné zbytečné requesty na nepoužité obrázky
+- Nativní HTML řešení bez CSS hacků
+
+**Výhody oproti CSS display: none:**
+1. **Performance**: Browser načte jen 1 obrázek (long nebo short), ne oba
+2. **Čistší DOM**: Pouze 2 `<picture>` elementy místo 4 `<img>` tagů
+3. **Sémantičtější**: `<picture>` je přesně pro responzivní obrázky navržený
+4. **Jednodušší CSS**: Méně pravidel, žádné `.logo-long` / `.logo-short` třídy
+
+### Výhody
+- ✅ Lepší využití prostoru na mobilu (kratší logo se lépe vejde)
+- ✅ Profesionálnější vzhled na desktopu (dlouhé logo s plným názvem)
+- ✅ Nativní HTML5 responzivní řešení (standardní přístup)
+- ✅ Lepší performance - načítá se jen potřebný obrázek
+- ✅ Zachována podpora dark/light theme
+- ✅ Čistší HTML a jednodušší CSS
+
+---
+
 ## [1.7.7] - 2026-01-03
 ### feat(ui): dynamická outage banner s časem posledního fetch
 
