@@ -1,5 +1,79 @@
 # Changelog
 
+## [1.7.5] - 2026-01-03
+### feat(ui): přesun footeru do nastavení a skrytí refresh tlačítka
+
+### Změněno
+- **Footer přesunut do nastavení na mobilu**
+  - Desktop (>768px): Footer zůstává viditelný dole na stránce
+  - Mobile (≤768px): Footer skrytý ze stránky, zobrazen na konci settings modalu
+  - Obsah zůstává stejný: "Created by Štefan Barát" s odkazem na GitHub
+
+- **Refresh button kompletně skrytý**
+  - Manuální refresh tlačítko skryto na desktop i mobile
+  - Auto-refresh (každých 10 minut) nadále funguje na pozadí
+  - Uživatelé nemusí manuálně obnovovat rozvrh
+
+### Modifikované soubory
+- **`public/css/header.css`** (řádky 186-189):
+  - Přidáno `display: none !important;` na `.refresh-btn`
+  - Skrytí refresh buttonu na všech platformách
+
+- **`public/css/footer.css`** (řádky 67-71):
+  - V mobile media query změněno na `display: none;`
+  - Footer skrytý jen na mobilu, desktop beze změny
+
+- **`public/index.html`** (řádky 402-405):
+  - Přidán `.settings-footer` div do settings modalu
+  - Obsahuje stejný obsah jako původní footer
+  - Umístěn na konci `.modal-content`
+
+- **`public/css/settings.css`** (řádky 191-233):
+  - Nové CSS pro `.settings-footer`
+  - Top border pro oddělení (1px solid var(--border))
+  - Centrovaný text, oranžový odkaz s hover efektem
+  - GitHub ikona (16x16px SVG) před odkazem přes `::before`
+  - Hover efekt: zvětšení ikony a rotace (scale 1.1, rotate 5deg)
+  - Font-size: 0.85rem, color: var(--text-dim)
+
+### Výhody
+- ✅ Více prostoru na mobilu (footer nezabírá místo dole)
+- ✅ Čistší UI bez manuálního refresh tlačítka
+- ✅ Auto-refresh zajišťuje aktuálnost dat bez zásahu uživatele
+- ✅ Desktop uživatelé mají stále snadný přístup k footeru
+- ✅ Konzistentní zobrazení na všech platformách
+
+---
+
+## [1.7.4] - 2026-01-03
+### fix(ui): optimalizace velikosti skupinových badge
+
+### Opraveno
+- **Velikost skupinového badge ve všech layoutech**
+  - Problém: Badge byl příliš velký a zakrýval část karty (desktop i mobile)
+  - Oprava: Optimalizována velikost, padding a font-size pro kompaktní zobrazení
+  - Desktop: `font-size: 0.75rem`, `padding: 4px 8px`, `border-radius: 6px`
+  - Mobile: `font-size: 0.7rem`, `padding: 3px 7px`, `border-radius: 6px`
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap` pro zabránění roztažení přes celou výšku karty
+
+### Modifikované soubory
+- **`public/css/lesson-card.css`**:
+  - `.lesson-group`: Optimalizována velikost (font-size: 0.85rem → 0.75rem, padding: 5px 10px → 4px 8px)
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap`
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-group-badge`: Již optimalizováno v 1.7.3, přidány constraints pro správné rozměry
+
+- **`public/css/mobile.css`**:
+  - `.lesson-group`: Optimalizována velikost pro mobil (font-size: 0.75rem → 0.7rem, padding: 4px 8px → 3px 7px)
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap`, `border-radius: 6px`
+
+### Dotčené platformy
+- ✅ Desktop (PC)
+- ✅ Mobile (mobilní zařízení)
+
+---
+
 ## [1.7.3] - 2026-01-03
 ### fix(ui): přesunuta skupinová indikace do pravého horního rohu karty
 
@@ -9,11 +83,6 @@
   - Nyní: Skupinový indikátor je v horním pravém rohu (`top: 6px/8px`)
   - Inteligentní pozicování: Pokud je přítomen i indikátor změny/zrušení hodiny, skupinový badge se automaticky posune níž, aby nedocházelo k překrytí
 
-### Opraveno
-- **Velikost skupinového badge v compact list layoutu**
-  - Problém: Badge byl příliš velký a zakrýval většinu pravé části karty
-  - Oprava: Optimalizována velikost, padding a font-size pro kompaktní zobrazení
-
 ### Modifikované soubory
 - **`public/css/lesson-card.css`**:
   - `.lesson-group`: Změněno `bottom: 6px` → `top: 6px`
@@ -21,9 +90,10 @@
 
 - **`public/css/layout-compact-list.css`**:
   - `.compact-group-badge`: Změněno `bottom: 8px` → `top: 8px`
-  - Optimalizována velikost: `font-size: 0.75rem`, `padding: 4px 8px`, `border-radius: 6px`
-  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap` pro správné rozměry
   - Přidáno inteligentní pozicování při konfliktu s change indikátorem (`top: 38px`)
+
+- **`public/css/mobile.css`**:
+  - `.lesson-group`: Změněno `bottom: 4px` → `top: 4px`
 
 ### Dotčené layouty
 - ✅ Week view (týdenní zobrazení)

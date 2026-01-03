@@ -187,3 +187,32 @@
         font-size: 0.85em;
     }
 }
+
+/* Footer in settings modal */
+.settings-footer {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+}
+
+.settings-footer p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.settings-footer a {
+    color: var(--spsd-orange);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.2s ease;
+}
+
+.settings-footer a:hover {
+    color: var(--spsd-red-light);
+}

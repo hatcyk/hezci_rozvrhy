@@ -66,17 +66,6 @@ footer a:hover::after {
 
 @media (max-width: 768px) {
     footer {
-        padding: 24px 20px;
-        margin-top: 40px;
-        font-size: 0.85rem;
-    }
-
-    footer::before {
-        width: 90%;
-    }
-
-    footer p {
-        flex-direction: column;
-        gap: 4px;
+        display: none;
     }
 }
