@@ -27,14 +27,8 @@
     }
 
     .logo {
-        height: 40px;
         position: absolute;
         left: 0;
-    }
-
-    .logo-dark,
-    .logo-light {
-        height: 40px;
     }
 
     h1 {

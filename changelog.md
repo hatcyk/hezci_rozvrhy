@@ -1,5 +1,146 @@
 # Changelog
 
+## [1.7.8] - 2026-01-03
+### feat(ui): responzivní logo pomocí HTML5 `<picture>` elementu
+
+### Přidáno
+- **Responzivní logo systém s automatickým přepínáním**
+  - Desktop/Tablet (>768px): Dlouhé logo (`spsd_long_white.png`, `spsd_long_dark.png`)
+  - Mobile (≤768px): Krátké logo (`spsd_logo_white.png`, `spsd_logo_dark.png`)
+  - Použit HTML5 `<picture>` element s `<source>` media queries
+  - Pouze 2 elementy v DOM místo 4 (čistší HTML)
+  - Zachována podpora dark/light theme u obou verzí
+
+### Změněno
+- **`public/index.html`** (řádky 32-41):
+  - Použit `<picture>` element místo 4 samostatných `<img>` tagů
+  - Dark mode logo: `<source media="(max-width: 768px)" srcset="spsd_logo_white.png">` + fallback `spsd_long_white.png`
+  - Light mode logo: `<source media="(max-width: 768px)" srcset="spsd_logo_dark.png">` + fallback `spsd_long_dark.png`
+  - Responzivita řešena nativně v HTML, ne přes CSS display: none
+
+- **`public/css/header.css`** (řádky 37-70):
+  - Zjednodušený CSS - odstraněna pravidla pro `.logo-long` a `.logo-short`
+  - Přidáno `.logo img { height: 100%; width: auto; }` pro správné škálování
+  - Media query jen pro změnu velikosti: `@media (max-width: 768px) { .logo { height: 40px; } }`
+  - Zachována dark/light theme logika (`[data-theme="light"]`)
+
+- **`public/css/mobile.css`** (řádky 29-32):
+  - Odstraněno `height: 40px` (nyní v header.css media query)
+  - Zachováno jen `position: absolute; left: 0;` pro pozicování na mobilu
+
+### Technické detaily
+**HTML5 `<picture>` element:**
+```html
+<picture class="logo logo-dark">
+    <source media="(max-width: 768px)" srcset="spsd_logo_white.png">
+    <img src="spsd_long_white.png" alt="SPŠD Logo">
+</picture>
+```
+- Browser automaticky vybere správný obrázek podle media query
+- Žádné zbytečné requesty na nepoužité obrázky
+- Nativní HTML řešení bez CSS hacků
+
+**Výhody oproti CSS display: none:**
+1. **Performance**: Browser načte jen 1 obrázek (long nebo short), ne oba
+2. **Čistší DOM**: Pouze 2 `<picture>` elementy místo 4 `<img>` tagů
+3. **Sémantičtější**: `<picture>` je přesně pro responzivní obrázky navržený
+4. **Jednodušší CSS**: Méně pravidel, žádné `.logo-long` / `.logo-short` třídy
+
+### Výhody
+- ✅ Lepší využití prostoru na mobilu (kratší logo se lépe vejde)
+- ✅ Profesionálnější vzhled na desktopu (dlouhé logo s plným názvem)
+- ✅ Nativní HTML5 responzivní řešení (standardní přístup)
+- ✅ Lepší performance - načítá se jen potřebný obrázek
+- ✅ Zachována podpora dark/light theme
+- ✅ Čistší HTML a jednodušší CSS
+
+---
+
+## [1.7.7] - 2026-01-03
+### feat(ui): dynamická outage banner s časem posledního fetch
+
+### Změněno
+- **Outage banner nyní zobrazuje čas posledních dat**
+  - Dříve: Zobrazoval generickou zprávu "Alfa verze systému"
+  - Nyní: "Bakaláři nedostupní - data z HH:MM" když API nefunguje
+  - Dynamicky načítá `lastPrefetch` timestamp z Firebase
+  - Zobrazuje přesný čas posledního úspěšného fetchnání dat
+
+### Modifikované soubory
+- **`public/index.html`** (řádek 130):
+  - Přidáno `id="outageBannerText"` na `<span>` pro dynamickou aktualizaci
+  - Změněn výchozí text z "Alfa verze..." na "Bakaláři nedostupní..."
+
+- **`public/js/main.js`** (řádky 10, 57-77, 163, 176):
+  - Import `getLastUpdateTime` z firebase-client.js
+  - Nová funkce `updateOutageBannerText()`:
+    - Načítá `lastPrefetch` timestamp z Firebase metadata kolekce
+    - Formátuje čas ve formátu HH:MM (padded)
+    - Aktualizuje text banneru: "Bakaláři nedostupní - data z {čas}"
+    - Fallback: "Bakaláři nedostupní - zobrazuji uložená data" pokud timestamp chybí
+  - Volá se automaticky při zobrazení banneru (Bakaláři API je down)
+  - Volá se periodicky každé 2 minuty při kontrole statusu
+
+### Výhody
+- ✅ Uživatel vidí, jak stará data zobrazuje
+- ✅ Transparentnější informace o stavu systému
+- ✅ Automatická aktualizace času při každé kontrole API statusu
+- ✅ Graceful fallback pokud timestamp není dostupný
+
+---
+
+## [1.7.6] - 2026-01-03
+### fix(ui): konzistence modal headers a zavíracích tlačítek
+
+### Opraveno
+- **Zavírací tlačítka v modálech**
+  - Problém: `&times;` mělo velký hover background (36x36px) který neseděl k velikosti X
+  - Oprava: Nahrazeno SVG ikonami (24x24px) sjednocenými napříč všemi modály
+  - Padding: 8px, border-radius: 8px (konzistentní s base modal-close class)
+  - Hover background přesně sedí kolem ikony X
+  - Konzistentní rotace (90deg) při hoveru
+
+- **Chybějící ikony v headerech**
+  - Settings modal: Přidána ikona user-cog (👤⚙️) - lépe vystihuje uživatelská nastavení
+  - Layout modal: Přidána ikona rozvržení (⊞ grid)
+  - Notifications modal: Již mělo ikonu zvonečku (🔔)
+
+- **Nekonzistentní barvy napříč modály**
+  - Dříve: Settings a Layout měly hardcoded modrý gradient (#002B4F)
+  - Nyní: Všechny modály používají CSS proměnné
+  - `var(--header-bg)` a `var(--sidebar-accent)` pro gradient
+  - `var(--text-main)` pro text, `var(--text-dim)` pro close button
+  - Theme-aware: Automaticky se přizpůsobí světlému/tmavému režimu
+
+- **Nekonzistentní font sizes v headerech**
+  - Sjednoceno: `font-size: 1.5rem`, `font-weight: 700`
+  - Odstraněno: `letter-spacing`, `font-weight: 800`
+  - Přidáno: `display: flex`, `align-items: center` pro správné zarovnání ikon
+
+### Modifikované soubory
+- **`public/index.html`**:
+  - Settings modal (řádky 338-351): Přidána ikona a SVG close button
+  - Layout modal (řádky 424-439): Přidána ikona a SVG close button
+
+- **`public/css/settings.css`** (řádky 32-70):
+  - Header: CSS proměnné místo hardcoded barev
+  - Close button: Zmenšeno z 36px na 32px, SVG místo &times;
+  - Přidán border-bottom a theme transitions
+
+- **`public/css/layout-modal.css`** (řádky 13-51):
+  - Header: CSS proměnné místo hardcoded barev
+  - Close button: Zmenšeno z 36px na 32px, SVG místo &times;
+  - Přidán border-bottom a theme transitions
+
+### Výhody
+- ✅ Konzistentní UX napříč všemi modály
+- ✅ Přesnější hover targeting na close buttonu
+- ✅ Theme-aware barvy (automatické přizpůsobení)
+- ✅ Lepší vizuální hierarchie s ikonami v headerech
+- ✅ Menší, elegantnější close button
+
+---
+
 ## [1.7.5] - 2026-01-03
 ### feat(ui): přesun footeru do nastavení a skrytí refresh tlačítka
 

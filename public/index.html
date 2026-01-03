@@ -29,8 +29,16 @@
     <div class="app-container">
         <header>
             <div class="header-left">
-                <img src="spsd_logo_white.png" alt="SPŠD Logo" class="logo logo-dark">
-                <img src="spsd_logo_dark.png" alt="SPŠD Logo" class="logo logo-light">
+                <!-- Dark mode logo (white) - responsive -->
+                <picture class="logo logo-dark">
+                    <source media="(max-width: 768px)" srcset="spsd_logo_white.png">
+                    <img src="spsd_long_white.png" alt="SPŠD Logo">
+                </picture>
+                <!-- Light mode logo (dark) - responsive -->
+                <picture class="logo logo-light">
+                    <source media="(max-width: 768px)" srcset="spsd_logo_dark.png">
+                    <img src="spsd_long_dark.png" alt="SPŠD Logo">
+                </picture>
                 <h1><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days-icon lucide-calendar-days"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg> Rozvrh</h1>
             </div>
             <div class="controls">
@@ -127,7 +135,7 @@
                     <line x1="12" y1="8" x2="12" y2="12"/>
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
-                <span>Systém je v alfa verzi - data se nemusí vždy načítat správně. Projekt je v brzké fázi vývoje.</span>
+                <span id="outageBannerText">Bakaláři nedostupní - zobrazuji uložená data</span>
             </div>
         </div>
 
@@ -336,8 +344,28 @@
     <div class="modal-overlay hidden" id="settingsModal" style="display: none;">
         <div class="modal">
             <div class="modal-header">
-                <h2>Nastavení</h2>
-                <button class="modal-close" id="settingsModalClose">&times;</button>
+                <h2>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                        <path d="M10 15H6a4 4 0 0 0-4 4v2"/>
+                        <path d="m14.305 16.53.923-.382"/>
+                        <path d="m15.228 13.852-.923-.383"/>
+                        <path d="m16.852 12.228-.383-.923"/>
+                        <path d="m16.852 17.772-.383.924"/>
+                        <path d="m19.148 12.228.383-.923"/>
+                        <path d="m19.53 18.696-.382-.924"/>
+                        <path d="m20.772 13.852.924-.383"/>
+                        <path d="m20.772 16.148.924.383"/>
+                        <circle cx="18" cy="15" r="3"/>
+                        <circle cx="9" cy="7" r="4"/>
+                    </svg>
+                    Nastavení
+                </h2>
+                <button class="modal-close" id="settingsModalClose">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
             <div class="modal-content">
                 <div class="settings-option" id="settingsNotifications">
@@ -411,8 +439,21 @@
     <div class="modal-overlay hidden" id="layoutModal" style="display: none;">
         <div class="modal">
             <div class="modal-header">
-                <h2>Vyberte Rozvržení</h2>
-                <button class="modal-close" id="layoutModalClose">&times;</button>
+                <h2>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    Vyberte Rozvržení
+                </h2>
+                <button class="modal-close" id="layoutModalClose">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
             <div class="modal-content" id="layoutOptionsContainer">
                 <!-- Dynamically generated from LAYOUT_REGISTRY -->

@@ -40,6 +40,12 @@ header::before {
     filter: drop-shadow(0 2px 4px var(--shadow));
 }
 
+.logo img {
+    height: 100%;
+    width: auto;
+}
+
+/* Dark/Light theme switching */
 .logo-dark {
     display: block;
 }
@@ -54,6 +60,13 @@ header::before {
 
 [data-theme="light"] .logo-light {
     display: block;
+}
+
+/* Mobile: smaller logo */
+@media (max-width: 768px) {
+    .logo {
+        height: 40px;
+    }
 }
 
 h1 {
