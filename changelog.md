@@ -1,5 +1,50 @@
 # Changelog
 
+## [1.7.5] - 2026-01-03
+### feat(ui): přesun footeru do nastavení a skrytí refresh tlačítka
+
+### Změněno
+- **Footer přesunut do nastavení na mobilu**
+  - Desktop (>768px): Footer zůstává viditelný dole na stránce
+  - Mobile (≤768px): Footer skrytý ze stránky, zobrazen na konci settings modalu
+  - Obsah zůstává stejný: "Created by Štefan Barát" s odkazem na GitHub
+
+- **Refresh button kompletně skrytý**
+  - Manuální refresh tlačítko skryto na desktop i mobile
+  - Auto-refresh (každých 10 minut) nadále funguje na pozadí
+  - Uživatelé nemusí manuálně obnovovat rozvrh
+
+### Modifikované soubory
+- **`public/css/header.css`** (řádky 186-189):
+  - Přidáno `display: none !important;` na `.refresh-btn`
+  - Skrytí refresh buttonu na všech platformách
+
+- **`public/css/footer.css`** (řádky 67-71):
+  - V mobile media query změněno na `display: none;`
+  - Footer skrytý jen na mobilu, desktop beze změny
+
+- **`public/index.html`** (řádky 402-405):
+  - Přidán `.settings-footer` div do settings modalu
+  - Obsahuje stejný obsah jako původní footer
+  - Umístěn na konci `.modal-content`
+
+- **`public/css/settings.css`** (řádky 191-233):
+  - Nové CSS pro `.settings-footer`
+  - Top border pro oddělení (1px solid var(--border))
+  - Centrovaný text, oranžový odkaz s hover efektem
+  - GitHub ikona (16x16px SVG) před odkazem přes `::before`
+  - Hover efekt: zvětšení ikony a rotace (scale 1.1, rotate 5deg)
+  - Font-size: 0.85rem, color: var(--text-dim)
+
+### Výhody
+- ✅ Více prostoru na mobilu (footer nezabírá místo dole)
+- ✅ Čistší UI bez manuálního refresh tlačítka
+- ✅ Auto-refresh zajišťuje aktuálnost dat bez zásahu uživatele
+- ✅ Desktop uživatelé mají stále snadný přístup k footeru
+- ✅ Konzistentní zobrazení na všech platformách
+
+---
+
 ## [1.7.4] - 2026-01-03
 ### fix(ui): optimalizace velikosti skupinových badge
 

@@ -183,6 +183,11 @@ h1 {
     }
 }
 
+/* Hide refresh button completely */
+.refresh-btn {
+    display: none !important;
+}
+
 .theme-toggle svg,
 .refresh-btn svg {
     width: 20px;
