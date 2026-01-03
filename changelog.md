@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.7.3] - 2026-01-03
+### fix(ui): přesunuta skupinová indikace do pravého horního rohu karty
+
+### Změněno
+- **Pozice skupinového badge (1.sk, 2.sk, atd.) přesunuta z dolního do horního pravého rohu**
+  - Dříve: Skupinový indikátor byl v dolním pravém rohu (`bottom: 6px/8px`)
+  - Nyní: Skupinový indikátor je v horním pravém rohu (`top: 6px/8px`)
+  - Inteligentní pozicování: Pokud je přítomen i indikátor změny/zrušení hodiny, skupinový badge se automaticky posune níž, aby nedocházelo k překrytí
+
+### Opraveno
+- **Velikost skupinového badge v compact list layoutu**
+  - Problém: Badge byl příliš velký a zakrýval většinu pravé části karty
+  - Oprava: Optimalizována velikost, padding a font-size pro kompaktní zobrazení
+
+### Modifikované soubory
+- **`public/css/lesson-card.css`**:
+  - `.lesson-group`: Změněno `bottom: 6px` → `top: 6px`
+  - Přidáno inteligentní pozicování při konfliktu s change/removed indikátory (`top: 34px`)
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-group-badge`: Změněno `bottom: 8px` → `top: 8px`
+  - Optimalizována velikost: `font-size: 0.75rem`, `padding: 4px 8px`, `border-radius: 6px`
+  - Přidáno `width: fit-content`, `height: auto`, `white-space: nowrap` pro správné rozměry
+  - Přidáno inteligentní pozicování při konfliktu s change indikátorem (`top: 38px`)
+
+### Dotčené layouty
+- ✅ Week view (týdenní zobrazení)
+- ✅ Single-day view (denní zobrazení)
+- ✅ Compact list (seznam)
+
+---
+
 ## [1.7.2] - 2025-12-30
 ### fix(ui): přidána ikona učitele do všech zobrazení rozvrhu
 
