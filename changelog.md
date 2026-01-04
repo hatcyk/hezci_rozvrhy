@@ -1,5 +1,89 @@
 # Changelog
 
+## [1.7.10] - 2026-01-04
+### feat(layouts): zkrácená jména učitelů v card-view a compact-list
+
+### Přidáno
+- **Zkrácená jména učitelů stejně jako v týdenním a denním rozvrhu**
+  - Dříve: V kartách a seznamu byla zobrazena plná jména s tituly (např. "Ing. Kamila Kozakovičová")
+  - Nyní: Zobrazují se zkrácená jména ve formátu "K. Kozakovičová"
+  - Konzistentní napříč všemi layouty (týden, den, karty, seznam)
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Import funkce `abbreviateTeacherName` z utils.js (řádek 12)
+  - Card View - renderSingleLesson() (řádek 112): Použití `abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)`
+  - Card View - renderSplitLessons() (řádek 180): Použití `abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)`
+  - Compact List (řádek 630): Použití `abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)`
+
+### Výhody
+- ✅ Konzistentní zobrazení jmen učitelů napříč všemi layouty
+- ✅ Úspora místa v kartách a seznamu
+- ✅ Lepší čitelnost na mobilních zařízeních
+- ✅ Sjednocení UX s týdenním a denním zobrazením
+
+---
+
+## [1.7.9] - 2026-01-04
+### feat(layouts): zobrazování volných hodin v card-view a compact-list
+
+### Přidáno
+- **Zobrazování volných hodin mezi hodinami s výukou**
+  - Dříve: Když měl student hodiny 6, 8, 9 (s volnou 7. hodinou), v kartách se přeskočilo z 6 přímo na 8
+  - Problém: Uživatel nevěděl, že má mezi hodinami volno
+  - Nyní: Zobrazují se všechny hodiny od první do poslední (minHour až maxHour), včetně volných
+  - Volné hodiny jsou vizuálně odlišené a označené jako "Volno"
+
+### Změněno
+- **Card View (`renderCardLayout` v layout-renderers.js)**:
+  - Výpočet rozsahu hodin z vybraného dne: `minHour` a `maxHour` (řádky 220-223)
+  - Vytvoření seznamu všech hodin včetně volných: `allHoursList` (řádky 265-268)
+  - Rendering prázdných hodin s ikonou kalendáře a textem "Volno" (řádky 288-306)
+  - Opravena navigace (dots a buttons) pro správný počet karet včetně volných (řádky 333-347)
+  - Prázdné karty nejsou klikatelné: `.lesson-card-full:not(.empty-lesson-card)` (řádek 495)
+
+- **Compact List (`renderCompactListLayout` v layout-renderers.js)**:
+  - Výpočet rozsahu hodin z vybraného dne: `minHour` a `maxHour` (řádky 545-548)
+  - Rendering všech hodin včetně volných v for cyklu (řádky 581-651)
+  - Prázdné hodiny s odlišným stylingem a textem "Volno" (řádky 584-599)
+  - Opraveny click listeners pro neprázdné položky: `.compact-lesson-item:not(.compact-empty-lesson)` (řádky 657-670)
+
+- **CSS styling pro prázdné hodiny**:
+  - **layout-card-view.css** (řádky 354-392):
+    - `.empty-lesson-card`: Přerušovaný border, snížená opacity 0.75, cursor default
+    - `.empty-lesson-content`: Centrovaný layout s ikonou a textem
+    - `.empty-lesson-text`: Italický text "Volno" s opacity 0.6
+  - **layout-compact-list.css** (řádky 206-229):
+    - `.compact-empty-lesson`: Přerušovaný border, opacity 0.6, cursor default
+    - `.compact-empty-badge`: Šedý gradient místo oranžového
+    - `.compact-empty-subject`: Italický text s opacity 0.6
+
+### Technické detaily
+**Výpočet rozsahu hodin:**
+- Dříve: `allHours = [...new Set(data.map(d => d.hour))]` - všechny hodiny z celého rozvrhu
+- Nyní: `allHours = [...new Set(dayLessons.map(d => d.hour))]` - pouze z vybraného dne
+- `minHour = Math.min(...allHours)` - první hodina s výukou
+- `maxHour = Math.max(...allHours)` - poslední hodina s výukou
+- `for (let hour = minHour; hour <= maxHour; hour++)` - všechny hodiny v rozsahu
+
+**Edge cases:**
+- Kompletně prázdný rozvrh (`maxHour < 0`): Zobrazí se "Žádná výuka"
+- Event listeners: Prázdné hodiny NEJSOU klikatelné
+- Navigace: Počet karet odpovídá všem hodinám včetně volných
+
+### Výhody
+- ✅ Uživatel vidí kompletní rozvrh dne včetně volných hodin
+- ✅ Jasná vizuální indikace volného času (přerušovaný border, ikona)
+- ✅ Konzistentní napříč card-view i compact-list layouty
+- ✅ Lepší orientace v rozvrhu dne
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - výpočet minHour/maxHour, rendering volných hodin, oprava navigace
+- `public/css/layout-card-view.css` - styling pro prázdné karty
+- `public/css/layout-compact-list.css` - styling pro prázdné položky
+
+---
+
 ## [1.7.8] - 2026-01-03
 ### feat(ui): responzivní logo pomocí HTML5 `<picture>` elementu
 
