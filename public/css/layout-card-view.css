@@ -351,6 +351,46 @@
     stroke: white;
 }
 
+/* Empty Lesson (Free Period) Styling */
+.lesson-card-full.empty-lesson-card {
+    background: var(--card-bg);
+    opacity: 0.75;
+    cursor: default;
+    border-style: dashed;
+    border-color: var(--border);
+}
+
+.lesson-card-full.empty-lesson-card:hover {
+    transform: none;
+}
+
+.lesson-card-full.empty-lesson-card:active {
+    transform: none;
+}
+
+.empty-lesson-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--text-dim);
+    text-align: center;
+    flex: 1;
+}
+
+.empty-lesson-content svg {
+    opacity: 0.4;
+    margin-bottom: 12px;
+}
+
+.empty-lesson-text {
+    font-size: 1.1rem;
+    font-weight: 600;
+    opacity: 0.6;
+    font-style: italic;
+}
+
 /* Mobile Responsive */
 @media (max-width: 768px) {
     .timetable-container.card-view-mode {

@@ -203,6 +203,31 @@
     margin: 0;
 }
 
+/* Empty Lesson (Free Period) Styling */
+.compact-lesson-item.compact-empty-lesson {
+    opacity: 0.6;
+    cursor: default;
+    border-style: dashed;
+}
+
+.compact-lesson-item.compact-empty-lesson:hover {
+    border-color: var(--border);
+    box-shadow: none;
+    transform: none;
+}
+
+.compact-lesson-badge.compact-empty-badge {
+    background: linear-gradient(135deg, var(--text-dim) 0%, var(--border) 100%);
+    opacity: 0.7;
+    box-shadow: none;
+}
+
+.compact-lesson-subject.compact-empty-subject {
+    font-style: italic;
+    opacity: 0.6;
+    font-weight: 600;
+}
+
 /* Mobile Responsive */
 @media (max-width: 768px) {
     .timetable-container.compact-list-mode {
