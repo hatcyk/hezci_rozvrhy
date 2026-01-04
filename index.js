@@ -14,9 +14,6 @@ const statusRoutes = require('./routes/status');
 const testNotificationsRoutes = require('./routes/test-notifications');
 const cronRoutes = require('./routes/cron');
 
-// Import cron
-const { startCronJob } = require('./backend/cron');
-
 // Debug mode
 const DEBUG = process.env.DEBUG === 'true';
 
