@@ -3,6 +3,29 @@
 ## [1.7.11] - 2026-01-04
 ### feat(layouts): skupinové hodiny vedle sebe v compact-list + zkratky předmětů
 
+### Změněno (Update 3 - Zjednodušení layoutu split lekcí)
+- **Přepracován layout split lekcí pro lepší čitelnost**
+  - Předmět zvětšen z 0.95rem na 1.1rem (desktop) a z 0.85rem na 0.95rem (mobile)
+  - Učitel a místnost nyní těsně pod předmětem (ne až dole)
+  - Vše zarovnáno vlevo podobně jako u single lessons
+  - Větší mezera pod předmětem (6px místo 2px)
+  - Details zvětšeny z 0.75rem na 0.8rem pro lepší čitelnost
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-half .compact-lesson-subject`:
+    - Zvětšení `font-size: 0.95rem` → `1.1rem`
+    - Zvětšení `margin-bottom: 2px` → `6px`
+  - `.compact-lesson-half .compact-lesson-details`:
+    - Odstranění `margin-top: auto`
+    - Změna `align-items: center` → `align-items: flex-start`
+    - Přidán `align-self: flex-start`
+    - Zvětšení `font-size: 0.75rem` → `0.8rem`
+  - `.compact-lesson-half .compact-detail-icon`:
+    - Zvětšení z 14px na 15px
+  - Mobile responsive:
+    - Subject zvětšen z 0.85rem na 0.95rem
+    - Details zvětšeny z 0.7rem na 0.75rem
+
 ### Změněno (Update 2 - Vylepšení layoutu split lekcí)
 - **Přepracován layout `.compact-lesson-half` v compact-list**
   - **Skupina badge** → pravý horní roh (absolute positioning)
