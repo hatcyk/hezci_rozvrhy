@@ -1,5 +1,228 @@
 # Changelog
 
+## [1.7.11] - 2026-01-04
+### feat(layouts): skupinové hodiny vedle sebe v compact-list + zkratky předmětů
+
+### Změněno (Update 3 - Zjednodušení layoutu split lekcí)
+- **Přepracován layout split lekcí pro lepší čitelnost**
+  - Předmět zvětšen z 0.95rem na 1.1rem (desktop) a z 0.85rem na 0.95rem (mobile)
+  - Učitel a místnost nyní těsně pod předmětem (ne až dole)
+  - Vše zarovnáno vlevo podobně jako u single lessons
+  - Větší mezera pod předmětem (6px místo 2px)
+  - Details zvětšeny z 0.75rem na 0.8rem pro lepší čitelnost
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-half .compact-lesson-subject`:
+    - Zvětšení `font-size: 0.95rem` → `1.1rem`
+    - Zvětšení `margin-bottom: 2px` → `6px`
+  - `.compact-lesson-half .compact-lesson-details`:
+    - Odstranění `margin-top: auto`
+    - Změna `align-items: center` → `align-items: flex-start`
+    - Přidán `align-self: flex-start`
+    - Zvětšení `font-size: 0.75rem` → `0.8rem`
+  - `.compact-lesson-half .compact-detail-icon`:
+    - Zvětšení z 14px na 15px
+  - Mobile responsive:
+    - Subject zvětšen z 0.85rem na 0.95rem
+    - Details zvětšeny z 0.7rem na 0.75rem
+
+### Změněno (Update 2 - Vylepšení layoutu split lekcí)
+- **Přepracován layout `.compact-lesson-half` v compact-list**
+  - **Skupina badge** → pravý horní roh (absolute positioning)
+  - **Zkratka předmětu** → levý horní roh (align-self: flex-start)
+  - **Učitel a místnost** → uprostřed dole (margin-top: auto)
+  - **Badge + čas vlevo** → vertikálně vycentrovaný (align-self: center)
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-meta` - přidán `align-self: center` pro vertikální centrování
+  - `.compact-lesson-half`:
+    - Změna `overflow: hidden` → `overflow: visible`
+    - Upravený padding `10px 12px 12px 12px`
+  - `.compact-lesson-half .compact-lesson-subject`:
+    - Změna `text-align: center` → `text-align: left`
+    - Přidán `align-self: flex-start` pro zarovnání vlevo
+    - Přidán `max-width: calc(100% - 50px)` pro prostor pro badge
+  - `.compact-lesson-half .compact-lesson-details`:
+    - Přidán `margin-top: auto` pro posunutí na spodek
+  - `.compact-lesson-half .compact-group-badge`:
+    - Změna `position: relative` → `position: absolute`
+    - Pozice `top: 6px; right: 6px`
+  - Mobile responsive:
+    - `.compact-lesson-half` padding `8px 10px 10px 10px`
+    - `.compact-group-badge` pozice `top: 4px; right: 4px`, menší velikosti
+
+### Přidáno
+- **Skupinové hodiny side-by-side v compact-list layoutu**
+  - Dříve: Skupiny ve stejné hodině (např. 1.sk a 2.sk) zobrazovaly oddělené řádky pod sebou
+  - Nyní:
+    - 2 skupiny = zobrazení vedle sebe (side-by-side)
+    - 3+ skupiny = zobrazení pod sebou (vertikální stack)
+  - Vizuálně odlišené pomocí boxů s hranicemi
+  - Každá skupina samostatně klikatelná pro detail
+
+- **Zkratky názvů předmětů**
+  - Použití funkcí `abbreviateSubject()` z utils.js
+  - Příklady: "Programování" → "PRG", "Praxe" → "PRX", "Tělesná výchova" → "TV"
+  - Úspora místa a lepší čitelnost
+
+- **Nový layout pro compact-list**
+  - Badge hodiny (číslo) + čas pod sebou vlevo
+  - Badge menší (36px místo 44px)
+  - Čas v menší velikosti pod badge
+  - Vertikální meta kontejner pro konzistentní zarovnání
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Import `abbreviateSubject` z utils.js (řádek 12)
+  - Nové funkce:
+    - `renderEmptyLesson(hour)` - rendering volné hodiny s novým layoutem
+    - `renderSingleCompactLesson(lesson)` - rendering jedné lekce
+    - `renderSplitCompactLessons(lessons, isVertical)` - rendering skupinových hodin
+  - Refaktor `renderCompactListLayout()` hlavního loopu:
+    - 0 lekcí → renderEmptyLesson()
+    - 1 lekce → renderSingleCompactLesson()
+    - 2 lekce → renderSplitCompactLessons(lessons, false) - side-by-side
+    - 3+ lekcí → renderSplitCompactLessons(lessons, true) - vertikální
+  - Nové click listeners:
+    - Single lessons: celý item klikatelný
+    - Split lessons: každý half samostatně klikatelný
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-meta` - nový kontejner pro badge + čas vertikálně
+  - `.compact-badge-small` - menší badge (36px, font 1rem)
+  - `.compact-time-small` - menší čas (0.7rem)
+  - `.compact-lessons-split-container` - flexbox kontejner pro split
+  - `.compact-lesson-half` - jednotlivé poloviny pro skupiny
+  - `.compact-lesson-split-vertical` - vertikální layout pro 3+ skupiny
+  - Removed/changed styling pro split lessons
+  - Mobile responsive (menší velikosti na <768px)
+
+### HTML Struktura
+**Single lesson:**
+```html
+<div class="compact-lesson-item">
+  <div class="compact-lesson-meta">
+    <div class="compact-lesson-badge compact-badge-small">4</div>
+    <div class="compact-lesson-time compact-time-small">10:50-11:35</div>
+  </div>
+  <div class="compact-lesson-content">...</div>
+</div>
+```
+
+**Split lessons (2 skupiny):**
+```html
+<div class="compact-lesson-item compact-lesson-split">
+  <div class="compact-lesson-meta">...</div>
+  <div class="compact-lessons-split-container">
+    <div class="compact-lesson-half">PRG [1.sk]</div>
+    <div class="compact-lesson-half">PRX [2.sk]</div>
+  </div>
+</div>
+```
+
+### Výhody
+- ✅ Lepší využití prostoru - skupiny vedle sebe místo pod sebou
+- ✅ Jasné vizuální oddělení skupin pomocí boxů
+- ✅ Zkratky předmětů → více informací na menším prostoru
+- ✅ Menší badge a čas → více prostoru pro obsah
+- ✅ Konzistentní layout napříč všemi lekcemi
+- ✅ 3+ skupiny automaticky stack vertikálně pro čitelnost
+- ✅ Každá skupina samostatně klikatelná
+- ✅ Mobile responsive design
+
+### Technické detaily
+- Split detekce: `lessons.length > 1`
+- Vertical mode: `lessons.length > 2`
+- Badge velikost: 44px → 36px (desktop), 40px → 32px (mobile)
+- Čas pozice: horizontálně vedle → vertikálně pod badge
+- Zkratky fallback: extrahuje velká písmena nebo ořezává s "..."
+
+---
+
+## [1.7.10] - 2026-01-04
+### feat(layouts): zkrácená jména učitelů v card-view a compact-list
+
+### Přidáno
+- **Zkrácená jména učitelů stejně jako v týdenním a denním rozvrhu**
+  - Dříve: V kartách a seznamu byla zobrazena plná jména s tituly (např. "Ing. Kamila Kozakovičová")
+  - Nyní: Zobrazují se zkrácená jména ve formátu "K. Kozakovičová"
+  - Konzistentní napříč všemi layouty (týden, den, karty, seznam)
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Import funkce `abbreviateTeacherName` z utils.js (řádek 12)
+  - Card View - renderSingleLesson() (řádek 112): Použití `abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)`
+  - Card View - renderSplitLessons() (řádek 180): Použití `abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)`
+  - Compact List (řádek 630): Použití `abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)`
+
+### Výhody
+- ✅ Konzistentní zobrazení jmen učitelů napříč všemi layouty
+- ✅ Úspora místa v kartách a seznamu
+- ✅ Lepší čitelnost na mobilních zařízeních
+- ✅ Sjednocení UX s týdenním a denním zobrazením
+
+---
+
+## [1.7.9] - 2026-01-04
+### feat(layouts): zobrazování volných hodin v card-view a compact-list
+
+### Přidáno
+- **Zobrazování volných hodin mezi hodinami s výukou**
+  - Dříve: Když měl student hodiny 6, 8, 9 (s volnou 7. hodinou), v kartách se přeskočilo z 6 přímo na 8
+  - Problém: Uživatel nevěděl, že má mezi hodinami volno
+  - Nyní: Zobrazují se všechny hodiny od první do poslední (minHour až maxHour), včetně volných
+  - Volné hodiny jsou vizuálně odlišené a označené jako "Volno"
+
+### Změněno
+- **Card View (`renderCardLayout` v layout-renderers.js)**:
+  - Výpočet rozsahu hodin z vybraného dne: `minHour` a `maxHour` (řádky 220-223)
+  - Vytvoření seznamu všech hodin včetně volných: `allHoursList` (řádky 265-268)
+  - Rendering prázdných hodin s ikonou kalendáře a textem "Volno" (řádky 288-306)
+  - Opravena navigace (dots a buttons) pro správný počet karet včetně volných (řádky 333-347)
+  - Prázdné karty nejsou klikatelné: `.lesson-card-full:not(.empty-lesson-card)` (řádek 495)
+
+- **Compact List (`renderCompactListLayout` v layout-renderers.js)**:
+  - Výpočet rozsahu hodin z vybraného dne: `minHour` a `maxHour` (řádky 545-548)
+  - Rendering všech hodin včetně volných v for cyklu (řádky 581-651)
+  - Prázdné hodiny s odlišným stylingem a textem "Volno" (řádky 584-599)
+  - Opraveny click listeners pro neprázdné položky: `.compact-lesson-item:not(.compact-empty-lesson)` (řádky 657-670)
+
+- **CSS styling pro prázdné hodiny**:
+  - **layout-card-view.css** (řádky 354-392):
+    - `.empty-lesson-card`: Přerušovaný border, snížená opacity 0.75, cursor default
+    - `.empty-lesson-content`: Centrovaný layout s ikonou a textem
+    - `.empty-lesson-text`: Italický text "Volno" s opacity 0.6
+  - **layout-compact-list.css** (řádky 206-229):
+    - `.compact-empty-lesson`: Přerušovaný border, opacity 0.6, cursor default
+    - `.compact-empty-badge`: Šedý gradient místo oranžového
+    - `.compact-empty-subject`: Italický text s opacity 0.6
+
+### Technické detaily
+**Výpočet rozsahu hodin:**
+- Dříve: `allHours = [...new Set(data.map(d => d.hour))]` - všechny hodiny z celého rozvrhu
+- Nyní: `allHours = [...new Set(dayLessons.map(d => d.hour))]` - pouze z vybraného dne
+- `minHour = Math.min(...allHours)` - první hodina s výukou
+- `maxHour = Math.max(...allHours)` - poslední hodina s výukou
+- `for (let hour = minHour; hour <= maxHour; hour++)` - všechny hodiny v rozsahu
+
+**Edge cases:**
+- Kompletně prázdný rozvrh (`maxHour < 0`): Zobrazí se "Žádná výuka"
+- Event listeners: Prázdné hodiny NEJSOU klikatelné
+- Navigace: Počet karet odpovídá všem hodinám včetně volných
+
+### Výhody
+- ✅ Uživatel vidí kompletní rozvrh dne včetně volných hodin
+- ✅ Jasná vizuální indikace volného času (přerušovaný border, ikona)
+- ✅ Konzistentní napříč card-view i compact-list layouty
+- ✅ Lepší orientace v rozvrhu dne
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - výpočet minHour/maxHour, rendering volných hodin, oprava navigace
+- `public/css/layout-card-view.css` - styling pro prázdné karty
+- `public/css/layout-compact-list.css` - styling pro prázdné položky
+
+---
+
 ## [1.7.8] - 2026-01-03
 ### feat(ui): responzivní logo pomocí HTML5 `<picture>` elementu
 

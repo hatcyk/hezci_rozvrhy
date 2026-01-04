@@ -9,6 +9,7 @@ import { days, lessonTimes } from './constants.js';
 import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
 import { renderTimetable } from './timetable.js';
+import { abbreviateSubject, abbreviateTeacherName } from './utils.js';
 
 // AbortControllers for cleanup of event listeners
 let swipeController = null;
@@ -108,7 +109,7 @@ function renderSingleLesson(lesson) {
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
-                            <span>${lesson.teacher}</span>
+                            <span>${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}</span>
                         </div>
                     ` : ''}
                     ${lesson.room ? `
@@ -176,7 +177,7 @@ function renderSplitLessons(lessons) {
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
-                            <span>${lesson.teacher}</span>
+                            <span>${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}</span>
                         </div>
                     ` : ''}
                     ${lesson.room ? `
@@ -216,7 +217,14 @@ export function renderCardLayout() {
         .filter(lesson => lesson.day === selectedDay)
         .sort((a, b) => a.hour - b.hour);
 
-    if (dayLessons.length === 0) {
+    // Zjistit všechny hodiny ve VYBRANÉM DNI (pro určení rozsahu)
+    const allHours = [...new Set(dayLessons.map(d => d.hour))].sort((a, b) => a - b);
+    const minHour = allHours.length > 0 ? Math.min(...allHours) : 0;
+    const maxHour = allHours.length > 0 ? Math.max(...allHours) : -1;
+    const isCompletelyEmpty = dayLessons.length === 0 || maxHour < 0;
+
+    // EDGE CASE: Pokud je rozvrh kompletně prázdný, zobraz stávající empty state
+    if (isCompletelyEmpty) {
         // Abort any existing event listeners before showing empty state
         if (swipeController) {
             swipeController.abort();
@@ -245,7 +253,7 @@ export function renderCardLayout() {
         return;
     }
 
-    // Group lessons by hour (for handling multiple groups in same time slot)
+    // Vytvořit mapu hodin (stejně jako stávající kód)
     const lessonsByHour = {};
     dayLessons.forEach(lesson => {
         if (!lessonsByHour[lesson.hour]) {
@@ -254,11 +262,15 @@ export function renderCardLayout() {
         lessonsByHour[lesson.hour].push(lesson);
     });
 
-    const hours = Object.keys(lessonsByHour).sort((a, b) => parseInt(a) - parseInt(b));
+    // NOVÝ: Vytvořit seznam VŠECH hodin od minHour do maxHour (včetně volných)
+    const allHoursList = [];
+    for (let hour = minHour; hour <= maxHour; hour++) {
+        allHoursList.push(hour);
+    }
 
     // Validate cardIndex against actual card count
     const rawCardIndex = state.layoutPreferences['card-view'].cardIndex || 0;
-    const maxCardIndex = Math.max(0, hours.length - 1);
+    const maxCardIndex = Math.max(0, allHoursList.length - 1);
     const currentCardIndex = Math.max(0, Math.min(rawCardIndex, maxCardIndex));
 
     // Reset cardIndex in state if it was clamped
@@ -268,37 +280,59 @@ export function renderCardLayout() {
 
     let html = `<div class="card-view-wrapper" style="transform: translateX(-${currentCardIndex * 100}%)">`;
 
-    hours.forEach((hour, cardIndex) => {
-        const lessons = lessonsByHour[hour];
-        const timeInfo = lessonTimes.find(t => t.hour === parseInt(hour));
+    // ZMĚNA: Iterovat přes všechny hodiny (včetně prázdných)
+    allHoursList.forEach((hour, cardIndex) => {
+        const lessons = lessonsByHour[hour] || []; // Může být undefined pro prázdné hodiny
+        const timeInfo = lessonTimes.find(t => t.hour === hour);
         const timeLabel = timeInfo ? timeInfo.label : '';
 
-        // Check if any lesson has change/removed status
-        const hasChanged = lessons.some(l => l.changed);
-        const hasRemoved = lessons.some(l => l.type === 'removed' || l.type === 'absent');
-
-        html += `
-            <div class="lesson-card-full" data-card-index="${cardIndex}" data-lesson-id="${lessons[0].day}-${hour}">
-                <!-- Header: Hour + Time -->
-                <div class="card-header-row">
-                    <div class="card-subject">${hour}. hodina</div>
-                    <div class="card-time-meta">
-                        ${timeLabel}
-                        ${hasRemoved || hasChanged ? `<span class="card-status-dot ${hasRemoved ? 'removed' : 'changed'}"></span>` : ''}
+        if (lessons.length === 0) {
+            // NOVÝ KÓD: Prázdná hodina (volno)
+            html += `
+                <div class="lesson-card-full empty-lesson-card" data-card-index="${cardIndex}">
+                    <div class="card-header-row">
+                        <div class="card-subject">${hour}. hodina</div>
+                        <div class="card-time-meta">${timeLabel}</div>
+                    </div>
+                    <div class="empty-lesson-content">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="16" y1="2" x2="16" y2="6"></line>
+                            <line x1="8" y1="2" x2="8" y2="6"></line>
+                            <line x1="3" y1="10" x2="21" y2="10"></line>
+                        </svg>
+                        <div class="empty-lesson-text">Volno</div>
                     </div>
                 </div>
+            `;
+        } else {
+            // STÁVAJÍCÍ KÓD: Hodina s výukou
+            const hasChanged = lessons.some(l => l.changed);
+            const hasRemoved = lessons.some(l => l.type === 'removed' || l.type === 'absent');
 
-                <!-- Lessons (split if multiple groups) -->
-                ${lessons.length === 1 ? renderSingleLesson(lessons[0]) : renderSplitLessons(lessons)}
-            </div>
-        `;
+            html += `
+                <div class="lesson-card-full" data-card-index="${cardIndex}" data-lesson-id="${lessons[0].day}-${hour}">
+                    <!-- Header: Hour + Time -->
+                    <div class="card-header-row">
+                        <div class="card-subject">${hour}. hodina</div>
+                        <div class="card-time-meta">
+                            ${timeLabel}
+                            ${hasRemoved || hasChanged ? `<span class="card-status-dot ${hasRemoved ? 'removed' : 'changed'}"></span>` : ''}
+                        </div>
+                    </div>
+
+                    <!-- Lessons (split if multiple groups) -->
+                    ${lessons.length === 1 ? renderSingleLesson(lessons[0]) : renderSplitLessons(lessons)}
+                </div>
+            `;
+        }
     });
 
     html += '</div>';
 
-    // Add navigation dots
+    // Add navigation dots - OPRAVA: Použít allHoursList.length místo hours.length
     html += '<div class="card-view-dots">';
-    hours.forEach((_, index) => {
+    allHoursList.forEach((_, index) => {
         html += `<div class="card-view-dot ${index === currentCardIndex ? 'active' : ''}" data-dot-index="${index}"></div>`;
     });
     html += '</div>';
@@ -311,7 +345,7 @@ export function renderCardLayout() {
                     <polyline points="15 18 9 12 15 6"></polyline>
                 </svg>
             </button>
-            <button class="card-view-nav-btn" id="cardNextBtn" ${currentCardIndex >= hours.length - 1 ? 'disabled' : ''}>
+            <button class="card-view-nav-btn" id="cardNextBtn" ${currentCardIndex >= allHoursList.length - 1 ? 'disabled' : ''}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
@@ -321,9 +355,9 @@ export function renderCardLayout() {
 
     container.innerHTML = html;
 
-    // Add event listeners
-    initCardViewNavigation(hours.length);
-    initCardViewSwipe(hours.length);
+    // Add event listeners - OPRAVA: Použít allHoursList.length
+    initCardViewNavigation(allHoursList.length);
+    initCardViewSwipe(allHoursList.length);
     addCardClickListeners(lessonsByHour);
 }
 
@@ -458,7 +492,8 @@ function initCardViewSwipe(totalCards) {
  * Add click listeners to cards to open modal
  */
 function addCardClickListeners(lessonsByHour) {
-    document.querySelectorAll('.lesson-card-full').forEach((card) => {
+    // OPRAVA: Pouze pro neprázdné karty
+    document.querySelectorAll('.lesson-card-full:not(.empty-lesson-card)').forEach((card) => {
         // For single lesson cards
         const singleLesson = card.querySelector('.card-lesson-single');
         if (singleLesson) {
@@ -492,6 +527,158 @@ function addCardClickListeners(lessonsByHour) {
 }
 
 /**
+ * Render empty lesson (free period) for compact list
+ */
+function renderEmptyLesson(hour) {
+    const timeInfo = lessonTimes.find(t => t.hour === hour);
+    const timeLabel = timeInfo ? timeInfo.label : '';
+
+    return `
+        <div class="compact-lesson-item compact-empty-lesson">
+            <div class="compact-lesson-meta">
+                <div class="compact-lesson-badge compact-badge-small compact-empty-badge">${hour}</div>
+                <div class="compact-lesson-time compact-time-small">
+                    <div class="compact-lesson-time-label">${timeLabel}</div>
+                </div>
+            </div>
+            <div class="compact-lesson-content">
+                <div class="compact-lesson-subject compact-empty-subject">Volno</div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Render single lesson for compact list
+ */
+function renderSingleCompactLesson(lesson) {
+    const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
+    const timeLabel = timeInfo ? timeInfo.label : '';
+
+    const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+    const isChanged = lesson.changed;
+
+    let itemClasses = 'compact-lesson-item';
+    if (isRemoved) itemClasses += ' removed';
+    if (isChanged) itemClasses += ' changed';
+
+    const subjectDisplay = abbreviateSubject(lesson.subject);
+
+    return `
+        <div class="${itemClasses}" data-lesson-id="${lesson.day}-${lesson.hour}">
+            <div class="compact-lesson-meta">
+                <div class="compact-lesson-badge compact-badge-small">${lesson.hour}</div>
+                <div class="compact-lesson-time compact-time-small">
+                    <div class="compact-lesson-time-label">${timeLabel}</div>
+                </div>
+            </div>
+            <div class="compact-lesson-content">
+                <div class="compact-lesson-subject">${subjectDisplay}</div>
+                <div class="compact-lesson-details">
+                    ${lesson.teacher ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
+                        </span>
+                    ` : ''}
+                    ${lesson.room ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 20H2"/>
+                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                <path d="M14 12h.01"/>
+                                <path d="M22 20h-3"/>
+                            </svg>
+                            ${lesson.room}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+            ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
+        </div>
+    `;
+}
+
+/**
+ * Render split lessons (multiple groups) for compact list
+ */
+function renderSplitCompactLessons(lessons, isVertical = false) {
+    if (!lessons || lessons.length === 0) return '';
+
+    const firstLesson = lessons[0];
+    const timeInfo = lessonTimes.find(t => t.hour === firstLesson.hour);
+    const timeLabel = timeInfo ? timeInfo.label : '';
+
+    const allRemoved = lessons.every(l => l.type === 'removed' || l.type === 'absent');
+    const anyChanged = lessons.some(l => l.changed);
+
+    let itemClasses = 'compact-lesson-item compact-lesson-split';
+    if (allRemoved) itemClasses += ' removed';
+    if (anyChanged) itemClasses += ' changed';
+    if (isVertical) itemClasses += ' compact-lesson-split-vertical';
+
+    let html = `
+        <div class="${itemClasses}" data-lesson-id="${firstLesson.day}-${firstLesson.hour}">
+            <div class="compact-lesson-meta">
+                <div class="compact-lesson-badge compact-badge-small">${firstLesson.hour}</div>
+                <div class="compact-lesson-time compact-time-small">
+                    <div class="compact-lesson-time-label">${timeLabel}</div>
+                </div>
+            </div>
+            <div class="compact-lessons-split-container">
+    `;
+
+    lessons.forEach(lesson => {
+        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+        const subjectDisplay = abbreviateSubject(lesson.subject);
+
+        let halfClasses = 'compact-lesson-half';
+        if (isRemoved) halfClasses += ' lesson-removed';
+
+        html += `
+            <div class="${halfClasses}" data-lesson-index="${lessons.indexOf(lesson)}">
+                ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
+                <div class="compact-lesson-subject">${subjectDisplay}</div>
+                <div class="compact-lesson-details">
+                    ${lesson.teacher ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
+                        </span>
+                    ` : ''}
+                    ${lesson.room ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 20H2"/>
+                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                <path d="M14 12h.01"/>
+                                <path d="M22 20h-3"/>
+                            </svg>
+                            ${lesson.room}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    return html;
+}
+
+/**
  * Render Compact List Layout
  * Shows lessons as a vertical list
  */
@@ -507,7 +694,14 @@ export function renderCompactListLayout() {
         .filter(lesson => lesson.day === selectedDay)
         .sort((a, b) => a.hour - b.hour);
 
-    if (dayLessons.length === 0) {
+    // Zjistit všechny hodiny ve VYBRANÉM DNI (pro určení rozsahu)
+    const allHours = [...new Set(dayLessons.map(d => d.hour))].sort((a, b) => a - b);
+    const minHour = allHours.length > 0 ? Math.min(...allHours) : 0;
+    const maxHour = allHours.length > 0 ? Math.max(...allHours) : -1;
+    const isCompletelyEmpty = dayLessons.length === 0 || maxHour < 0;
+
+    // EDGE CASE: Pokud je rozvrh kompletně prázdný, zobraz stávající empty state
+    if (isCompletelyEmpty) {
         container.innerHTML = `
             <div class="compact-list-wrapper">
                 <div class="compact-empty-day">
@@ -524,67 +718,76 @@ export function renderCompactListLayout() {
         return;
     }
 
+    // Vytvořit mapu hodin pro rychlé lookup
+    const lessonMap = {};
+    dayLessons.forEach(lesson => {
+        if (!lessonMap[lesson.hour]) {
+            lessonMap[lesson.hour] = [];
+        }
+        lessonMap[lesson.hour].push(lesson);
+    });
+
     // Start HTML
     let html = '<div class="compact-list-wrapper">';
 
-    // Add lessons
-    dayLessons.forEach(lesson => {
-        const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
-        const timeLabel = timeInfo ? timeInfo.label : '';
+    // Renderovat VŠECHNY hodiny od minHour do maxHour (včetně volných)
+    for (let hour = minHour; hour <= maxHour; hour++) {
+        const lessons = lessonMap[hour];
 
-        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-        const isChanged = lesson.changed;
-
-        let itemClasses = 'compact-lesson-item';
-        if (isRemoved) itemClasses += ' removed';
-        if (isChanged) itemClasses += ' changed';
-
-        html += `
-            <div class="${itemClasses}" data-lesson-id="${lesson.day}-${lesson.hour}">
-                <div class="compact-lesson-badge">${lesson.hour}</div>
-                <div class="compact-lesson-time">
-                    <div class="compact-lesson-time-label">${timeLabel}</div>
-                </div>
-                <div class="compact-lesson-content">
-                    <div class="compact-lesson-subject">${lesson.subject}</div>
-                    <div class="compact-lesson-details">
-                        ${lesson.teacher ? `
-                            <span class="compact-detail-item">
-                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                    <circle cx="12" cy="7" r="4"/>
-                                </svg>
-                                ${lesson.teacher}
-                            </span>
-                        ` : ''}
-                        ${lesson.room ? `
-                            <span class="compact-detail-item">
-                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M11 20H2"/>
-                                    <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
-                                    <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
-                                    <path d="M14 12h.01"/>
-                                    <path d="M22 20h-3"/>
-                                </svg>
-                                ${lesson.room}
-                            </span>
-                        ` : ''}
-                    </div>
-                </div>
-                ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
-            </div>
-        `;
-    });
+        if (!lessons || lessons.length === 0) {
+            // Prázdná hodina (volno)
+            html += renderEmptyLesson(hour);
+        } else if (lessons.length === 1) {
+            // Jedna hodina - normální layout
+            html += renderSingleCompactLesson(lessons[0]);
+        } else if (lessons.length === 2) {
+            // 2 skupiny - side-by-side
+            html += renderSplitCompactLessons(lessons, false);
+        } else {
+            // 3+ skupiny - vertikální stack
+            html += renderSplitCompactLessons(lessons, true);
+        }
+    }
 
     html += '</div>';
 
     container.innerHTML = html;
 
-    // Add click listeners to open modal
-    document.querySelectorAll('.compact-lesson-item').forEach((item, index) => {
-        item.addEventListener('click', () => {
-            showLessonModal(dayLessons[index]);
-        });
+    // Click listeners pro single lessons
+    document.querySelectorAll('.compact-lesson-item:not(.compact-empty-lesson):not(.compact-lesson-split)').forEach((item) => {
+        const lessonId = item.dataset.lessonId;
+        if (!lessonId) return;
+
+        const [day, hour] = lessonId.split('-').map(Number);
+        const lessons = lessonMap[hour];
+        if (lessons && lessons[0]) {
+            item.addEventListener('click', () => {
+                showLessonModal(lessons[0]);
+            });
+        }
+    });
+
+    // Click listeners pro split lesson halves
+    document.querySelectorAll('.compact-lesson-half').forEach((half) => {
+        const parentItem = half.closest('.compact-lesson-item');
+        if (!parentItem) return;
+
+        const lessonId = parentItem.dataset.lessonId;
+        if (!lessonId) return;
+
+        const [day, hour] = lessonId.split('-').map(Number);
+        const lessonsInHour = lessonMap[hour] || [];
+
+        // Najdi index half elementu mezi svými sourozenci
+        const halfIndex = parseInt(half.dataset.lessonIndex);
+        const lesson = lessonsInHour[halfIndex];
+
+        if (lesson) {
+            half.addEventListener('click', (e) => {
+                e.stopPropagation(); // Zabrání propagaci na parent
+                showLessonModal(lesson);
+            });
+        }
     });
 
     // Restore scroll position

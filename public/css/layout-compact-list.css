@@ -35,7 +35,7 @@
 .compact-lesson-item {
     position: relative;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 16px;
     padding: 16px;
     background: var(--card-bg);
@@ -57,6 +57,17 @@
     transform: translateX(2px);
 }
 
+/* Meta container - Badge + Time vertically */
+.compact-lesson-meta {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: center;
+    gap: 8px;
+    width: 60px;
+}
+
 .compact-lesson-badge {
     flex-shrink: 0;
     width: 44px;
@@ -70,6 +81,14 @@
     font-weight: 800;
     font-size: 1.2rem;
     box-shadow: 0 2px 8px rgba(235, 93, 67, 0.3);
+}
+
+/* Smaller badge for new layout */
+.compact-badge-small {
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+    border-radius: 10px;
 }
 
 .compact-lesson-time {
@@ -89,10 +108,27 @@
     font-weight: 500;
 }
 
+/* Smaller time for new layout - under badge */
+.compact-time-small {
+    min-width: auto;
+    width: 100%;
+    font-size: 0.7rem;
+}
+
+.compact-time-small .compact-lesson-time-label {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    text-align: center;
+    line-height: 1.2;
+}
+
 .compact-lesson-content {
     flex: 1;
     min-width: 0;
     padding-right: 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .compact-lesson-subject {
@@ -128,6 +164,71 @@
     height: 16px;
     stroke: var(--text-dim);
     flex-shrink: 0;
+}
+
+/* Split Lessons Container */
+.compact-lessons-split-container {
+    flex: 1;
+    display: flex;
+    gap: 12px;
+    min-width: 0;
+}
+
+.compact-lesson-half {
+    flex: 1;
+    min-width: 0;
+    padding: 10px 12px 12px 12px;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+    overflow: visible;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.compact-lesson-half:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+/* Subject in half - top left, larger */
+.compact-lesson-half .compact-lesson-subject {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    text-align: left;
+    align-self: flex-start;
+    margin-bottom: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: calc(100% - 50px);
+}
+
+/* Details in half - left aligned under subject */
+.compact-lesson-half .compact-lesson-details {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    align-self: flex-start;
+}
+
+.compact-lesson-half .compact-detail-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.compact-lesson-half .compact-detail-icon {
+    width: 15px;
+    height: 15px;
 }
 
 /* Status Indicators */
@@ -203,6 +304,73 @@
     margin: 0;
 }
 
+/* Empty Lesson (Free Period) Styling */
+.compact-lesson-item.compact-empty-lesson {
+    opacity: 0.6;
+    cursor: default;
+    border-style: dashed;
+}
+
+.compact-lesson-item.compact-empty-lesson:hover {
+    border-color: var(--border);
+    box-shadow: none;
+    transform: none;
+}
+
+.compact-lesson-badge.compact-empty-badge {
+    background: linear-gradient(135deg, var(--text-dim) 0%, var(--border) 100%);
+    opacity: 0.7;
+    box-shadow: none;
+}
+
+.compact-lesson-subject.compact-empty-subject {
+    font-style: italic;
+    opacity: 0.6;
+    font-weight: 600;
+}
+
+/* Removed/Changed styling for split lessons */
+.compact-lesson-half.lesson-removed {
+    opacity: 0.6;
+    border-color: var(--spsd-red);
+}
+
+.compact-lesson-half.lesson-removed::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        to top right,
+        transparent calc(50% - 1px),
+        rgba(220, 53, 69, 0.8) calc(50% - 1px),
+        rgba(220, 53, 69, 0.8) calc(50% + 1px),
+        transparent calc(50% + 1px)
+    );
+    pointer-events: none;
+    border-radius: 10px;
+}
+
+.compact-lesson-half.lesson-removed .compact-lesson-subject {
+    color: var(--text-dim);
+}
+
+/* Changed indicator for split lessons */
+.compact-lesson-item.compact-lesson-split.changed::after {
+    content: '';
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 20px;
+    height: 20px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFC107' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z'/%3E%3Cline x1='12' y1='9' x2='12' y2='13'/%3E%3Cline x1='12' y1='17' x2='12.01' y2='17'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    z-index: 10;
+}
+
 /* Mobile Responsive */
 @media (max-width: 768px) {
     .timetable-container.compact-list-mode {
@@ -214,10 +382,21 @@
         gap: 12px;
     }
 
+    .compact-lesson-meta {
+        width: 50px;
+        gap: 6px;
+    }
+
     .compact-lesson-badge {
         width: 40px;
         height: 40px;
         font-size: 1rem;
+    }
+
+    .compact-badge-small {
+        width: 32px;
+        height: 32px;
+        font-size: 0.9rem;
     }
 
     .compact-lesson-time {
@@ -232,6 +411,45 @@
         font-size: 0.8rem;
         gap: 8px;
     }
+
+    .compact-lessons-split-container {
+        gap: 8px;
+    }
+
+    .compact-lesson-half {
+        padding: 8px 10px 10px 10px;
+    }
+
+    .compact-lesson-half .compact-lesson-subject {
+        font-size: 0.95rem;
+        margin-bottom: 4px;
+    }
+
+    .compact-lesson-half .compact-lesson-details {
+        font-size: 0.75rem;
+        gap: 3px;
+    }
+
+    .compact-lesson-half .compact-detail-icon {
+        width: 12px;
+        height: 12px;
+    }
+
+    .compact-lesson-half .compact-group-badge {
+        top: 4px;
+        right: 4px;
+        font-size: 0.65rem;
+        padding: 2px 5px;
+    }
+}
+
+/* 3+ groups - vertical layout */
+.compact-lesson-split-vertical .compact-lessons-split-container {
+    flex-direction: column;
+}
+
+.compact-lesson-split-vertical .compact-lesson-half {
+    width: 100%;
 }
 
 /* Group Badge */
@@ -253,8 +471,18 @@
     white-space: nowrap;
 }
 
-/* Offset group badge when there's a change indicator */
-.compact-lesson-item.changed .compact-group-badge {
+/* Group badge in split lessons - top right */
+.compact-lesson-half .compact-group-badge {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    font-size: 0.7rem;
+    padding: 3px 6px;
+    margin: 0;
+}
+
+/* Offset group badge when there's a change indicator (only for single lessons) */
+.compact-lesson-item:not(.compact-lesson-split).changed .compact-group-badge {
     top: 38px;
 }
 
