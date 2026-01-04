@@ -1,5 +1,121 @@
 # Changelog
 
+## [1.7.11] - 2026-01-04
+### feat(layouts): skupinové hodiny vedle sebe v compact-list + zkratky předmětů
+
+### Změněno (Update 2 - Vylepšení layoutu split lekcí)
+- **Přepracován layout `.compact-lesson-half` v compact-list**
+  - **Skupina badge** → pravý horní roh (absolute positioning)
+  - **Zkratka předmětu** → levý horní roh (align-self: flex-start)
+  - **Učitel a místnost** → uprostřed dole (margin-top: auto)
+  - **Badge + čas vlevo** → vertikálně vycentrovaný (align-self: center)
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-meta` - přidán `align-self: center` pro vertikální centrování
+  - `.compact-lesson-half`:
+    - Změna `overflow: hidden` → `overflow: visible`
+    - Upravený padding `10px 12px 12px 12px`
+  - `.compact-lesson-half .compact-lesson-subject`:
+    - Změna `text-align: center` → `text-align: left`
+    - Přidán `align-self: flex-start` pro zarovnání vlevo
+    - Přidán `max-width: calc(100% - 50px)` pro prostor pro badge
+  - `.compact-lesson-half .compact-lesson-details`:
+    - Přidán `margin-top: auto` pro posunutí na spodek
+  - `.compact-lesson-half .compact-group-badge`:
+    - Změna `position: relative` → `position: absolute`
+    - Pozice `top: 6px; right: 6px`
+  - Mobile responsive:
+    - `.compact-lesson-half` padding `8px 10px 10px 10px`
+    - `.compact-group-badge` pozice `top: 4px; right: 4px`, menší velikosti
+
+### Přidáno
+- **Skupinové hodiny side-by-side v compact-list layoutu**
+  - Dříve: Skupiny ve stejné hodině (např. 1.sk a 2.sk) zobrazovaly oddělené řádky pod sebou
+  - Nyní:
+    - 2 skupiny = zobrazení vedle sebe (side-by-side)
+    - 3+ skupiny = zobrazení pod sebou (vertikální stack)
+  - Vizuálně odlišené pomocí boxů s hranicemi
+  - Každá skupina samostatně klikatelná pro detail
+
+- **Zkratky názvů předmětů**
+  - Použití funkcí `abbreviateSubject()` z utils.js
+  - Příklady: "Programování" → "PRG", "Praxe" → "PRX", "Tělesná výchova" → "TV"
+  - Úspora místa a lepší čitelnost
+
+- **Nový layout pro compact-list**
+  - Badge hodiny (číslo) + čas pod sebou vlevo
+  - Badge menší (36px místo 44px)
+  - Čas v menší velikosti pod badge
+  - Vertikální meta kontejner pro konzistentní zarovnání
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Import `abbreviateSubject` z utils.js (řádek 12)
+  - Nové funkce:
+    - `renderEmptyLesson(hour)` - rendering volné hodiny s novým layoutem
+    - `renderSingleCompactLesson(lesson)` - rendering jedné lekce
+    - `renderSplitCompactLessons(lessons, isVertical)` - rendering skupinových hodin
+  - Refaktor `renderCompactListLayout()` hlavního loopu:
+    - 0 lekcí → renderEmptyLesson()
+    - 1 lekce → renderSingleCompactLesson()
+    - 2 lekce → renderSplitCompactLessons(lessons, false) - side-by-side
+    - 3+ lekcí → renderSplitCompactLessons(lessons, true) - vertikální
+  - Nové click listeners:
+    - Single lessons: celý item klikatelný
+    - Split lessons: každý half samostatně klikatelný
+
+- **`public/css/layout-compact-list.css`**:
+  - `.compact-lesson-meta` - nový kontejner pro badge + čas vertikálně
+  - `.compact-badge-small` - menší badge (36px, font 1rem)
+  - `.compact-time-small` - menší čas (0.7rem)
+  - `.compact-lessons-split-container` - flexbox kontejner pro split
+  - `.compact-lesson-half` - jednotlivé poloviny pro skupiny
+  - `.compact-lesson-split-vertical` - vertikální layout pro 3+ skupiny
+  - Removed/changed styling pro split lessons
+  - Mobile responsive (menší velikosti na <768px)
+
+### HTML Struktura
+**Single lesson:**
+```html
+<div class="compact-lesson-item">
+  <div class="compact-lesson-meta">
+    <div class="compact-lesson-badge compact-badge-small">4</div>
+    <div class="compact-lesson-time compact-time-small">10:50-11:35</div>
+  </div>
+  <div class="compact-lesson-content">...</div>
+</div>
+```
+
+**Split lessons (2 skupiny):**
+```html
+<div class="compact-lesson-item compact-lesson-split">
+  <div class="compact-lesson-meta">...</div>
+  <div class="compact-lessons-split-container">
+    <div class="compact-lesson-half">PRG [1.sk]</div>
+    <div class="compact-lesson-half">PRX [2.sk]</div>
+  </div>
+</div>
+```
+
+### Výhody
+- ✅ Lepší využití prostoru - skupiny vedle sebe místo pod sebou
+- ✅ Jasné vizuální oddělení skupin pomocí boxů
+- ✅ Zkratky předmětů → více informací na menším prostoru
+- ✅ Menší badge a čas → více prostoru pro obsah
+- ✅ Konzistentní layout napříč všemi lekcemi
+- ✅ 3+ skupiny automaticky stack vertikálně pro čitelnost
+- ✅ Každá skupina samostatně klikatelná
+- ✅ Mobile responsive design
+
+### Technické detaily
+- Split detekce: `lessons.length > 1`
+- Vertical mode: `lessons.length > 2`
+- Badge velikost: 44px → 36px (desktop), 40px → 32px (mobile)
+- Čas pozice: horizontálně vedle → vertikálně pod badge
+- Zkratky fallback: extrahuje velká písmena nebo ořezává s "..."
+
+---
+
 ## [1.7.10] - 2026-01-04
 ### feat(layouts): zkrácená jména učitelů v card-view a compact-list
 

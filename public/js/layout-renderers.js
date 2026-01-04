@@ -9,7 +9,7 @@ import { days, lessonTimes } from './constants.js';
 import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
 import { renderTimetable } from './timetable.js';
-import { abbreviateTeacherName } from './utils.js';
+import { abbreviateSubject, abbreviateTeacherName } from './utils.js';
 
 // AbortControllers for cleanup of event listeners
 let swipeController = null;
@@ -527,6 +527,158 @@ function addCardClickListeners(lessonsByHour) {
 }
 
 /**
+ * Render empty lesson (free period) for compact list
+ */
+function renderEmptyLesson(hour) {
+    const timeInfo = lessonTimes.find(t => t.hour === hour);
+    const timeLabel = timeInfo ? timeInfo.label : '';
+
+    return `
+        <div class="compact-lesson-item compact-empty-lesson">
+            <div class="compact-lesson-meta">
+                <div class="compact-lesson-badge compact-badge-small compact-empty-badge">${hour}</div>
+                <div class="compact-lesson-time compact-time-small">
+                    <div class="compact-lesson-time-label">${timeLabel}</div>
+                </div>
+            </div>
+            <div class="compact-lesson-content">
+                <div class="compact-lesson-subject compact-empty-subject">Volno</div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * Render single lesson for compact list
+ */
+function renderSingleCompactLesson(lesson) {
+    const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
+    const timeLabel = timeInfo ? timeInfo.label : '';
+
+    const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+    const isChanged = lesson.changed;
+
+    let itemClasses = 'compact-lesson-item';
+    if (isRemoved) itemClasses += ' removed';
+    if (isChanged) itemClasses += ' changed';
+
+    const subjectDisplay = abbreviateSubject(lesson.subject);
+
+    return `
+        <div class="${itemClasses}" data-lesson-id="${lesson.day}-${lesson.hour}">
+            <div class="compact-lesson-meta">
+                <div class="compact-lesson-badge compact-badge-small">${lesson.hour}</div>
+                <div class="compact-lesson-time compact-time-small">
+                    <div class="compact-lesson-time-label">${timeLabel}</div>
+                </div>
+            </div>
+            <div class="compact-lesson-content">
+                <div class="compact-lesson-subject">${subjectDisplay}</div>
+                <div class="compact-lesson-details">
+                    ${lesson.teacher ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
+                        </span>
+                    ` : ''}
+                    ${lesson.room ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 20H2"/>
+                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                <path d="M14 12h.01"/>
+                                <path d="M22 20h-3"/>
+                            </svg>
+                            ${lesson.room}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+            ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
+        </div>
+    `;
+}
+
+/**
+ * Render split lessons (multiple groups) for compact list
+ */
+function renderSplitCompactLessons(lessons, isVertical = false) {
+    if (!lessons || lessons.length === 0) return '';
+
+    const firstLesson = lessons[0];
+    const timeInfo = lessonTimes.find(t => t.hour === firstLesson.hour);
+    const timeLabel = timeInfo ? timeInfo.label : '';
+
+    const allRemoved = lessons.every(l => l.type === 'removed' || l.type === 'absent');
+    const anyChanged = lessons.some(l => l.changed);
+
+    let itemClasses = 'compact-lesson-item compact-lesson-split';
+    if (allRemoved) itemClasses += ' removed';
+    if (anyChanged) itemClasses += ' changed';
+    if (isVertical) itemClasses += ' compact-lesson-split-vertical';
+
+    let html = `
+        <div class="${itemClasses}" data-lesson-id="${firstLesson.day}-${firstLesson.hour}">
+            <div class="compact-lesson-meta">
+                <div class="compact-lesson-badge compact-badge-small">${firstLesson.hour}</div>
+                <div class="compact-lesson-time compact-time-small">
+                    <div class="compact-lesson-time-label">${timeLabel}</div>
+                </div>
+            </div>
+            <div class="compact-lessons-split-container">
+    `;
+
+    lessons.forEach(lesson => {
+        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+        const subjectDisplay = abbreviateSubject(lesson.subject);
+
+        let halfClasses = 'compact-lesson-half';
+        if (isRemoved) halfClasses += ' lesson-removed';
+
+        html += `
+            <div class="${halfClasses}" data-lesson-index="${lessons.indexOf(lesson)}">
+                ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
+                <div class="compact-lesson-subject">${subjectDisplay}</div>
+                <div class="compact-lesson-details">
+                    ${lesson.teacher ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                                <circle cx="12" cy="7" r="4"/>
+                            </svg>
+                            ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
+                        </span>
+                    ` : ''}
+                    ${lesson.room ? `
+                        <span class="compact-detail-item">
+                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 20H2"/>
+                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
+                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
+                                <path d="M14 12h.01"/>
+                                <path d="M22 20h-3"/>
+                            </svg>
+                            ${lesson.room}
+                        </span>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    });
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    return html;
+}
+
+/**
  * Render Compact List Layout
  * Shows lessons as a vertical list
  */
@@ -578,76 +730,22 @@ export function renderCompactListLayout() {
     // Start HTML
     let html = '<div class="compact-list-wrapper">';
 
-    // NOVÝ: Renderovat VŠECHNY hodiny od minHour do maxHour (včetně volných)
+    // Renderovat VŠECHNY hodiny od minHour do maxHour (včetně volných)
     for (let hour = minHour; hour <= maxHour; hour++) {
         const lessons = lessonMap[hour];
 
         if (!lessons || lessons.length === 0) {
-            // NOVÝ KÓD: Prázdná hodina (volno)
-            const timeInfo = lessonTimes.find(t => t.hour === hour);
-            const timeLabel = timeInfo ? timeInfo.label : '';
-
-            html += `
-                <div class="compact-lesson-item compact-empty-lesson">
-                    <div class="compact-lesson-badge compact-empty-badge">${hour}</div>
-                    <div class="compact-lesson-time">
-                        <div class="compact-lesson-time-label">${timeLabel}</div>
-                    </div>
-                    <div class="compact-lesson-content">
-                        <div class="compact-lesson-subject compact-empty-subject">Volno</div>
-                    </div>
-                </div>
-            `;
+            // Prázdná hodina (volno)
+            html += renderEmptyLesson(hour);
+        } else if (lessons.length === 1) {
+            // Jedna hodina - normální layout
+            html += renderSingleCompactLesson(lessons[0]);
+        } else if (lessons.length === 2) {
+            // 2 skupiny - side-by-side
+            html += renderSplitCompactLessons(lessons, false);
         } else {
-            // STÁVAJÍCÍ KÓD: Rendering hodin s výukou
-            // POZOR: Může jít o více hodin (skupiny), proto forEach
-            lessons.forEach(lesson => {
-        const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
-        const timeLabel = timeInfo ? timeInfo.label : '';
-
-        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-        const isChanged = lesson.changed;
-
-        let itemClasses = 'compact-lesson-item';
-        if (isRemoved) itemClasses += ' removed';
-        if (isChanged) itemClasses += ' changed';
-
-        html += `
-            <div class="${itemClasses}" data-lesson-id="${lesson.day}-${lesson.hour}">
-                <div class="compact-lesson-badge">${lesson.hour}</div>
-                <div class="compact-lesson-time">
-                    <div class="compact-lesson-time-label">${timeLabel}</div>
-                </div>
-                <div class="compact-lesson-content">
-                    <div class="compact-lesson-subject">${lesson.subject}</div>
-                    <div class="compact-lesson-details">
-                        ${lesson.teacher ? `
-                            <span class="compact-detail-item">
-                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                    <circle cx="12" cy="7" r="4"/>
-                                </svg>
-                                ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
-                            </span>
-                        ` : ''}
-                        ${lesson.room ? `
-                            <span class="compact-detail-item">
-                                <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M11 20H2"/>
-                                    <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
-                                    <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
-                                    <path d="M14 12h.01"/>
-                                    <path d="M22 20h-3"/>
-                                </svg>
-                                ${lesson.room}
-                            </span>
-                        ` : ''}
-                    </div>
-                </div>
-                ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
-            </div>
-        `;
-            });
+            // 3+ skupiny - vertikální stack
+            html += renderSplitCompactLessons(lessons, true);
         }
     }
 
@@ -655,19 +753,41 @@ export function renderCompactListLayout() {
 
     container.innerHTML = html;
 
-    // OPRAVA: Click listeners pouze pro neprázdné položky
-    const nonEmptyLessons = [];
-    for (let hour = minHour; hour <= maxHour; hour++) {
-        const lessons = lessonMap[hour];
-        if (lessons && lessons.length > 0) {
-            nonEmptyLessons.push(...lessons);
-        }
-    }
+    // Click listeners pro single lessons
+    document.querySelectorAll('.compact-lesson-item:not(.compact-empty-lesson):not(.compact-lesson-split)').forEach((item) => {
+        const lessonId = item.dataset.lessonId;
+        if (!lessonId) return;
 
-    document.querySelectorAll('.compact-lesson-item:not(.compact-empty-lesson)').forEach((item, index) => {
-        item.addEventListener('click', () => {
-            showLessonModal(nonEmptyLessons[index]);
-        });
+        const [day, hour] = lessonId.split('-').map(Number);
+        const lessons = lessonMap[hour];
+        if (lessons && lessons[0]) {
+            item.addEventListener('click', () => {
+                showLessonModal(lessons[0]);
+            });
+        }
+    });
+
+    // Click listeners pro split lesson halves
+    document.querySelectorAll('.compact-lesson-half').forEach((half) => {
+        const parentItem = half.closest('.compact-lesson-item');
+        if (!parentItem) return;
+
+        const lessonId = parentItem.dataset.lessonId;
+        if (!lessonId) return;
+
+        const [day, hour] = lessonId.split('-').map(Number);
+        const lessonsInHour = lessonMap[hour] || [];
+
+        // Najdi index half elementu mezi svými sourozenci
+        const halfIndex = parseInt(half.dataset.lessonIndex);
+        const lesson = lessonsInHour[halfIndex];
+
+        if (lesson) {
+            half.addEventListener('click', (e) => {
+                e.stopPropagation(); // Zabrání propagaci na parent
+                showLessonModal(lesson);
+            });
+        }
     });
 
     // Restore scroll position
