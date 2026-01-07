@@ -14,6 +14,7 @@ import { abbreviateSubject, abbreviateTeacherName, getCurrentHour, getUpcomingHo
 // AbortControllers for cleanup of event listeners
 let swipeController = null;
 let navigationController = null;
+let daySwipeController = null;
 
 /**
  * Cleanup all event listeners from previous layouts
@@ -27,6 +28,91 @@ export function cleanupLayoutEventListeners() {
         navigationController.abort();
         navigationController = null;
     }
+    if (daySwipeController) {
+        daySwipeController.abort();
+        daySwipeController = null;
+    }
+}
+
+/**
+ * Initialize day swipe navigation
+ * @param {string} direction - 'horizontal' for single-day/compact-list, 'vertical' for card-view
+ */
+function initDaySwipeNavigation(direction = 'horizontal') {
+    const container = document.querySelector('.timetable-container');
+    if (!container) return;
+
+    // Cleanup previous controller
+    if (daySwipeController) {
+        daySwipeController.abort();
+    }
+
+    daySwipeController = new AbortController();
+    const signal = daySwipeController.signal;
+
+    let startX = 0;
+    let startY = 0;
+    let isDragging = false;
+
+    container.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        isDragging = true;
+    }, { passive: true, signal });
+
+    container.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+
+        const currentX = e.touches[0].clientX;
+        const currentY = e.touches[0].clientY;
+        const diffX = Math.abs(currentX - startX);
+        const diffY = Math.abs(currentY - startY);
+
+        // Prevent scroll in swipe direction
+        if (direction === 'horizontal' && diffX > diffY) {
+            e.preventDefault();
+        } else if (direction === 'vertical' && diffY > diffX) {
+            e.preventDefault();
+        }
+    }, { passive: false, signal });
+
+    container.addEventListener('touchend', async (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+
+        const diffX = startX - endX;
+        const diffY = startY - endY;
+        const threshold = 50; // Larger threshold for day changes
+
+        let shouldChangeDay = false;
+        let dayDirection = 0;
+
+        if (direction === 'horizontal') {
+            // Horizontal: left swipe = next day, right = prev
+            if (Math.abs(diffX) > threshold && Math.abs(diffX) > Math.abs(diffY)) {
+                shouldChangeDay = true;
+                dayDirection = diffX > 0 ? 1 : -1;
+            }
+        } else {
+            // Vertical: up swipe = next day, down = prev
+            if (Math.abs(diffY) > threshold && Math.abs(diffY) > Math.abs(diffX)) {
+                shouldChangeDay = true;
+                dayDirection = diffY > 0 ? 1 : -1;
+            }
+        }
+
+        if (shouldChangeDay) {
+            const currentDay = state.selectedDayIndex;
+            const newDay = (currentDay + dayDirection + 5) % 5; // Wrap around
+
+            // Import and call selectDay
+            const { selectDay } = await import('./timetable.js');
+            selectDay(newDay);
+        }
+    }, { passive: true, signal });
 }
 
 /**
@@ -59,6 +145,9 @@ export async function renderSingleDayLayout() {
             row.classList.remove('active');
         }
     });
+
+    // Add day swipe navigation
+    initDaySwipeNavigation('horizontal');
 }
 
 /**
@@ -374,6 +463,7 @@ export function renderCardLayout() {
     // Add event listeners - OPRAVA: Použít allHoursList.length
     initCardViewNavigation(allHoursList.length);
     initCardViewSwipe(allHoursList.length);
+    initDaySwipeNavigation('vertical'); // Vertical swipe for day changes
     addCardClickListeners(lessonsByHour);
 }
 
@@ -848,4 +938,7 @@ export function renderCompactListLayout() {
             updateLayoutPreference('compact-list', { scrollPosition: container.scrollTop });
         }, 100);
     });
+
+    // Add day swipe navigation
+    initDaySwipeNavigation('horizontal');
 }

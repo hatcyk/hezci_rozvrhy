@@ -1,5 +1,120 @@
 # Changelog
 
+## [1.7.13] - 2026-01-07
+### feat(navigation): swipe gesta pro změnu dne v mobilních layoutech
+
+### Přidáno
+- **Swipe navigace pro změnu dne v denním, kartovém a seznamovém zobrazení**
+  - Dříve: Změna dne pouze kliknutím na tlačítka Po, Út, St, Čt, Pá
+  - Problém: Na mobilu je přepínání dní nepohodlné - nutné vždy kliknout na malé tlačítko
+  - Nyní: Přirozená touch navigace pomocí swipe gest
+  - Podpora pro všechny mobilní layouty (denní, karty, seznam)
+
+- **Layout-specifické směry swipe gest**
+  - **Karty (card-view)**: Vertikální swipe pro změnu dne
+    - Swipe nahoru (↑) = další den (Pondělí → Úterý)
+    - Swipe dolů (↓) = předchozí den (Úterý → Pondělí)
+    - Horizontální swipe zachován pro navigaci mezi kartami hodin
+  - **Denní zobrazení (single-day)**: Horizontální swipe
+    - Swipe doleva (←) = další den
+    - Swipe doprava (→) = předchozí den
+  - **Seznam (compact-list)**: Horizontální swipe
+    - Swipe doleva (←) = další den
+    - Swipe doprava (→) = předchozí den
+
+- **Kruhová navigace (wrapping)**
+  - Pátek + swipe k dalšímu dni = Pondělí (začátek týdne)
+  - Pondělí + swipe k předchozímu dni = Pátek (konec týdne)
+  - Rychlá navigace po celém týdnu bez omezení
+
+### Změněno
+- **`public/js/timetable.js`**:
+  - Export `selectDay()` funkce (řádek 113)
+    - Umožňuje volání z jiných modulů (layout-renderers.js)
+
+- **`public/js/layout-renderers.js`**:
+  - Nová proměnná `daySwipeController` (řádek 17)
+    - AbortController pro cleanup event listenerů při přepínání layoutů
+  - Nová funkce `initDaySwipeNavigation(direction)` (řádky 37-116)
+    - `direction`: 'horizontal' pro single-day/compact-list, 'vertical' pro card-view
+    - Touch event listeners: touchstart, touchmove, touchend
+    - Threshold: 50 pixelů (větší než swipe karet - 30px)
+    - Detekce směru: pouze primární směr spouští změnu dne
+    - Wrapping math: `(currentDay + direction + 5) % 5`
+  - Aktualizace `cleanupLayoutEventListeners()` (řádky 31-34)
+    - Přidán cleanup pro daySwipeController
+  - Integrace do `renderSingleDayLayout()` (řádek 150)
+    - Volání `initDaySwipeNavigation('horizontal')`
+  - Integrace do `renderCardLayout()` (řádek 466)
+    - Volání `initDaySwipeNavigation('vertical')`
+    - Koexistence s horizontálním swipe pro karty
+  - Integrace do `renderCompactListLayout()` (řádek 943)
+    - Volání `initDaySwipeNavigation('horizontal')`
+
+### Technické detaily
+
+**Směrová detekce:**
+| Layout | Směr | Gesto | Akce |
+|--------|------|-------|------|
+| card-view | vertikální | Swipe ↑ | Další den (+1) |
+| card-view | vertikální | Swipe ↓ | Předchozí den (-1) |
+| single-day | horizontální | Swipe ← | Další den (+1) |
+| single-day | horizontální | Swipe → | Předchozí den (-1) |
+| compact-list | horizontální | Swipe ← | Další den (+1) |
+| compact-list | horizontální | Swipe → | Předchozí den (-1) |
+
+**Prevence konfliktů v card-view:**
+```javascript
+// Horizontální swipe (karty): diffX > diffY
+// Vertikální swipe (dny): diffY > diffX
+// Vzájemně se nevylučují - každý spouští svůj směr
+```
+
+**Wrapping algoritmus:**
+```javascript
+const newDay = (currentDay + dayDirection + 5) % 5;
+// Pátek (4) + 1 = (4 + 1 + 5) % 5 = 10 % 5 = 0 (Pondělí)
+// Pondělí (0) - 1 = (0 - 1 + 5) % 5 = 4 % 5 = 4 (Pátek)
+```
+
+**Event listener flags:**
+- `passive: true` pro touchstart/touchend (bez preventDefault)
+- `passive: false` pro touchmove (potřebuje preventDefault pro blokování scrollu)
+- Všechny používají `signal` pro cleanup přes AbortController
+
+**Threshold & detekce:**
+- Minimální vzdálenost swipe: 50 pixelů
+- Větší než swipe karet (30px) - předchází nechtěným změnám
+- Swipe musí být primárně v očekávaném směru (diffX vs diffY)
+
+### Vizuální změny
+- Žádné vizuální změny UI - čistě funkční vylepšení
+- Stávající tlačítka dnů (Po, Út, St, Čt, Pá) fungují stejně
+- Přidána neviditelná touch navigace pro rychlejší ovládání
+
+### Výhody
+- ✅ Přirozená mobilní navigace - swipe gesta odpovídají očekávanému chování
+- ✅ Rychlejší přepínání dní než klikání na tlačítka
+- ✅ Konzistentní s existujícím swipe chováním v card-view (karty hodin)
+- ✅ Kruhová navigace - není nutné vracet se zpět přes celý týden
+- ✅ Žádné konflikty mezi různými směry swipe (horizontální vs vertikální)
+- ✅ Správný cleanup event listenerů - bez memory leaks
+- ✅ Funguje pouze na touch zařízeních (mobil, tablet)
+- ✅ Desktop používá klasická tlačítka (zachována původní funkcionalita)
+
+### Edge cases
+- **Week-view**: NEZÍSKÁVÁ swipe (zobrazuje všechny dny najednou, žádný day selector)
+- **Krátké swipes**: < 50px threshold = žádná změna dne
+- **Diagonální swipes**: Spouští se pouze pokud je swipe primárně v očekávaném směru
+- **Rychlé swipes**: Každý touchend volá selectDay, který řídí state updates
+- **Prázdný rozvrh**: Swipe funguje i když není žádná výuka (empty state)
+
+### Modifikované soubory
+- `public/js/timetable.js` - export selectDay funkce
+- `public/js/layout-renderers.js` - swipe navigace, cleanup, integrace do layoutů
+
+---
+
 ## [1.7.12] - 2026-01-07
 ### feat(layouts): časové zvýraznění hodin v card-view a compact-list
 
