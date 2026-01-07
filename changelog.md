@@ -1,5 +1,125 @@
 # Changelog
 
+## [1.9.0] - 2026-01-07
+### 🔧 UX vylepšení a čištění kódu
+
+**Shrnutí:**
+Tři důležité úpravy pro lepší UX a odstranění nepotřebných funkcí.
+
+### 🐛 Opravy
+- **Card-view skupinové hodiny**: Vykřičník o změně hodiny se nyní zobrazuje u konkrétní změněné skupinové hodiny, ne u celého wrapperu
+
+### ⚡ Změny
+- **Mobilní rozložení**: Odstraněno week-view (celý týden) z mobilního zobrazení - na malých displejích je nepřehledné, zůstává dostupné pouze na desktopu
+- **Notifikace**: Odstraněny globální systémové notifikace (API outage/restored) - informace o stavu API je viditelná v alertu při otevření aplikace
+
+### 📦 Modifikované soubory
+**Frontend:**
+- `public/js/layout-renderers.js` - přidány badge indikátory do renderSplitLessons()
+- `public/js/layout-registry.js` - week-view pouze pro desktop
+- `public/index.html` - odstranění week-view toggle a systémových notifikací UI
+- `public/js/notifications-modal.js` - odstranění global toggles logiky
+- `public/js/notifications-core.js` - odstranění saveGlobalNotificationPreferences()
+
+**Backend:**
+- `backend/fcm.js` - odstranění sendApiOutageNotification() a sendApiRestoredNotification()
+- `backend/cron.js` - aktualizace volání notifikačních funkcí
+
+---
+
+## [1.8.0] - 2026-01-07
+### 🎉 Release: Vylepšení mobilního UX a časové navigace
+
+**Pull Request Summary:**
+Tato verze přináší významná vylepšení pro mobilní uživatele - časové zvýraznění hodin ve všech layoutech a intuitivní swipe navigaci pro rychlé přepínání dní.
+
+### 📋 Obsah release
+Tato verze kombinuje 3 samostatné commity:
+- **v1.7.12** - Časové zvýraznění hodin (card-view, compact-list)
+- **v1.7.13** - Swipe navigace pro změnu dne
+- **v1.7.14** - UI optimalizace (swipe směry, odstranění hover efektů)
+
+---
+
+## 🎯 Hlavní features
+
+### 1️⃣ Časové zvýraznění hodin napříč všemi layouty
+- ✅ **Aktuální hodina** - červené zvýraznění
+- ✅ **Nadcházející hodina** - oranžové zvýraznění
+- ✅ **Proběhlé hodiny** - zešednutí
+- ✅ Jednotný design v layoutech: denní, týdenní, karty, seznam
+- ✅ Funguje i u skupinových hodin (split lessons)
+
+### 2️⃣ Swipe navigace pro změnu dne (touch-only)
+- ✅ **Karty**: Vertikální swipe ↑↓ (nahoru = další den, dolů = předchozí)
+- ✅ **Denní**: Vertikální swipe ↑↓ (nahoru = další den, dolů = předchozí)
+- ✅ **Seznam**: Horizontální swipe ←→ (doleva = další den, doprava = předchozí)
+- ✅ **Kruhová navigace** - Pátek → Pondělí, Pondělí → Pátek
+- ✅ **Inteligentní detekce směru** - žádné konflikty se scrollem nebo card swipe
+- ✅ 50px threshold - prevence nechtěných změn dne
+
+### 3️⃣ UI optimalizace
+- ✅ Opraven swipe směr v denním layoutu (vertikální místo horizontálního)
+- ✅ Odstraněny rušivé hover/select efekty v seznamovém zobrazení
+- ✅ Čistší a uživatelsky přívětivější interface
+
+---
+
+## 📦 Modifikované soubory
+- `public/js/layout-renderers.js` - časové zvýraznění, swipe navigace, cleanup
+- `public/js/timetable.js` - export selectDay() funkce
+- `public/css/layout-card-view.css` - časové zvýraznění card-view
+- `public/css/layout-compact-list.css` - časové zvýraznění a odstranění hover efektů
+
+---
+
+## 🐛 Opravené bugy
+- **Skupinové hodiny v compact-list** - nebyla zobrazována časová zvýraznění (červená/oranžová)
+- **Denní layout swipe konflikt** - horizontální swipe kolidoval s horizontálním scrollem
+
+---
+
+## 🧪 Testování
+**Časové zvýraznění:**
+- [ ] Card-view: červené pro current, oranžové pro upcoming, zešednutí pro past
+- [ ] Compact-list: zvýraznění funguje u klasických i skupinových hodin
+- [ ] Zobrazuje se pouze v "aktuálním rozvrhu", ne ve "stálém"
+
+**Swipe navigace:**
+- [ ] Karty: vertikální swipe mění den, horizontální naviguje mezi kartami hodin
+- [ ] Denní: vertikální swipe mění den, horizontální scroll funguje normálně
+- [ ] Seznam: horizontální swipe mění den, vertikální scroll funguje normálně
+- [ ] Pátek → swipe další → Pondělí (wrapping)
+- [ ] Pondělí → swipe předchozí → Pátek (wrapping)
+- [ ] Žádné konflikty při scrollování/swipování
+
+**UI čistota:**
+- [ ] Seznam nemá hover/active efekty (čistší při scrollování)
+
+---
+
+## 🎨 User Experience Benefits
+- ⚡ **Rychlejší navigace** - swipe je přirozenější než klikání na tlačítka
+- 👁️ **Lepší orientace v čase** - okamžitě viditelné, která hodina právě probíhá
+- 📱 **Mobilní-first design** - optimalizováno pro dotykové ovládání
+- 🔄 **Kruhová navigace** - rychlé přepínání bez omezení
+- ✨ **Konzistentní UX** - všechny layouty používají stejné vzory
+
+---
+
+## 💡 Technické highlights
+- AbortController pattern pro správný cleanup event listenerů
+- Inteligentní detekce směru swipe (diffX vs diffY)
+- Cirkulární wrapping: `(currentDay + direction + 5) % 5`
+- Passive vs non-passive event listenery pro optimální performance
+- CSS gradient pozadí pro vizuální odlišení časových stavů
+
+---
+
+**Připraveno k merge do main** ✅
+
+---
+
 ## [1.7.14] - 2026-01-07
 ### fix(ui): úpravy směru swipe gesty a odstranění hover efektů
 
