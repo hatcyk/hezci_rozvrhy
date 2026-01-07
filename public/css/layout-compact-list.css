@@ -240,8 +240,18 @@
     background: rgba(239, 68, 68, 0.8);
 }
 
+.compact-lesson-item.current-time .compact-lesson-half {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, var(--card-bg) 100%);
+    border-color: rgba(239, 68, 68, 0.4);
+}
+
 .compact-lesson-item.upcoming {
     background: linear-gradient(90deg, rgba(235, 93, 67, 0.1) 0%, var(--card-bg) 100%);
+}
+
+.compact-lesson-item.upcoming .compact-lesson-half {
+    background: linear-gradient(135deg, rgba(235, 93, 67, 0.15) 0%, var(--card-bg) 100%);
+    border-color: rgba(235, 93, 67, 0.4);
 }
 
 .compact-lesson-item.past {

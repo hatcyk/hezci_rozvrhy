@@ -9,7 +9,7 @@ import { days, lessonTimes } from './constants.js';
 import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
 import { renderTimetable } from './timetable.js';
-import { abbreviateSubject, abbreviateTeacherName } from './utils.js';
+import { abbreviateSubject, abbreviateTeacherName, getCurrentHour, getUpcomingHour, isPastLesson, getTodayIndex } from './utils.js';
 
 // AbortControllers for cleanup of event listeners
 let swipeController = null;
@@ -310,8 +310,24 @@ export function renderCardLayout() {
             const hasChanged = lessons.some(l => l.changed);
             const hasRemoved = lessons.some(l => l.type === 'removed' || l.type === 'absent');
 
+            // Time-based highlighting classes
+            const todayIndex = getTodayIndex();
+            const currentHour = getCurrentHour();
+            const upcomingHour = getUpcomingHour();
+            let timeClasses = '';
+
+            if (!hasRemoved && state.selectedScheduleType === 'actual') {
+                if (selectedDay === todayIndex && hour === currentHour) {
+                    timeClasses = ' current-time';
+                } else if (selectedDay === todayIndex && hour === upcomingHour && hour !== currentHour) {
+                    timeClasses = ' upcoming';
+                } else if (isPastLesson(selectedDay, hour)) {
+                    timeClasses = ' past';
+                }
+            }
+
             html += `
-                <div class="lesson-card-full" data-card-index="${cardIndex}" data-lesson-id="${lessons[0].day}-${hour}">
+                <div class="lesson-card-full${timeClasses}" data-card-index="${cardIndex}" data-lesson-id="${lessons[0].day}-${hour}">
                     <!-- Header: Hour + Time -->
                     <div class="card-header-row">
                         <div class="card-subject">${hour}. hodina</div>
@@ -562,6 +578,21 @@ function renderSingleCompactLesson(lesson) {
     if (isRemoved) itemClasses += ' removed';
     if (isChanged) itemClasses += ' changed';
 
+    // Time-based highlighting
+    const todayIndex = getTodayIndex();
+    const currentHour = getCurrentHour();
+    const upcomingHour = getUpcomingHour();
+
+    if (!isRemoved && state.selectedScheduleType === 'actual') {
+        if (lesson.day === todayIndex && lesson.hour === currentHour) {
+            itemClasses += ' current-time';
+        } else if (lesson.day === todayIndex && lesson.hour === upcomingHour && lesson.hour !== currentHour) {
+            itemClasses += ' upcoming';
+        } else if (isPastLesson(lesson.day, lesson.hour)) {
+            itemClasses += ' past';
+        }
+    }
+
     const subjectDisplay = abbreviateSubject(lesson.subject);
 
     return `
@@ -620,6 +651,21 @@ function renderSplitCompactLessons(lessons, isVertical = false) {
     if (allRemoved) itemClasses += ' removed';
     if (anyChanged) itemClasses += ' changed';
     if (isVertical) itemClasses += ' compact-lesson-split-vertical';
+
+    // Time-based highlighting
+    const todayIndex = getTodayIndex();
+    const currentHour = getCurrentHour();
+    const upcomingHour = getUpcomingHour();
+
+    if (!allRemoved && state.selectedScheduleType === 'actual') {
+        if (firstLesson.day === todayIndex && firstLesson.hour === currentHour) {
+            itemClasses += ' current-time';
+        } else if (firstLesson.day === todayIndex && firstLesson.hour === upcomingHour && firstLesson.hour !== currentHour) {
+            itemClasses += ' upcoming';
+        } else if (isPastLesson(firstLesson.day, firstLesson.hour)) {
+            itemClasses += ' past';
+        }
+    }
 
     let html = `
         <div class="${itemClasses}" data-lesson-id="${firstLesson.day}-${firstLesson.hour}">

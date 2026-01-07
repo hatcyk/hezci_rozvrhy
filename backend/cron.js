@@ -1,6 +1,6 @@
 /**
  * Cron Job Scheduler
- * Automatically runs prefetch every 10 minutes
+ * Automatically runs prefetch every 10 minutes<
  */
 
 const cron = require('node-cron');

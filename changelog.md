@@ -1,5 +1,88 @@
 # Changelog
 
+## [1.7.12] - 2026-01-07
+### feat(layouts): časové zvýraznění hodin v card-view a compact-list
+
+### Přidáno
+- **Časové zvýraznění aktuálních, nadcházejících a proběhlých hodin v card-view a compact-list**
+  - Dříve: Časové zvýraznění (červená pro aktuální, oranžová pro nadcházející, zešednutí pro proběhlé) fungovalo pouze v týdenním a denním zobrazení
+  - Problém: V layoutech "Karty" a "Seznam" nebylo vidět, která hodina právě probíhá nebo už proběhla
+  - Nyní: Všechny layouty používají jednotné časové zvýraznění
+  - Konzistentní UX napříč všemi pohledy
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Import funkcí `getCurrentHour`, `getUpcomingHour`, `isPastLesson`, `getTodayIndex` z utils.js (řádek 12)
+  - Card View - renderCardLayout() (řádky 313-327):
+    - Přidána logika pro časové zvýraznění
+    - Kontrola `selectedScheduleType === 'actual'` - zvýraznění jen v aktuálním rozvrhu
+    - Aplikace CSS tříd `.current-time`, `.upcoming`, `.past` na `.lesson-card-full`
+  - Compact List - renderSingleCompactLesson() (řádky 581-594):
+    - Přidána logika pro časové zvýraznění single lessons
+    - Aplikace CSS tříd na `.compact-lesson-item`
+  - Compact List - renderSplitCompactLessons() (řádky 655-668):
+    - Přidána logika pro časové zvýraznění skupinových hodin
+    - Aplikace CSS tříd na `.compact-lesson-item.compact-lesson-split`
+
+- **`public/css/layout-card-view.css`**:
+  - Nové CSS pro časové zvýraznění (řádky 42-56):
+    - `.lesson-card-full.current-time`: Červený gradient pozadí, červený border
+    - `.lesson-card-full.upcoming`: Oranžový gradient pozadí, oranžový border
+    - `.lesson-card-full.past`: Zešednuté pozadí, opacity 0.65
+
+- **`public/css/layout-compact-list.css`**:
+  - Rozšířené CSS pro časové zvýraznění skupinových hodin (řádky 243-255):
+    - `.compact-lesson-item.current-time .compact-lesson-half`: Červený gradient pro jednotlivé skupinové boxy
+    - `.compact-lesson-item.upcoming .compact-lesson-half`: Oranžový gradient pro jednotlivé skupinové boxy
+    - Řešení problému překrývání pozadí u split lessons
+
+### Opraveno
+- **Časové zvýraznění nefungovalo u skupinových hodin v compact-list** (VIZUÁLNÍ BUG)
+  - Problém: `.compact-lesson-half` mělo vlastní solid pozadí, které překrývalo gradient pozadí rodiče
+  - Důsledek: U hodin se dvěma/více skupinami se nezobrazovalo červené/oranžové zvýraznění
+  - Řešení: Přidány specifické CSS styly pro `.compact-lesson-half` uvnitř `.current-time` a `.upcoming` rodičů
+  - Nyní funguje zvýraznění i u split lessons (více skupin ve stejné hodině)
+
+### Technické detaily
+**Logika časového zvýraznění:**
+- Aplikuje se pouze pro `state.selectedScheduleType === 'actual'` (aktuální rozvrh, ne stálý)
+- Ignoruje zrušené/nahrazené hodiny (`!isRemovedOrAbsent`, `!allRemoved`)
+- Kontroluje:
+  1. **Current time** - den === dnes && hodina === aktuální hodina
+  2. **Upcoming** - den === dnes && hodina === nadcházející hodina && není aktuální
+  3. **Past** - hodina již proběhla (porovnání dne a času konce hodiny)
+
+**CSS hierarchie pro compact-list split lessons:**
+- Parent `.compact-lesson-item` má gradient pozadí
+- Children `.compact-lesson-half` mají vlastní solid pozadí `var(--card-bg)`
+- Řešení: Specifické selektory `.compact-lesson-item.current-time .compact-lesson-half` s gradientem
+
+### Vizuální změny
+**Card View:**
+- Aktuální hodina: Červený gradient pozadí + červený border (2px)
+- Nadcházející hodina: Oranžový gradient pozadí + oranžový border (2px)
+- Proběhlé hodiny: Zešednuté pozadí, snížená opacity (0.65)
+
+**Compact List:**
+- Single lessons: Stejné zvýraznění jako v card-view
+- Skupinové hodiny (split): Gradient aplikován na jednotlivé `.compact-lesson-half` boxy
+- Proběhlé hodiny: Celý item má sníženou opacity (0.5)
+
+### Výhody
+- ✅ Konzistentní časové zvýraznění napříč všemi layouty
+- ✅ Jasná vizuální indikace aktuální hodiny (červená)
+- ✅ Upozornění na nadcházející hodinu (oranžová)
+- ✅ Zešednutí proběhlých hodin pro lepší orientaci
+- ✅ Funguje i u hodin s více skupinami (split lessons)
+- ✅ Automatická aktualizace bez nutnosti refresh stránky
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - časová logika pro card-view a compact-list
+- `public/css/layout-card-view.css` - CSS styly pro časové zvýraznění
+- `public/css/layout-compact-list.css` - CSS styly včetně fix pro split lessons
+
+---
+
 ## [1.7.11] - 2026-01-04
 ### feat(layouts): skupinové hodiny vedle sebe v compact-list + zkratky předmětů
 
