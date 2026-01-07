@@ -110,7 +110,7 @@ function updateActiveDayButton() {
 }
 
 // Select day on mobile
-async function selectDay(index) {
+export async function selectDay(index) {
     updateState('selectedDayIndex', index);
     updateActiveDayButton();
 

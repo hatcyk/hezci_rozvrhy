@@ -39,6 +39,22 @@
     transform: scale(0.98);
 }
 
+/* Time-based highlighting */
+.lesson-card-full.current-time {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(239, 68, 68, 0.15) 100%);
+    border: 2px solid rgba(239, 68, 68, 0.6);
+}
+
+.lesson-card-full.upcoming {
+    background: linear-gradient(135deg, rgba(235, 93, 67, 0.25) 0%, rgba(235, 93, 67, 0.15) 100%);
+    border: 2px solid rgba(235, 93, 67, 0.6);
+}
+
+.lesson-card-full.past {
+    background: rgba(100, 100, 100, 0.15);
+    opacity: 0.65;
+}
+
 /* Card Header Row (Hour + Time) */
 .card-header-row {
     display: flex;

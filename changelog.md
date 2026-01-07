@@ -1,5 +1,236 @@
 # Changelog
 
+## [1.7.14] - 2026-01-07
+### fix(ui): úpravy směru swipe gesty a odstranění hover efektů
+
+### Změněno
+- **Směr swipe gesty v denním zobrazení**
+  - Dříve: Horizontální swipe (←→) pro změnu dne
+  - Problém: Denní layout se scrolluje horizontálně (doprava/doleva), což způsobovalo konflikty
+  - Nyní: Vertikální swipe (↑↓) pro změnu dne - stejně jako v kartovém zobrazení
+  - Swipe nahoru (↑) = další den
+  - Swipe dolů (↓) = předchozí den
+
+- **Odstranění interaktivních efektů v seznamovém zobrazení**
+  - Odstraněny hover a select efekty u hodin v compact-list layoutu
+  - Zahrnuje jak klasické hodiny, tak skupinové hodiny
+  - Čistější UI bez rušivých animací při scrollování
+
+### Upravené soubory
+- **`public/js/layout-renderers.js`** (řádek 150):
+  - `renderSingleDayLayout()`: Změna z `initDaySwipeNavigation('horizontal')` na `initDaySwipeNavigation('vertical')`
+
+- **`public/css/layout-compact-list.css`**:
+  - Odstraněno `.compact-lesson-item:hover` (border-color, box-shadow, transform)
+  - Odstraněno `.compact-lesson-item:active` (transform)
+  - Odstraněno `.compact-lesson-half:hover` (border-color, box-shadow)
+  - Odstraněna transition animace z `.compact-lesson-half`
+
+### Přehled swipe směrů po změně
+| Layout | Scrollovací směr | Swipe směr pro změnu dne | Důvod |
+|--------|------------------|--------------------------|-------|
+| Denní | Horizontální (←→) | Vertikální (↑↓) | Prevence konfliktu se scrollem |
+| Karty | - | Vertikální (↑↓) | Horizontální swipe pro navigaci karet |
+| Seznam | Vertikální (↑↓) | Horizontální (←→) | Prevence konfliktu se scrollem |
+
+## [1.7.13] - 2026-01-07
+### feat(navigation): swipe gesta pro změnu dne v mobilních layoutech
+
+### Přidáno
+- **Swipe navigace pro změnu dne v denním, kartovém a seznamovém zobrazení**
+  - Dříve: Změna dne pouze kliknutím na tlačítka Po, Út, St, Čt, Pá
+  - Problém: Na mobilu je přepínání dní nepohodlné - nutné vždy kliknout na malé tlačítko
+  - Nyní: Přirozená touch navigace pomocí swipe gest
+  - Podpora pro všechny mobilní layouty (denní, karty, seznam)
+
+- **Layout-specifické směry swipe gest**
+  - **Karty (card-view)**: Vertikální swipe pro změnu dne
+    - Swipe nahoru (↑) = další den (Pondělí → Úterý)
+    - Swipe dolů (↓) = předchozí den (Úterý → Pondělí)
+    - Horizontální swipe zachován pro navigaci mezi kartami hodin
+  - **Denní zobrazení (single-day)**: Horizontální swipe
+    - Swipe doleva (←) = další den
+    - Swipe doprava (→) = předchozí den
+  - **Seznam (compact-list)**: Horizontální swipe
+    - Swipe doleva (←) = další den
+    - Swipe doprava (→) = předchozí den
+
+- **Kruhová navigace (wrapping)**
+  - Pátek + swipe k dalšímu dni = Pondělí (začátek týdne)
+  - Pondělí + swipe k předchozímu dni = Pátek (konec týdne)
+  - Rychlá navigace po celém týdnu bez omezení
+
+### Změněno
+- **`public/js/timetable.js`**:
+  - Export `selectDay()` funkce (řádek 113)
+    - Umožňuje volání z jiných modulů (layout-renderers.js)
+
+- **`public/js/layout-renderers.js`**:
+  - Nová proměnná `daySwipeController` (řádek 17)
+    - AbortController pro cleanup event listenerů při přepínání layoutů
+  - Nová funkce `initDaySwipeNavigation(direction)` (řádky 37-116)
+    - `direction`: 'horizontal' pro single-day/compact-list, 'vertical' pro card-view
+    - Touch event listeners: touchstart, touchmove, touchend
+    - Threshold: 50 pixelů (větší než swipe karet - 30px)
+    - Detekce směru: pouze primární směr spouští změnu dne
+    - Wrapping math: `(currentDay + direction + 5) % 5`
+  - Aktualizace `cleanupLayoutEventListeners()` (řádky 31-34)
+    - Přidán cleanup pro daySwipeController
+  - Integrace do `renderSingleDayLayout()` (řádek 150)
+    - Volání `initDaySwipeNavigation('horizontal')`
+  - Integrace do `renderCardLayout()` (řádek 466)
+    - Volání `initDaySwipeNavigation('vertical')`
+    - Koexistence s horizontálním swipe pro karty
+  - Integrace do `renderCompactListLayout()` (řádek 943)
+    - Volání `initDaySwipeNavigation('horizontal')`
+
+### Technické detaily
+
+**Směrová detekce:**
+| Layout | Směr | Gesto | Akce |
+|--------|------|-------|------|
+| card-view | vertikální | Swipe ↑ | Další den (+1) |
+| card-view | vertikální | Swipe ↓ | Předchozí den (-1) |
+| single-day | horizontální | Swipe ← | Další den (+1) |
+| single-day | horizontální | Swipe → | Předchozí den (-1) |
+| compact-list | horizontální | Swipe ← | Další den (+1) |
+| compact-list | horizontální | Swipe → | Předchozí den (-1) |
+
+**Prevence konfliktů v card-view:**
+```javascript
+// Horizontální swipe (karty): diffX > diffY
+// Vertikální swipe (dny): diffY > diffX
+// Vzájemně se nevylučují - každý spouští svůj směr
+```
+
+**Wrapping algoritmus:**
+```javascript
+const newDay = (currentDay + dayDirection + 5) % 5;
+// Pátek (4) + 1 = (4 + 1 + 5) % 5 = 10 % 5 = 0 (Pondělí)
+// Pondělí (0) - 1 = (0 - 1 + 5) % 5 = 4 % 5 = 4 (Pátek)
+```
+
+**Event listener flags:**
+- `passive: true` pro touchstart/touchend (bez preventDefault)
+- `passive: false` pro touchmove (potřebuje preventDefault pro blokování scrollu)
+- Všechny používají `signal` pro cleanup přes AbortController
+
+**Threshold & detekce:**
+- Minimální vzdálenost swipe: 50 pixelů
+- Větší než swipe karet (30px) - předchází nechtěným změnám
+- Swipe musí být primárně v očekávaném směru (diffX vs diffY)
+
+### Vizuální změny
+- Žádné vizuální změny UI - čistě funkční vylepšení
+- Stávající tlačítka dnů (Po, Út, St, Čt, Pá) fungují stejně
+- Přidána neviditelná touch navigace pro rychlejší ovládání
+
+### Výhody
+- ✅ Přirozená mobilní navigace - swipe gesta odpovídají očekávanému chování
+- ✅ Rychlejší přepínání dní než klikání na tlačítka
+- ✅ Konzistentní s existujícím swipe chováním v card-view (karty hodin)
+- ✅ Kruhová navigace - není nutné vracet se zpět přes celý týden
+- ✅ Žádné konflikty mezi různými směry swipe (horizontální vs vertikální)
+- ✅ Správný cleanup event listenerů - bez memory leaks
+- ✅ Funguje pouze na touch zařízeních (mobil, tablet)
+- ✅ Desktop používá klasická tlačítka (zachována původní funkcionalita)
+
+### Edge cases
+- **Week-view**: NEZÍSKÁVÁ swipe (zobrazuje všechny dny najednou, žádný day selector)
+- **Krátké swipes**: < 50px threshold = žádná změna dne
+- **Diagonální swipes**: Spouští se pouze pokud je swipe primárně v očekávaném směru
+- **Rychlé swipes**: Každý touchend volá selectDay, který řídí state updates
+- **Prázdný rozvrh**: Swipe funguje i když není žádná výuka (empty state)
+
+### Modifikované soubory
+- `public/js/timetable.js` - export selectDay funkce
+- `public/js/layout-renderers.js` - swipe navigace, cleanup, integrace do layoutů
+
+---
+
+## [1.7.12] - 2026-01-07
+### feat(layouts): časové zvýraznění hodin v card-view a compact-list
+
+### Přidáno
+- **Časové zvýraznění aktuálních, nadcházejících a proběhlých hodin v card-view a compact-list**
+  - Dříve: Časové zvýraznění (červená pro aktuální, oranžová pro nadcházející, zešednutí pro proběhlé) fungovalo pouze v týdenním a denním zobrazení
+  - Problém: V layoutech "Karty" a "Seznam" nebylo vidět, která hodina právě probíhá nebo už proběhla
+  - Nyní: Všechny layouty používají jednotné časové zvýraznění
+  - Konzistentní UX napříč všemi pohledy
+
+### Změněno
+- **`public/js/layout-renderers.js`**:
+  - Import funkcí `getCurrentHour`, `getUpcomingHour`, `isPastLesson`, `getTodayIndex` z utils.js (řádek 12)
+  - Card View - renderCardLayout() (řádky 313-327):
+    - Přidána logika pro časové zvýraznění
+    - Kontrola `selectedScheduleType === 'actual'` - zvýraznění jen v aktuálním rozvrhu
+    - Aplikace CSS tříd `.current-time`, `.upcoming`, `.past` na `.lesson-card-full`
+  - Compact List - renderSingleCompactLesson() (řádky 581-594):
+    - Přidána logika pro časové zvýraznění single lessons
+    - Aplikace CSS tříd na `.compact-lesson-item`
+  - Compact List - renderSplitCompactLessons() (řádky 655-668):
+    - Přidána logika pro časové zvýraznění skupinových hodin
+    - Aplikace CSS tříd na `.compact-lesson-item.compact-lesson-split`
+
+- **`public/css/layout-card-view.css`**:
+  - Nové CSS pro časové zvýraznění (řádky 42-56):
+    - `.lesson-card-full.current-time`: Červený gradient pozadí, červený border
+    - `.lesson-card-full.upcoming`: Oranžový gradient pozadí, oranžový border
+    - `.lesson-card-full.past`: Zešednuté pozadí, opacity 0.65
+
+- **`public/css/layout-compact-list.css`**:
+  - Rozšířené CSS pro časové zvýraznění skupinových hodin (řádky 243-255):
+    - `.compact-lesson-item.current-time .compact-lesson-half`: Červený gradient pro jednotlivé skupinové boxy
+    - `.compact-lesson-item.upcoming .compact-lesson-half`: Oranžový gradient pro jednotlivé skupinové boxy
+    - Řešení problému překrývání pozadí u split lessons
+
+### Opraveno
+- **Časové zvýraznění nefungovalo u skupinových hodin v compact-list** (VIZUÁLNÍ BUG)
+  - Problém: `.compact-lesson-half` mělo vlastní solid pozadí, které překrývalo gradient pozadí rodiče
+  - Důsledek: U hodin se dvěma/více skupinami se nezobrazovalo červené/oranžové zvýraznění
+  - Řešení: Přidány specifické CSS styly pro `.compact-lesson-half` uvnitř `.current-time` a `.upcoming` rodičů
+  - Nyní funguje zvýraznění i u split lessons (více skupin ve stejné hodině)
+
+### Technické detaily
+**Logika časového zvýraznění:**
+- Aplikuje se pouze pro `state.selectedScheduleType === 'actual'` (aktuální rozvrh, ne stálý)
+- Ignoruje zrušené/nahrazené hodiny (`!isRemovedOrAbsent`, `!allRemoved`)
+- Kontroluje:
+  1. **Current time** - den === dnes && hodina === aktuální hodina
+  2. **Upcoming** - den === dnes && hodina === nadcházející hodina && není aktuální
+  3. **Past** - hodina již proběhla (porovnání dne a času konce hodiny)
+
+**CSS hierarchie pro compact-list split lessons:**
+- Parent `.compact-lesson-item` má gradient pozadí
+- Children `.compact-lesson-half` mají vlastní solid pozadí `var(--card-bg)`
+- Řešení: Specifické selektory `.compact-lesson-item.current-time .compact-lesson-half` s gradientem
+
+### Vizuální změny
+**Card View:**
+- Aktuální hodina: Červený gradient pozadí + červený border (2px)
+- Nadcházející hodina: Oranžový gradient pozadí + oranžový border (2px)
+- Proběhlé hodiny: Zešednuté pozadí, snížená opacity (0.65)
+
+**Compact List:**
+- Single lessons: Stejné zvýraznění jako v card-view
+- Skupinové hodiny (split): Gradient aplikován na jednotlivé `.compact-lesson-half` boxy
+- Proběhlé hodiny: Celý item má sníženou opacity (0.5)
+
+### Výhody
+- ✅ Konzistentní časové zvýraznění napříč všemi layouty
+- ✅ Jasná vizuální indikace aktuální hodiny (červená)
+- ✅ Upozornění na nadcházející hodinu (oranžová)
+- ✅ Zešednutí proběhlých hodin pro lepší orientaci
+- ✅ Funguje i u hodin s více skupinami (split lessons)
+- ✅ Automatická aktualizace bez nutnosti refresh stránky
+
+### Modifikované soubory
+- `public/js/layout-renderers.js` - časová logika pro card-view a compact-list
+- `public/css/layout-card-view.css` - CSS styly pro časové zvýraznění
+- `public/css/layout-compact-list.css` - CSS styly včetně fix pro split lessons
+
+---
+
 ## [1.7.11] - 2026-01-04
 ### feat(layouts): skupinové hodiny vedle sebe v compact-list + zkratky předmětů
 
