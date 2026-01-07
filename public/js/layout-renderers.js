@@ -146,8 +146,8 @@ export async function renderSingleDayLayout() {
         }
     });
 
-    // Add day swipe navigation
-    initDaySwipeNavigation('horizontal');
+    // Add day swipe navigation (vertical due to horizontal scroll)
+    initDaySwipeNavigation('vertical');
 }
 
 /**

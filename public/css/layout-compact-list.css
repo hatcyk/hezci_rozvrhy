@@ -43,18 +43,7 @@
     border-radius: 12px;
     margin-bottom: 12px;
     cursor: pointer;
-    transition: all 0.2s ease;
     min-height: 80px;
-}
-
-.compact-lesson-item:hover {
-    border-color: var(--accent);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transform: translateX(4px);
-}
-
-.compact-lesson-item:active {
-    transform: translateX(2px);
 }
 
 /* Meta container - Badge + Time vertically */
@@ -186,13 +175,7 @@
     gap: 6px;
     position: relative;
     overflow: visible;
-    transition: all 0.2s ease;
     cursor: pointer;
-}
-
-.compact-lesson-half:hover {
-    border-color: var(--accent);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
 
 /* Subject in half - top left, larger */

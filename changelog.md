@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.7.14] - 2026-01-07
+### fix(ui): úpravy směru swipe gesty a odstranění hover efektů
+
+### Změněno
+- **Směr swipe gesty v denním zobrazení**
+  - Dříve: Horizontální swipe (←→) pro změnu dne
+  - Problém: Denní layout se scrolluje horizontálně (doprava/doleva), což způsobovalo konflikty
+  - Nyní: Vertikální swipe (↑↓) pro změnu dne - stejně jako v kartovém zobrazení
+  - Swipe nahoru (↑) = další den
+  - Swipe dolů (↓) = předchozí den
+
+- **Odstranění interaktivních efektů v seznamovém zobrazení**
+  - Odstraněny hover a select efekty u hodin v compact-list layoutu
+  - Zahrnuje jak klasické hodiny, tak skupinové hodiny
+  - Čistější UI bez rušivých animací při scrollování
+
+### Upravené soubory
+- **`public/js/layout-renderers.js`** (řádek 150):
+  - `renderSingleDayLayout()`: Změna z `initDaySwipeNavigation('horizontal')` na `initDaySwipeNavigation('vertical')`
+
+- **`public/css/layout-compact-list.css`**:
+  - Odstraněno `.compact-lesson-item:hover` (border-color, box-shadow, transform)
+  - Odstraněno `.compact-lesson-item:active` (transform)
+  - Odstraněno `.compact-lesson-half:hover` (border-color, box-shadow)
+  - Odstraněna transition animace z `.compact-lesson-half`
+
+### Přehled swipe směrů po změně
+| Layout | Scrollovací směr | Swipe směr pro změnu dne | Důvod |
+|--------|------------------|--------------------------|-------|
+| Denní | Horizontální (←→) | Vertikální (↑↓) | Prevence konfliktu se scrollem |
+| Karty | - | Vertikální (↑↓) | Horizontální swipe pro navigaci karet |
+| Seznam | Vertikální (↑↓) | Horizontální (←→) | Prevence konfliktu se scrollem |
+
 ## [1.7.13] - 2026-01-07
 ### feat(navigation): swipe gesta pro změnu dne v mobilních layoutech
 
