@@ -33,7 +33,7 @@ export const LAYOUT_REGISTRY = {
         </svg>`,
         renderer: 'renderWeekLayout',
         requiresDaySelector: false,
-        supportedOn: ['mobile', 'desktop']
+        supportedOn: ['desktop']
     },
     'card-view': {
         id: 'card-view',

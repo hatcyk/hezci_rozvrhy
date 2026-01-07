@@ -7,7 +7,7 @@ const cron = require('node-cron');
 const { prefetchAllData } = require('./prefetch');
 const { initializeFirebaseAdmin, getFirestore } = require('./firebase-admin-init');
 const { sendLessonReminders } = require('./lesson-reminder');
-const { sendApiOutageNotification, sendApiRestoredNotification, processPendingChanges, cleanupOldChanges } = require('./fcm');
+const { processPendingChanges, cleanupOldChanges } = require('./fcm');
 const { cleanupOldNotifications } = require('./notification-tracker');
 
 let cronJob = null;
@@ -164,18 +164,13 @@ async function detectAndNotifyStatusChange(currentHealth) {
     if (previousHealthStatus !== currentHealth) {
         console.log(`\n🔔 API status changed: ${previousHealthStatus ? 'healthy' : 'unhealthy'} → ${currentHealth ? 'healthy' : 'unhealthy'}`);
 
-        try {
-            if (!currentHealth) {
-                // API went down
-                console.log('⚠️  Sending API outage notification...');
-                await sendApiOutageNotification();
-            } else {
-                // API restored
-                console.log('✅ Sending API restored notification...');
-                await sendApiRestoredNotification();
-            }
-        } catch (error) {
-            console.error('Failed to send status change notification:', error.message);
+        // Notifications removed - user will see alert in UI
+        if (!currentHealth) {
+            // API went down
+            console.log('⚠️  API is down (notifications disabled)');
+        } else {
+            // API restored
+            console.log('✅ API restored (notifications disabled)');
         }
 
         // Update previous status

@@ -5,7 +5,7 @@
 
 import { state, updateState } from './state.js';
 import { dom } from './dom.js';
-import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences, saveGlobalNotificationPreferences } from './notifications-core.js';
+import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences } from './notifications-core.js';
 import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes } from './notifications-multiselect.js';
 import { renderSelectedTimetablesPreferences } from './notifications-preferences.js';
 import { debug } from './debug.js';
@@ -78,9 +78,6 @@ async function initializeModal() {
     updateMultiselectLabel();
     renderSelectedTimetablesPreferences();
     updateNotificationUIState();
-
-    // Initialize global notification toggles
-    initializeGlobalToggles();
 }
 
 /**
@@ -204,56 +201,6 @@ export async function disableNotificationsHandler() {
         // Re-enable button
         button.disabled = false;
         button.textContent = originalText;
-    }
-}
-
-/**
- * Initialize global notification toggles
- */
-function initializeGlobalToggles() {
-    const systemStatusToggle = document.getElementById('systemStatusToggle');
-
-    if (!systemStatusToggle) return;
-
-    // Load current values from state (loaded by loadNotificationPreferences)
-    systemStatusToggle.checked = state.globalNotificationPreferences?.systemStatus ?? false;
-
-    // System notifications are independent and always available
-    systemStatusToggle.disabled = false;
-
-    // Add event listeners
-    systemStatusToggle.addEventListener('change', async () => {
-        await handleGlobalToggleChange('systemStatus', systemStatusToggle.checked);
-    });
-
-    debug.log('✅ Global notification toggles initialized', {
-        systemStatus: systemStatusToggle.checked
-    });
-}
-
-/**
- * Handle global toggle change
- */
-async function handleGlobalToggleChange(type, value) {
-    try {
-        // Update state
-        if (!state.globalNotificationPreferences) {
-            updateState('globalNotificationPreferences', {});
-        }
-        state.globalNotificationPreferences[type] = value;
-
-        // Save to server
-        await saveGlobalNotificationPreferences(state.globalNotificationPreferences);
-
-        debug.log(`✅ ${type} updated to ${value}`);
-
-    } catch (error) {
-        debug.error(`Failed to save ${type} preference:`, error);
-        // Revert toggle on error
-        const toggle = document.getElementById('systemStatusToggle');
-        if (toggle) {
-            toggle.checked = !value;
-        }
     }
 }
 
