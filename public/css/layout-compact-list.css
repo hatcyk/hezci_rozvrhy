@@ -344,6 +344,7 @@
     );
     pointer-events: none;
     border-radius: 10px;
+    z-index: 5;
 }
 
 .compact-lesson-half.lesson-removed .compact-lesson-subject {
@@ -351,7 +352,8 @@
 }
 
 /* Changed indicator for split lessons - per individual lesson half */
-.compact-lesson-half.lesson-changed::after {
+/* Only show warning icon when lesson is changed but NOT removed (removed has higher priority) */
+.compact-lesson-half.lesson-changed:not(.lesson-removed)::after {
     content: '';
     position: absolute;
     top: 6px;
@@ -365,7 +367,7 @@
 }
 
 /* Offset changed indicator when group badge is present */
-.compact-lesson-half.lesson-changed .compact-group-badge {
+.compact-lesson-half.lesson-changed:not(.lesson-removed) .compact-group-badge {
     top: 28px;
 }
 
