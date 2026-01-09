@@ -220,3 +220,48 @@ export function requiresDaySelector() {
     const layout = getCurrentLayout();
     return layout.requiresDaySelector;
 }
+
+/**
+ * Get current platform based on window width
+ * @returns {string} 'mobile' or 'desktop'
+ */
+function getCurrentPlatform() {
+    return window.innerWidth <= 768 ? 'mobile' : 'desktop';
+}
+
+/**
+ * Get default layout for platform
+ * @param {string} platform - 'mobile' or 'desktop'
+ * @returns {string} Default layout ID
+ */
+function getDefaultLayoutForPlatform(platform) {
+    return platform === 'mobile' ? 'single-day' : 'week-view';
+}
+
+/**
+ * Handle window resize - switch layout if current layout is not supported on new platform
+ */
+let resizeTimeout;
+async function handleResize() {
+    // Debounce resize events
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(async () => {
+        const currentPlatform = getCurrentPlatform();
+        const currentLayout = getCurrentLayout();
+
+        // Check if current layout is supported on current platform
+        if (!currentLayout.supportedOn.includes(currentPlatform)) {
+            console.log(`Layout ${currentLayout.id} not supported on ${currentPlatform}, switching to default layout`);
+            const defaultLayout = getDefaultLayoutForPlatform(currentPlatform);
+            await switchLayout(defaultLayout);
+        }
+    }, 300); // 300ms debounce
+}
+
+/**
+ * Initialize resize listener
+ */
+export function initResizeListener() {
+    window.addEventListener('resize', handleResize);
+    console.log('Resize listener initialized');
+}

@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.9.1] - 2026-01-09
+### fix(ui): oprava indikátorů změn u skupinových hodin a automatické přepnutí layoutu při resize
+
+### 🐛 Opravy
+- **Card-view layout**: Odstraněn zavádějící status dot (vykřičník) z hlavičky karty při skupinových hodinách - indikátory změn se nyní zobrazují pouze u konkrétních lekcí, které mají změnu
+- **Compact-list layout**: Vykřičník změny se nyní zobrazuje pouze u konkrétních skupinových hodin, které mají změnu, ne u celého slotu
+
+### ⚡ Vylepšení
+- **Responzivní layout**: Přidáno automatické přepnutí layoutu při změně velikosti okna
+  - Když uživatel zvětší okno z mobilní na desktopovou velikost (>768px), layout se automaticky přepne z mobilního (card-view/compact-list) na desktop (week-view)
+  - Využívá debounce (300ms) pro optimální výkon
+  - Zabraňuje situaci, kdy mobilní layout zůstane aktivní i na velkém displeji
+
+### 🔧 Hotfix
+- **Konflikt ::after pseudo-elementů**: Opravena kolize mezi vykřičníkem změny a přeškrtnutím u zrušených hodin se skupinami
+  - Vykřičník se nyní zobrazuje pouze když hodina má změnu a NENÍ zrušená (`.lesson-changed:not(.lesson-removed)`)
+  - Přeškrtnutí má prioritu před vykřičníkem - když je hodina zrušená, zobrazí se pouze červené přeškrtnutí
+  - Přidán `z-index: 5` k přeškrtnutí pro správné zobrazení nad ostatními elementy
+  - Opravena pozice vykřičníku (zůstává v pravém horním rohu místo aby se "jeblo" doleva)
+
+### 📦 Modifikované soubory
+**Frontend:**
+- `public/js/layout-renderers.js` - oprava indikace změn v card-view a compact-list layoutech
+- `public/css/layout-compact-list.css` - přidáno CSS pro vykřičník na individuálních lesson-half elementech, oprava konfliktů ::after pseudo-elementů
+- `public/js/layout-manager.js` - přidána funkce pro detekci platformy a automatické přepnutí layoutu při resize
+- `public/js/main.js` - inicializace resize listeneru
+
+---
+
 ## [1.9.0] - 2026-01-07
 ### 🔧 UX vylepšení a čištění kódu
 

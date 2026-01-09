@@ -11,7 +11,7 @@ import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from 
 import { registerServiceWorker, initializeMessaging, initNotificationButton, showNotificationModal, closeNotificationModal, enableNotifications, disableNotificationsHandler, toggleMultiselect, filterMultiselectOptions, setupMultiselectGlobalListeners } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
-import { initLayoutSystem } from './layout-manager.js';
+import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 
 /**
  * Cleanup old Service Workers (especially sw.js)
@@ -148,6 +148,7 @@ async function init() {
 
         // Initialize layout system
         initLayoutSystem();
+        initResizeListener();
 
         // Initialize Firebase
         console.log('Initializing Firebase...');
