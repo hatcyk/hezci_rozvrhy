@@ -449,7 +449,6 @@ export function renderCardLayout() {
                         <div class="card-subject">${hour}. hodina</div>
                         <div class="card-time-meta">
                             ${timeLabel}
-                            ${hasRemoved || hasChanged ? `<span class="card-status-dot ${hasRemoved ? 'removed' : 'changed'}"></span>` : ''}
                         </div>
                     </div>
 
@@ -762,11 +761,9 @@ function renderSplitCompactLessons(lessons, isVertical = false) {
     const timeLabel = timeInfo ? timeInfo.label : '';
 
     const allRemoved = lessons.every(l => l.type === 'removed' || l.type === 'absent');
-    const anyChanged = lessons.some(l => l.changed);
 
     let itemClasses = 'compact-lesson-item compact-lesson-split';
     if (allRemoved) itemClasses += ' removed';
-    if (anyChanged) itemClasses += ' changed';
     if (isVertical) itemClasses += ' compact-lesson-split-vertical';
 
     // Time-based highlighting
@@ -797,10 +794,12 @@ function renderSplitCompactLessons(lessons, isVertical = false) {
 
     lessons.forEach(lesson => {
         const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+        const isChanged = lesson.changed;
         const subjectDisplay = abbreviateSubject(lesson.subject);
 
         let halfClasses = 'compact-lesson-half';
         if (isRemoved) halfClasses += ' lesson-removed';
+        if (isChanged) halfClasses += ' lesson-changed';
 
         html += `
             <div class="${halfClasses}" data-lesson-index="${lessons.indexOf(lesson)}">
