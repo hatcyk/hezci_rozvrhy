@@ -35,3 +35,14 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VERCEL: 'true'
         run: node scripts/run-prefetch.js
+
+      - name: Process notifications after prefetch
+        if: success()
+        run: |
+          curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/process-notifications" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -w "\nHTTP Status: %{http_code}\n" \
+            --connect-timeout 10 \
+            --max-time 30 \
+            -s -S || echo "Notification processing failed (non-critical)"
