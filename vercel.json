@@ -4,6 +4,20 @@
       "maxDuration": 10
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/process-notifications",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/lesson-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/prefetch",
+      "schedule": "*/15 * * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

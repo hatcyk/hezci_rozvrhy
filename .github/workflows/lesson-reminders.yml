@@ -15,8 +15,35 @@ jobs:
     steps:
       - name: Call Lesson Reminders Endpoint
         run: |
-          curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/lesson-reminders" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json" \
-            -w "\nHTTP Status: %{http_code}\n" \
-            -s -S -f || echo "Lesson reminders failed with status $?"
+          MAX_RETRIES=3
+          RETRY_DELAY=10
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i/$MAX_RETRIES..."
+            HTTP_STATUS=$(curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/lesson-reminders" \
+              -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+              -H "Content-Type: application/json" \
+              -w "\n%{http_code}" \
+              -s -S \
+              --connect-timeout 10 \
+              --max-time 30)
+
+            STATUS_CODE=$(echo "$HTTP_STATUS" | tail -1)
+            BODY=$(echo "$HTTP_STATUS" | sed '$d')
+            echo "Response: $BODY"
+            echo "HTTP Status: $STATUS_CODE"
+
+            if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 300 ]; then
+              echo "Success!"
+              exit 0
+            fi
+
+            if [ "$i" -lt "$MAX_RETRIES" ]; then
+              echo "Failed (HTTP $STATUS_CODE), retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+              RETRY_DELAY=$((RETRY_DELAY * 2))
+            fi
+          done
+
+          echo "All $MAX_RETRIES attempts failed"
+          exit 1
