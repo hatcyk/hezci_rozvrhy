@@ -3,8 +3,8 @@ name: Check API Status
 on:
   schedule:
     # Every 10 minutes | Prázdninový provoz: Every 60 minutes
-    #- cron: '*/10 * * * *'
-    - cron: '0 * * * *'
+    - cron: '*/10 * * * *'
+    #- cron: '0 * * * *'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
