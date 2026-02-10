@@ -4,6 +4,10 @@ on:
   schedule:
     # Every 5 minutes | Prázdninový provoz: Every 60 minutes
     - cron: '*/5 * * * *'
+    #- cron: '0 * * * *' maintainance
+
+  workflow_dispatch: # Allow manual triggering
+
 jobs:
   process-notifications:
     name: Process Change Notifications
