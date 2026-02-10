@@ -2,18 +2,8 @@ name: Process Change Notifications
 
 on:
   schedule:
-<<<<<<< HEAD
     # Every 5 minutes | Prázdninový provoz: Every 60 minutes
     - cron: '*/5 * * * *'
-    #- cron: '0 * * * *' maintainance
-=======
-    # Every 10 minutes, offset by 2 minutes | Prázdninový provoz: Every 60 minutes
-    #- cron: '*/10 * * * *'
-    - cron: '0 * * * *'
->>>>>>> parent of 8ac5a1a (fix(workflows): Update cron schedules for API status, lesson reminders, prefetch, and notification processing)
-
-  workflow_dispatch: # Allow manual triggering
-
 jobs:
   process-notifications:
     name: Process Change Notifications
