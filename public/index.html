@@ -124,7 +124,7 @@
                     <line x1="12" y1="8" x2="12" y2="12"/>
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
-                <span id="outageBannerText">Bakaláři nedostupní - zobrazuji uložená data</span>
+                <span id="outageBannerText">Probíhá výpadek bakalářů - Používám nejnovější dostupná data</span>
             </div>
         </div>
 
@@ -240,10 +240,6 @@
                 <div class="notification-section" id="notificationSection">
                     <h3>Sledované rozvrhy</h3>
 
-                    <div class="flat-list-search">
-                        <input type="text" id="flatListSearch" placeholder="Hledat třídu, učitele...">
-                    </div>
-
                     <div class="flat-timetable-list" id="flatTimetableList">
                         <!-- Populated dynamically -->
                     </div>
@@ -334,9 +330,14 @@
                     <div class="settings-option-title">Rozvržení</div>
                     <div class="settings-option-description" id="currentLayoutDescription">Denní zobrazení</div>
                 </div>
-                <svg class="settings-option-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="settings-option-arrow" id="settingsLayoutArrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
+            </div>
+            <div class="settings-layout-panel" id="settingsLayoutPanel">
+                <div class="settings-layout-panel-inner">
+                    <div id="settingsLayoutOptionsContainer"></div>
+                </div>
             </div>
 
             <div class="settings-option" id="settingsTheme">

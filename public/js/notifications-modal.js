@@ -6,7 +6,7 @@
 import { state, updateState } from './state.js';
 import { dom } from './dom.js';
 import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences } from './notifications-core.js';
-import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes, filterFlatList } from './notifications-multiselect.js';
+import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes } from './notifications-multiselect.js';
 import { renderSelectedTimetablesPreferences, renderTimetablePreferencesView } from './notifications-preferences.js';
 import { debug } from './debug.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
@@ -48,7 +48,8 @@ export function showNotificationModal() {
  * Close notification settings modal (context-aware: back in prefs view, close in list view)
  */
 export function closeNotificationModal() {
-    if (currentNotifView === 'preferences') {
+    const views = document.getElementById('notifViews');
+    if (views && views.classList.contains('notif-prefs-open')) {
         showNotifListView();
     } else {
         closeBottomSheet('notificationModal');
@@ -401,12 +402,6 @@ function updateDebugSectionVisibility() {
 export async function initNotificationButton() {
     if (dom.notificationBell) {
         dom.notificationBell.addEventListener('click', showNotificationModal);
-    }
-
-    // Flat list search
-    const flatListSearch = document.getElementById('flatListSearch');
-    if (flatListSearch) {
-        flatListSearch.addEventListener('input', (e) => filterFlatList(e.target.value));
     }
 
     // Navigate to preferences view when settings gear is clicked on a flat list item

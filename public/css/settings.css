@@ -179,6 +179,38 @@
     color: var(--spsd-orange, #f97316);
 }
 
+/* Inline layout accordion panel */
+.settings-layout-panel {
+    display: grid;
+    grid-template-rows: 0fr;
+    overflow: hidden;
+    transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-top: -8px;
+}
+
+.settings-layout-panel.expanded {
+    grid-template-rows: 1fr;
+}
+
+.settings-layout-panel-inner {
+    overflow: hidden;
+    padding: 0;
+    transition: padding 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.settings-layout-panel.expanded .settings-layout-panel-inner {
+    padding: 12px 0 14px;
+}
+
+/* Arrow rotation when panel is open */
+.settings-option-arrow {
+    transition: transform 0.25s ease;
+}
+
+.settings-option-arrow.rotated {
+    transform: rotate(90deg);
+}
+
 /* Footer in settings modal */
 .settings-footer {
     margin-top: 24px;
