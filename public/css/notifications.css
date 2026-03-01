@@ -1,14 +1,15 @@
-/* Notification Bell Button */
+/* Notification Bell Button — integrated with header strip on desktop */
 .notification-bell {
     flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    background: var(--card-bg);
-    color: var(--text-main);
-    border: 2px solid var(--border);
-    border-radius: 10px;
+    width: 48px;
+    align-self: stretch;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: color 0.15s, background 0.15s;
     padding: 0;
     display: flex;
     align-items: center;
@@ -16,8 +17,9 @@
 }
 
 .notification-bell:hover {
-    border-color: var(--accent);
-    transform: scale(1.05);
+    color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.07);
+    transform: none;
 }
 
 .notification-bell.disabled {

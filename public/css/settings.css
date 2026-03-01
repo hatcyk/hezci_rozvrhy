@@ -91,9 +91,22 @@
 
 /* Mobile-specific styles */
 @media (max-width: 768px) {
-    /* Show settings button on mobile */
+    /* Show settings button on mobile — integrated style */
     .settings-toggle.mobile-only {
         display: flex;
+        width: 42px;
+        height: 42px;
+        background: var(--sidebar-accent);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        flex-shrink: 0;
+    }
+
+    .settings-toggle.mobile-only:hover {
+        border-color: var(--spsd-orange);
+        color: var(--spsd-orange);
+        background: rgba(235, 93, 67, 0.07);
+        transform: none;
     }
 
     /* Hide ALL original buttons on mobile */
