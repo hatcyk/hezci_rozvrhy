@@ -1,62 +1,45 @@
+/* ===== Lesson Card ===== */
+
 .lesson-card {
-    background: var(--accent-light);
+    background: var(--card-bg);
     padding: 8px 10px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: background var(--theme-transition), border-color var(--theme-transition), box-shadow var(--theme-transition), transform 0.2s ease;
+    border: 1px solid var(--border);
+    border-left: 3px solid transparent;
+    box-shadow: 0 1px 4px var(--shadow-light);
+    transition: border-color 0.15s, box-shadow 0.15s;
     position: relative;
     min-height: 60px;
     display: flex;
     flex-direction: column;
 }
 
+/* ---- Status: changed ---- */
 .lesson-card.changed {
-    background: linear-gradient(135deg, hsla(348, 100%, 50%, 0.12) 0%, hsla(38, 92%, 55%, 0.08) 100%);
-    position: relative;
+    border-left-color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.05);
 }
 
+/* Small dot indicator top-right */
 .lesson-card.changed::after {
-    content: '!';
+    content: '';
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 20px;
-    height: 20px;
-    background: var(--changed-color);
-    color: white;
+    top: 7px;
+    right: 7px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75rem;
-    font-weight: 900;
-    box-shadow: 0 2px 6px rgba(255, 0, 51, 0.4);
-    animation: pulse-change 2s ease-in-out infinite;
+    background: var(--spsd-orange);
 }
 
-@keyframes pulse-change {
-    0%, 100% {
-        transform: scale(1);
-        box-shadow: 0 2px 6px rgba(255, 0, 51, 0.4);
-    }
-    50% {
-        transform: scale(1.1);
-        box-shadow: 0 3px 8px rgba(255, 0, 51, 0.6);
-    }
-}
-
-/* Removed lessons - red theme */
+/* ---- Status: removed ---- */
 .lesson-card.removed {
-    background: linear-gradient(135deg,
-        rgba(120, 50, 60, 0.45) 0%,
-        rgba(90, 40, 50, 0.35) 100%);
+    border-left-color: #ef4444;
+    opacity: 0.65;
     position: relative;
-    opacity: 0.92;
-    /* overflow: hidden; removed to allow diagonal line to display properly */
 }
 
-/* Diagonal line through entire removed card - smooth SVG */
+/* Diagonal line */
 .lesson-card.removed::before {
     content: '';
     position: absolute;
@@ -64,92 +47,49 @@
     left: -2px;
     right: -2px;
     bottom: -2px;
-    background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='0' x2='100%25' y2='100%25' stroke='%23FF6B6B' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='0' x2='100%25' y2='100%25' stroke='%23ef4444' stroke-width='1.5' stroke-linecap='round' opacity='0.5'/%3E%3C/svg%3E");
     pointer-events: none;
     z-index: 2;
-    opacity: 0.85;
 }
 
-/* Red exclamation mark for removed lessons */
-.lesson-card.removed::after {
-    content: '!';
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 24px;
-    height: 24px;
-    background: linear-gradient(135deg, #FF4444 0%, #CC0000 100%);
-    color: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.9rem;
-    font-weight: 900;
-    box-shadow: 0 3px 8px rgba(255, 68, 68, 0.5);
-    z-index: 3;
-    animation: pulse-removed 2s ease-in-out infinite;
-}
-
-@keyframes pulse-removed {
-    0%, 100% {
-        transform: scale(1);
-        box-shadow: 0 3px 8px rgba(255, 68, 68, 0.5);
-    }
-    50% {
-        transform: scale(1.08);
-        box-shadow: 0 4px 12px rgba(255, 68, 68, 0.7);
-    }
-}
-
-/* Absent lessons - purple/blue theme */
+/* ---- Status: absent ---- */
 .lesson-card.absent {
-    background: linear-gradient(135deg, rgba(153, 68, 255, 0.3) 0%, rgba(153, 102, 255, 0.18) 100%);
-    position: relative;
+    border-left-color: #a855f7;
+    background: rgba(168, 85, 247, 0.05);
     opacity: 0.85;
 }
 
+/* ---- Status: current lesson ---- */
 .lesson-card.current-time {
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.25) 0%, rgba(239, 68, 68, 0.15) 100%);
-    border: 2px solid rgba(239, 68, 68, 0.6);
-    box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
-    position: relative;
+    border-left-color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.08);
+    box-shadow: 0 2px 12px rgba(235, 93, 67, 0.2);
 }
 
-/* Orange circle removed - using border and background instead */
-
-/* Upcoming lesson - next lesson after current or first lesson of the day */
+/* ---- Status: upcoming ---- */
 .lesson-card.upcoming {
-    background: linear-gradient(135deg, rgba(235, 93, 67, 0.25) 0%, rgba(235, 93, 67, 0.15) 100%);
-    border: 2px solid rgba(235, 93, 67, 0.6);
-    box-shadow: 0 4px 16px rgba(235, 93, 67, 0.3);
-    position: relative;
+    border-left-color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.04);
 }
 
-/* Past lessons - grayed out */
+/* ---- Status: past ---- */
 .lesson-card.past {
-    background: rgba(100, 100, 100, 0.15);
-    border: 1px solid rgba(100, 100, 100, 0.3);
-    opacity: 0.65;
-    position: relative;
+    opacity: 0.5;
 }
 
-/* Reduce opacity of text in past lessons */
-.lesson-card.past .lesson-subject {
+.lesson-card.past .lesson-subject,
+.lesson-card.past .lesson-details {
     opacity: 0.8;
 }
 
-.lesson-card.past .lesson-details {
-    opacity: 0.7;
-}
-
+/* ---- Text ---- */
 .lesson-subject {
-    font-size: 1.05rem;
+    font-size: 1rem;
     font-weight: 700;
     margin-bottom: 4px;
     color: var(--text-main);
     line-height: 1.3;
-    max-width: calc(100% - 30px);
+    max-width: calc(100% - 28px);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -172,41 +112,38 @@
 }
 
 .lesson-detail-icon {
-    width: 14px;
-    height: 14px;
+    width: 13px;
+    height: 13px;
     stroke: var(--text-dim);
     flex-shrink: 0;
 }
 
+/* ---- Group badge ---- */
 .lesson-group {
     position: absolute;
     top: 6px;
     right: 6px;
-    font-size: 0.75rem;
-    color: white;
-    padding: 4px 8px;
-    background: var(--spsd-orange);
-    border-radius: 6px;
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    padding: 2px 6px;
+    background: var(--border-light);
+    border-radius: 5px;
     font-weight: 700;
     display: inline-block;
-    box-shadow: 0 2px 6px rgba(235, 93, 67, 0.4);
     z-index: 1;
     width: fit-content;
     height: auto;
     white-space: nowrap;
 }
 
-/* Offset group badge when there's a change/removed indicator */
+/* Offset group badge when there's a change dot */
 .lesson-card.changed .lesson-group,
 .lesson-card.removed .lesson-group,
 .lesson-card.absent .lesson-group {
-    top: 34px;
+    top: 22px;
 }
 
 /* Gray out group badge for removed lessons */
 .lesson-card.removed .lesson-group {
-    background: rgba(128, 128, 128, 0.5);
-    color: rgba(255, 255, 255, 0.7);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    opacity: 0.6;
+    opacity: 0.5;
 }
