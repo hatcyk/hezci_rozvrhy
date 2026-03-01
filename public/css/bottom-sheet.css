@@ -132,6 +132,7 @@
 .bottom-sheet .modal-close:hover {
     color: var(--text-main);
     background: var(--border);
+    transform: none; /* override any global rotate from modal.css */
 }
 
 /* ---- Body padding ---- */

@@ -743,6 +743,52 @@
     pointer-events: none;
 }
 
+/* ===== Notification views cross-fade transition ===== */
+
+#notifViews {
+    position: relative;
+}
+
+#notifListView,
+#notifPreferencesView {
+    transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Default: list in flow (defines height), prefs absolutely overlaid */
+#notifListView {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+#notifPreferencesView {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    transform: translateX(24px);
+    pointer-events: none;
+}
+
+/* Prefs open: prefs in flow (defines height), list absolutely overlaid */
+#notifViews.notif-prefs-open #notifListView {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    transform: translateX(-24px);
+    pointer-events: none;
+}
+
+#notifViews.notif-prefs-open #notifPreferencesView {
+    position: relative;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
 /* ===== Accordion Categories ===== */
 
 .flat-accordion {

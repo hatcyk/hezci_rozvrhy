@@ -61,24 +61,16 @@ export function closeNotificationModal() {
 export function showNotifListView() {
     currentNotifView = 'list';
 
-    const listView = document.getElementById('notifListView');
-    const prefsView = document.getElementById('notifPreferencesView');
+    const views = document.getElementById('notifViews');
     const titleList = document.querySelector('.notif-title-list');
     const titlePrefs = document.querySelector('.notif-title-prefs');
-    const closeIcon = document.getElementById('notifCloseIcon');
 
-    if (listView) listView.style.display = '';
-    if (prefsView) prefsView.style.display = 'none';
+    if (views) views.classList.remove('notif-prefs-open');
     if (titleList) titleList.style.display = '';
     if (titlePrefs) titlePrefs.style.display = 'none';
 
-    // Restore X close icon
-    if (closeIcon) {
-        closeIcon.innerHTML = `
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-        `;
-    }
+    const sheet = document.getElementById('notificationModal');
+    if (sheet) sheet.scrollTop = 0;
 }
 
 /**
@@ -87,30 +79,26 @@ export function showNotifListView() {
 export function showNotifPreferencesView(type, id, name) {
     currentNotifView = 'preferences';
 
-    const listView = document.getElementById('notifListView');
-    const prefsView = document.getElementById('notifPreferencesView');
+    const views = document.getElementById('notifViews');
     const titleList = document.querySelector('.notif-title-list');
     const titlePrefs = document.querySelector('.notif-title-prefs');
-    const closeIcon = document.getElementById('notifCloseIcon');
     const prefsContainer = document.getElementById('notifPreferencesContainer');
 
-    if (listView) listView.style.display = 'none';
-    if (prefsView) prefsView.style.display = '';
+    // Render preferences before sliding in (so content is ready)
+    if (prefsContainer) {
+        renderTimetablePreferencesView(type, id, prefsContainer);
+    }
+
     if (titleList) titleList.style.display = 'none';
     if (titlePrefs) {
         titlePrefs.textContent = name;
         titlePrefs.style.display = '';
     }
 
-    // Replace X with back arrow
-    if (closeIcon) {
-        closeIcon.innerHTML = `<polyline points="15 18 9 12 15 6"></polyline>`;
-    }
-
-    // Render preferences for this timetable
-    if (prefsContainer) {
-        renderTimetablePreferencesView(type, id, prefsContainer);
-    }
+    // Slide to preferences view and scroll sheet to top
+    if (views) views.classList.add('notif-prefs-open');
+    const sheet = document.getElementById('notificationModal');
+    if (sheet) sheet.scrollTop = 0;
 }
 
 /**
