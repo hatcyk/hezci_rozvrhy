@@ -52,7 +52,7 @@
     .type-selector {
         width: 100%;
         max-width: 100%;
-        justify-content: stretch;
+        justify-content: space-between;
         gap: 0;
         padding: 0;
         border-right: none;
