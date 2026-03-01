@@ -15,7 +15,6 @@
 
 /* ---- Status: changed ---- */
 .lesson-card.changed {
-    border-left-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.05);
 }
 
@@ -33,7 +32,6 @@
 
 /* ---- Status: removed ---- */
 .lesson-card.removed {
-    border-left-color: #ef4444;
     opacity: 0.65;
     position: relative;
 }
@@ -53,21 +51,18 @@
 
 /* ---- Status: absent ---- */
 .lesson-card.absent {
-    border-left-color: #a855f7;
     background: rgba(168, 85, 247, 0.05);
     opacity: 0.85;
 }
 
 /* ---- Status: current lesson ---- */
 .lesson-card.current-time {
-    border-left-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.08);
     box-shadow: 0 2px 12px rgba(235, 93, 67, 0.2);
 }
 
 /* ---- Status: upcoming ---- */
 .lesson-card.upcoming {
-    border-left-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.04);
 }
 
