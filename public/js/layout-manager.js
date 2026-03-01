@@ -16,10 +16,17 @@ export function initLayoutSystem() {
     const savedPreferences = localStorage.getItem('layoutPreferences');
 
     // Set default layout mode
+    const platform = window.innerWidth <= 768 ? 'mobile' : 'desktop';
     if (savedLayout && layoutExists(savedLayout)) {
-        updateState('layoutMode', savedLayout);
+        const savedLayoutConfig = getLayoutById(savedLayout);
+        // Only restore saved layout if it's supported on the current platform
+        if (savedLayoutConfig.supportedOn.includes(platform)) {
+            updateState('layoutMode', savedLayout);
+        } else {
+            updateState('layoutMode', getDefaultLayoutForPlatform(platform));
+        }
     } else {
-        updateState('layoutMode', 'single-day');
+        updateState('layoutMode', getDefaultLayoutForPlatform(platform));
     }
 
     // Set default layout preferences
@@ -27,7 +34,8 @@ export function initLayoutSystem() {
         'single-day': {},
         'week-view': {},
         'card-view': { cardIndex: 0 },
-        'compact-list': { scrollPosition: 0 }
+        'compact-list': { scrollPosition: 0 },
+        'agenda': {}
     };
 
     if (savedPreferences) {
@@ -118,7 +126,7 @@ export async function applyLayout() {
     console.log('Applying layout:', layout.id);
 
     // Remove all layout mode classes
-    container.classList.remove('single-day-mode', 'week-view-mode', 'card-view-mode', 'compact-list-mode');
+    container.classList.remove('single-day-mode', 'week-view-mode', 'card-view-mode', 'compact-list-mode', 'agenda-mode');
 
     // Add current layout class
     container.classList.add(`${layout.id}-mode`);
@@ -148,14 +156,16 @@ export async function applyLayout() {
             renderSingleDayLayout,
             renderWeekLayout,
             renderCardLayout,
-            renderCompactListLayout
+            renderCompactListLayout,
+            renderAgendaLayout
         } = await import('./layout-renderers.js');
 
         const rendererMap = {
             'renderSingleDayLayout': renderSingleDayLayout,
             'renderWeekLayout': renderWeekLayout,
             'renderCardLayout': renderCardLayout,
-            'renderCompactListLayout': renderCompactListLayout
+            'renderCompactListLayout': renderCompactListLayout,
+            'renderAgendaLayout': renderAgendaLayout
         };
 
         const renderer = rendererMap[layout.renderer];
@@ -235,7 +245,7 @@ function getCurrentPlatform() {
  * @returns {string} Default layout ID
  */
 function getDefaultLayoutForPlatform(platform) {
-    return platform === 'mobile' ? 'single-day' : 'week-view';
+    return platform === 'mobile' ? 'agenda' : 'week-view';
 }
 
 /**

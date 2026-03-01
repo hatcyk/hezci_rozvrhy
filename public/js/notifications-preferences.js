@@ -81,6 +81,30 @@ export function getDefaultPreferences() {
 }
 
 /**
+ * Render preferences for a single timetable (type+id) into a container element.
+ * Used by the in-sheet navigation to show per-item settings.
+ * @param {string} type - 'Class' | 'Teacher' | 'Room'
+ * @param {string} id - Timetable ID
+ * @param {HTMLElement} container - Target container element
+ */
+export function renderTimetablePreferencesView(type, id, container) {
+    container.innerHTML = '';
+
+    const timetables = state.watchedTimetables.filter(t => t.type === type && t.id === id);
+
+    if (timetables.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-dim); padding: 20px 0; text-align: center;">Žádné nastavení k zobrazení.</p>';
+        return;
+    }
+
+    timetables.forEach(timetable => {
+        const globalIndex = state.watchedTimetables.indexOf(timetable);
+        const item = createTimetablePreferenceItem(timetable, globalIndex);
+        container.appendChild(item);
+    });
+}
+
+/**
  * Render preferences UI for selected timetables
  */
 export function renderSelectedTimetablesPreferences() {
@@ -145,6 +169,10 @@ function createTimetablePreferenceItem(timetable, index) {
     const body = document.createElement('div');
     body.className = 'timetable-preference-body';
 
+    // Inner wrapper required for grid-template-rows animation
+    const bodyInner = document.createElement('div');
+    bodyInner.className = 'timetable-preference-body-inner';
+
     // Group filter (pouze pro třídy)
     if (timetable.type === 'Class') {
         const groupFilterSection = document.createElement('div');
@@ -163,7 +191,7 @@ function createTimetablePreferenceItem(timetable, index) {
                 </div>
             </div>
         `;
-        body.appendChild(groupFilterSection);
+        bodyInner.appendChild(groupFilterSection);
 
         // Async načtení skupin a nastavení
         const multiselectElement = groupFilterSection.querySelector('.multiselect-dropdown');
@@ -229,19 +257,15 @@ function createTimetablePreferenceItem(timetable, index) {
             groupDiv.appendChild(optionDiv);
         }
 
-        body.appendChild(groupDiv);
+        bodyInner.appendChild(groupDiv);
     }
+
+    body.appendChild(bodyInner);
 
     // Toggle expand/collapse
     header.addEventListener('click', () => {
-        const isExpanded = header.classList.contains('expanded');
-        if (isExpanded) {
-            header.classList.remove('expanded');
-            body.classList.remove('expanded');
-        } else {
-            header.classList.add('expanded');
-            body.classList.add('expanded');
-        }
+        header.classList.toggle('expanded');
+        body.classList.toggle('expanded');
     });
 
     item.appendChild(header);

@@ -80,7 +80,23 @@ async function main() {
             console.error('Failed to save error status to Firestore:', fsError.message);
         }
 
-        // Exit with error
+        // Distinguish expected connectivity issues from real bugs
+        // Network/timeout errors = Bakaláři server unreachable (expected, no alert needed)
+        const isConnectivityError =
+            error.message.includes('timeout') ||
+            error.message.includes('login failed after') ||
+            error.message.includes('ECONNREFUSED') ||
+            error.message.includes('ENOTFOUND') ||
+            error.message.includes('ETIMEDOUT') ||
+            error.message.includes('socket hang up') ||
+            error.message.includes('network');
+
+        if (isConnectivityError) {
+            console.log('⚠️  Bakaláři server unreachable — skipping (not a script error)');
+            process.exit(0);
+        }
+
+        // Real unexpected error → exit 1 → GitHub Actions failure email
         process.exit(1);
     }
 }

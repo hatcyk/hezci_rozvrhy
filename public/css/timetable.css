@@ -117,10 +117,11 @@
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     border-right: 1px solid var(--border);
+    background: var(--bg-color);
     vertical-align: top;
     min-width: 180px;
     height: 120px;
-    transition: border-color var(--theme-transition);
+    transition: border-color var(--theme-transition), background var(--theme-transition);
 }
 
 /* Center single lesson card when there's only one */
@@ -219,37 +220,52 @@
 .day-selector {
     display: none !important; /* Hidden by default on desktop */
     margin-bottom: 16px;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
+    gap: 0;
+    flex-wrap: nowrap;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
 }
 
 .day-selector button {
     flex: 1;
-    min-width: 60px;
-    padding: 10px 16px;
-    background: var(--card-bg);
-    color: var(--text-main);
-    border: 2px solid var(--border);
-    border-radius: 10px;
-    font-size: 0.85rem;
-    font-weight: 600;
+    min-width: 0;
+    padding: 11px 6px 9px;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-bottom: 2px solid transparent;
+    font-size: 0.8rem;
+    font-weight: 700;
     cursor: pointer;
-    transition: background var(--theme-transition), color var(--theme-transition), border-color 0.2s ease;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.04em;
+    position: relative;
 }
 
 .day-selector button:hover {
-    border-color: var(--accent);
+    color: var(--text-main);
+    background: var(--border-light);
 }
 
 .day-selector button.active {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
+    background: transparent;
+    color: var(--spsd-orange);
+    border-bottom-color: var(--spsd-orange);
 }
 
-.day-selector button.today-btn {
-    border-color: var(--today-highlight);
+/* Today dot indicator */
+.day-selector button.today-btn::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--spsd-orange);
+    opacity: 0.7;
 }

@@ -7,8 +7,12 @@ import { state, updateState } from './state.js';
 import { dom } from './dom.js';
 import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences } from './notifications-core.js';
 import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes } from './notifications-multiselect.js';
-import { renderSelectedTimetablesPreferences } from './notifications-preferences.js';
+import { renderSelectedTimetablesPreferences, renderTimetablePreferencesView } from './notifications-preferences.js';
 import { debug } from './debug.js';
+import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+
+// Track which view is currently shown in the notification sheet
+let currentNotifView = 'list';
 
 /**
  * Update notification bell button UI
@@ -23,6 +27,7 @@ export function updateNotificationBellUI() {
         dom.notificationBell.classList.add('disabled');
         dom.notificationBell.setAttribute('title', 'Notifikace vypnuty');
     }
+
 }
 
 /**
@@ -31,30 +36,71 @@ export function updateNotificationBellUI() {
 export function showNotificationModal() {
     if (!dom.notificationModal) return;
 
-    // Load preferences and update UI - this will only happen ONCE when modal opens
+    // Always start at list view
+    showNotifListView();
+
+    // Load preferences and update UI
     initializeModal();
 
-    dom.notificationModal.classList.remove('hidden');
-    dom.notificationModal.style.display = 'flex';
+    openBottomSheet('notificationModal', { fullHeight: true });
 }
 
 /**
- * Close notification settings modal
+ * Close notification settings modal (context-aware: back in prefs view, close in list view)
  */
 export function closeNotificationModal() {
-    if (!dom.notificationModal) return;
+    const views = document.getElementById('notifViews');
+    if (views && views.classList.contains('notif-prefs-open')) {
+        showNotifListView();
+    } else {
+        closeBottomSheet('notificationModal');
+    }
+}
 
-    // Add closing animation class (assuming CSS supports it, if not it will just close)
-    dom.notificationModal.classList.add('closing');
+/**
+ * Navigate to list view
+ */
+export function showNotifListView() {
+    currentNotifView = 'list';
 
-    const onAnimationEnd = () => {
-        dom.notificationModal.classList.add('hidden');
-        dom.notificationModal.classList.remove('closing');
-        dom.notificationModal.style.display = 'none';
-        dom.notificationModal.removeEventListener('animationend', onAnimationEnd);
-    };
+    const views = document.getElementById('notifViews');
+    const titleList = document.querySelector('.notif-title-list');
+    const titlePrefs = document.querySelector('.notif-title-prefs');
 
-    dom.notificationModal.addEventListener('animationend', onAnimationEnd);
+    if (views) views.classList.remove('notif-prefs-open');
+    if (titleList) titleList.style.display = '';
+    if (titlePrefs) titlePrefs.style.display = 'none';
+
+    const sheet = document.getElementById('notificationModal');
+    if (sheet) sheet.scrollTop = 0;
+}
+
+/**
+ * Navigate to per-timetable preferences view
+ */
+export function showNotifPreferencesView(type, id, name) {
+    currentNotifView = 'preferences';
+
+    const views = document.getElementById('notifViews');
+    const titleList = document.querySelector('.notif-title-list');
+    const titlePrefs = document.querySelector('.notif-title-prefs');
+    const prefsContainer = document.getElementById('notifPreferencesContainer');
+
+    // Render preferences before sliding in (so content is ready)
+    if (prefsContainer) {
+        renderTimetablePreferencesView(type, id, prefsContainer);
+    }
+
+    if (titleList) titleList.style.display = 'none';
+    if (titlePrefs) {
+        titlePrefs.textContent = name;
+        titlePrefs.style.display = '';
+    }
+
+    // Slide to preferences view and scroll sheet to top
+    if (views) views.classList.add('notif-prefs-open');
+    const sheet = document.getElementById('notificationModal');
+    if (sheet) sheet.scrollTop = 0;
 }
 
 /**
@@ -84,18 +130,18 @@ async function initializeModal() {
  * Update UI state based on notification enabled/disabled
  */
 export function updateNotificationUIState() {
-    const multiselect = document.getElementById('timetablesMultiselect');
+    const flatList = document.getElementById('flatTimetableList');
 
     if (state.notificationsEnabled) {
-        // Notifications are ON - show disable button, disable dropdown
+        // Notifications are ON - show disable button, disable list
         if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'none';
         if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'block';
-        if (multiselect) multiselect.classList.add('disabled');
+        if (flatList) flatList.classList.add('disabled');
     } else {
-        // Notifications are OFF - show enable button, enable dropdown
+        // Notifications are OFF - show enable button, enable list
         if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'block';
         if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'none';
-        if (multiselect) multiselect.classList.remove('disabled');
+        if (flatList) flatList.classList.remove('disabled');
 
         // Update enable button state based on selection
         updateEnableButtonState();
@@ -358,6 +404,12 @@ export async function initNotificationButton() {
     if (dom.notificationBell) {
         dom.notificationBell.addEventListener('click', showNotificationModal);
     }
+
+    // Navigate to preferences view when settings gear is clicked on a flat list item
+    window.addEventListener('showNotifPreferences', (e) => {
+        const { type, id, name } = e.detail;
+        showNotifPreferencesView(type, id, name);
+    });
 
     // Listen for changes in watched timetables to update button state
     window.addEventListener('watchedTimetablesChanged', () => {

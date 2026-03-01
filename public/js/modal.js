@@ -4,6 +4,7 @@ import { state, updateState } from './state.js';
 import { loadTimetable, populateValueSelect } from './timetable.js';
 import { parseChangeInfo, getChangeIcon, getChangeTypeInfo } from './utils.js';
 import { setDropdownValue } from './dropdown.js';
+import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
 
 // Modal functions
 export function showLessonModal(lesson) {
@@ -127,30 +128,15 @@ export function showLessonModal(lesson) {
         modalChanges.classList.add('hidden');
     }
 
-    // Show modal
-    dom.lessonModal.classList.remove('hidden');
-    dom.lessonModal.style.display = 'flex';
+    // Open as bottom sheet
+    openBottomSheet('lessonModal');
 
     // Add click listeners to modal links
     setupModalLinks();
 }
 
 export function closeLessonModal() {
-    if (dom.lessonModal) {
-        // Add closing animation class
-        dom.lessonModal.classList.add('closing');
-
-        // Function to handle cleanup after animation
-        const onAnimationEnd = () => {
-            dom.lessonModal.classList.add('hidden');
-            dom.lessonModal.classList.remove('closing');
-            dom.lessonModal.style.display = 'none';
-            dom.lessonModal.removeEventListener('animationend', onAnimationEnd);
-        };
-
-        // Listen for animation end
-        dom.lessonModal.addEventListener('animationend', onAnimationEnd);
-    }
+    closeBottomSheet('lessonModal');
 }
 
 // Helper function to normalize teacher names for matching
@@ -304,19 +290,7 @@ export function initModalListeners() {
         closeLessonModal();
     });
 
-    // Click outside modal
-    dom.lessonModal.addEventListener('click', (e) => {
-        if (e.target === dom.lessonModal) {
-            closeLessonModal();
-        }
-    });
-
-    // Escape key
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && dom.lessonModal && !dom.lessonModal.classList.contains('hidden')) {
-            closeLessonModal();
-        }
-    });
+    // Overlay click + Escape key are handled by bottom-sheet.js
 
     console.log('Modal listeners initialized successfully');
 }

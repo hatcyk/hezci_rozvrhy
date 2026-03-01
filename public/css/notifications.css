@@ -1,14 +1,15 @@
-/* Notification Bell Button */
+/* Notification Bell Button — integrated with header strip on desktop */
 .notification-bell {
     flex-shrink: 0;
-    width: 44px;
-    height: 44px;
-    background: var(--card-bg);
-    color: var(--text-main);
-    border: 2px solid var(--border);
-    border-radius: 10px;
+    width: 48px;
+    align-self: stretch;
+    background: transparent;
+    color: var(--text-dim);
+    border: none;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: color 0.15s, background 0.15s;
     padding: 0;
     display: flex;
     align-items: center;
@@ -16,8 +17,9 @@
 }
 
 .notification-bell:hover {
-    border-color: var(--accent);
-    transform: scale(1.05);
+    color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.07);
+    transform: none;
 }
 
 .notification-bell.disabled {
@@ -514,15 +516,27 @@
 }
 
 .timetable-preference-body {
-    display: none;
-    padding: 20px;
-    gap: 20px;
+    display: grid;
+    grid-template-rows: 0fr;
+    overflow: hidden;
+    transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.timetable-preference-body-inner {
+    overflow: hidden;
+    display: flex;
     flex-direction: column;
-    background: rgba(0, 0, 0, 0.02);
+    gap: 12px;
+    padding: 0 20px;
+    transition: padding 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .timetable-preference-body.expanded {
-    display: flex;
+    grid-template-rows: 1fr;
+}
+
+.timetable-preference-body.expanded .timetable-preference-body-inner {
+    padding: 16px 20px 20px;
 }
 
 .notification-type-group {
@@ -641,4 +655,235 @@
 
 .group-filter-section .multiselect-menu {
     border-color: var(--spsd-orange);
+}
+
+/* ===== Flat List with Toggle Switches ===== */
+
+.flat-list-category {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    padding: 14px 0 6px;
+}
+
+.flat-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+}
+
+.flat-item-name {
+    font-size: 0.95em;
+    color: var(--text-main);
+    flex: 1;
+}
+
+/* iOS-style toggle */
+.flat-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.flat-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.flat-toggle-track {
+    display: inline-block;
+    width: 44px;
+    height: 26px;
+    background: var(--border);
+    border-radius: 13px;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.flat-toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.flat-toggle-input:checked + .flat-toggle-track {
+    background: var(--spsd-blue, #0066cc);
+}
+
+.flat-toggle-input:checked + .flat-toggle-track::after {
+    transform: translateX(18px);
+}
+
+/* Disabled flat list */
+.flat-timetable-list.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* ===== Notification views cross-fade transition ===== */
+
+#notifViews {
+    position: relative;
+    overflow: hidden;
+}
+
+#notifPreferencesContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 0 8px;
+}
+
+#notifListView,
+#notifPreferencesView {
+    transition: opacity 0.22s ease, transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Default: list in flow (defines height), prefs absolutely overlaid */
+#notifListView {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+#notifPreferencesView {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    transform: translateX(24px);
+    pointer-events: none;
+}
+
+/* Prefs open: prefs in flow (defines height), list absolutely overlaid */
+#notifViews.notif-prefs-open #notifListView {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    transform: translateX(-24px);
+    pointer-events: none;
+}
+
+#notifViews.notif-prefs-open #notifPreferencesView {
+    position: relative;
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+}
+
+/* ===== Accordion Categories ===== */
+
+.flat-accordion {
+    margin-bottom: 4px;
+}
+
+.flat-accordion-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 0 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.flat-accordion-label {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    flex: 1;
+}
+
+.flat-accordion-count {
+    font-size: 0.7em;
+    font-weight: 700;
+    background: var(--spsd-blue, #0066cc);
+    color: white;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.flat-accordion-chevron {
+    color: var(--text-dim);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.flat-accordion.open .flat-accordion-chevron {
+    transform: rotate(180deg);
+}
+
+.flat-accordion-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    overflow: hidden;
+    transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.flat-accordion-body-inner {
+    overflow: hidden;
+}
+
+.flat-accordion.open .flat-accordion-body {
+    grid-template-rows: 1fr;
+}
+
+/* ===== Settings gear button per item ===== */
+
+.flat-item-settings {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+}
+
+.flat-item-settings:hover {
+    color: var(--text-main);
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.flat-item-settings.hidden {
+    display: none;
+}
+
+/* ===== Notification modal header navigation ===== */
+
+.notif-modal-header {
+    position: relative;
+}
+
+.notif-title-list,
+.notif-title-prefs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }

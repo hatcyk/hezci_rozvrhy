@@ -2,55 +2,7 @@
  * Layout Selection Modal Styles
  */
 
-#layoutModal .modal {
-    max-width: 500px;
-    width: calc(100% - 32px);
-    margin: 16px;
-    max-height: calc(100vh - 32px);
-    overflow-y: auto;
-}
-
-#layoutModal .modal-header {
-    background: linear-gradient(135deg, var(--header-bg) 0%, var(--sidebar-accent) 100%);
-    padding: 24px;
-    border-radius: 16px 16px 0 0;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    border-bottom: 2px solid var(--border);
-    transition: background var(--theme-transition), border-color var(--theme-transition);
-}
-
-#layoutModal .modal-header h2 {
-    color: var(--text-main);
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    transition: color var(--theme-transition);
-}
-
-#layoutModal .modal-close {
-    color: var(--text-dim);
-    padding: 8px;
-    border-radius: 8px;
-    transition: color var(--theme-transition), background 0.2s ease, transform 0.2s ease;
-}
-
-#layoutModal .modal-close:hover {
-    color: var(--text-main);
-    transform: rotate(90deg);
-    background: var(--border);
-}
-
-#layoutModal .modal-content {
-    padding: 20px;
-    background: var(--card-bg);
-    border-radius: 0 0 16px 16px;
-}
-
+/* ---- Old layout options (list style) ---- */
 .layout-option {
     display: flex;
     align-items: center;
@@ -74,24 +26,6 @@
     border-color: var(--spsd-orange);
     border-width: 3px;
     box-shadow: 0 4px 12px rgba(235, 93, 67, 0.3);
-}
-
-.layout-option.active::after {
-    content: '✓';
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 32px;
-    height: 32px;
-    background: var(--spsd-orange);
-    color: white;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.2rem;
-    font-weight: 900;
-    box-shadow: 0 2px 8px rgba(235, 93, 67, 0.4);
 }
 
 .layout-option-icon {
@@ -127,13 +61,7 @@
     line-height: 1.5;
 }
 
-/* Mobile Responsive */
 @media (max-width: 768px) {
-    #layoutModal .modal {
-        width: calc(100% - 24px);
-        margin: 12px;
-    }
-
     .layout-option {
         padding: 16px;
         gap: 12px;
