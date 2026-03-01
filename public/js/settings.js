@@ -6,36 +6,20 @@
 import { state } from './state.js';
 import { switchLayout } from './layout-manager.js';
 import { getAvailableLayouts, getLayoutById } from './layout-registry.js';
+import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
 
 /**
  * Show settings modal
  */
 export function showSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    if (!modal) return;
-
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    openBottomSheet('settingsModal');
 }
 
 /**
  * Close settings modal
  */
 export function closeSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    if (!modal) return;
-
-    // Add closing animation class
-    modal.classList.add('closing');
-
-    const onAnimationEnd = () => {
-        modal.classList.add('hidden');
-        modal.classList.remove('closing');
-        modal.style.display = 'none';
-        modal.removeEventListener('animationend', onAnimationEnd);
-    };
-
-    modal.addEventListener('animationend', onAnimationEnd);
+    closeBottomSheet('settingsModal');
 }
 
 /**
@@ -54,15 +38,6 @@ export function initSettings() {
     // Close settings modal
     if (settingsModalClose) {
         settingsModalClose.addEventListener('click', closeSettingsModal);
-    }
-
-    // Close on overlay click
-    if (settingsModal) {
-        settingsModal.addEventListener('click', (e) => {
-            if (e.target === settingsModal) {
-                closeSettingsModal();
-            }
-        });
     }
 
     // Settings options handlers
@@ -111,38 +86,19 @@ export function initSettings() {
  * Show layout selection modal
  */
 export function showLayoutModal() {
-    const modal = document.getElementById('layoutModal');
-    if (!modal) return;
-
-    // Populate layout options
     populateLayoutOptions();
-
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    openBottomSheet('layoutModal');
 }
 
 /**
  * Close layout modal
  */
 export function closeLayoutModal() {
-    const modal = document.getElementById('layoutModal');
-    if (!modal) return;
-
-    // Add closing animation class
-    modal.classList.add('closing');
-
-    const onAnimationEnd = () => {
-        modal.classList.add('hidden');
-        modal.classList.remove('closing');
-        modal.style.display = 'none';
-        modal.removeEventListener('animationend', onAnimationEnd);
-    };
-
-    modal.addEventListener('animationend', onAnimationEnd);
+    closeBottomSheet('layoutModal');
 }
 
 /**
- * Populate layout options in modal
+ * Populate layout options in modal as a 2-column grid
  */
 function populateLayoutOptions() {
     const container = document.getElementById('layoutOptionsContainer');
@@ -151,31 +107,31 @@ function populateLayoutOptions() {
     const layouts = getAvailableLayouts('mobile');
     const currentLayout = state.layoutMode;
 
-    let html = '';
+    let cardsHtml = '';
 
     layouts.forEach(layout => {
         const isActive = layout.id === currentLayout;
 
-        html += `
-            <div class="layout-option ${isActive ? 'active' : ''}" data-layout-id="${layout.id}">
-                <div class="layout-option-icon">
-                    ${layout.icon}
-                </div>
-                <div class="layout-option-content">
-                    <div class="layout-option-title">${layout.name}</div>
-                    <div class="layout-option-description">${layout.description}</div>
-                </div>
-            </div>
+        cardsHtml += `
+            <button class="layout-option-card${isActive ? ' active' : ''}" data-layout-id="${layout.id}">
+                <div class="layout-option-card-icon">${layout.icon}</div>
+                <div class="layout-option-card-name">${layout.name}</div>
+            </button>
         `;
     });
 
-    container.innerHTML = html;
+    container.innerHTML = `<div class="layout-options-grid">${cardsHtml}</div>`;
 
     // Add click listeners
-    container.querySelectorAll('.layout-option').forEach(option => {
-        option.addEventListener('click', async () => {
-            const layoutId = option.dataset.layoutId;
+    container.querySelectorAll('.layout-option-card').forEach(card => {
+        card.addEventListener('click', async () => {
+            const layoutId = card.dataset.layoutId;
             await switchLayout(layoutId);
+
+            // Update active state in grid
+            container.querySelectorAll('.layout-option-card').forEach(c => {
+                c.classList.toggle('active', c.dataset.layoutId === layoutId);
+            });
 
             // Update current layout description in settings modal
             updateLayoutDescription(layoutId);
@@ -202,17 +158,8 @@ export function updateLayoutDescription(layoutId) {
  */
 function initLayoutModal() {
     const layoutModalClose = document.getElementById('layoutModalClose');
-    const layoutModal = document.getElementById('layoutModal');
 
     if (layoutModalClose) {
         layoutModalClose.addEventListener('click', closeLayoutModal);
-    }
-
-    if (layoutModal) {
-        layoutModal.addEventListener('click', (e) => {
-            if (e.target === layoutModal) {
-                closeLayoutModal();
-            }
-        });
     }
 }

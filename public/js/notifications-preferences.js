@@ -81,6 +81,30 @@ export function getDefaultPreferences() {
 }
 
 /**
+ * Render preferences for a single timetable (type+id) into a container element.
+ * Used by the in-sheet navigation to show per-item settings.
+ * @param {string} type - 'Class' | 'Teacher' | 'Room'
+ * @param {string} id - Timetable ID
+ * @param {HTMLElement} container - Target container element
+ */
+export function renderTimetablePreferencesView(type, id, container) {
+    container.innerHTML = '';
+
+    const timetables = state.watchedTimetables.filter(t => t.type === type && t.id === id);
+
+    if (timetables.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-dim); padding: 20px 0; text-align: center;">Žádné nastavení k zobrazení.</p>';
+        return;
+    }
+
+    timetables.forEach(timetable => {
+        const globalIndex = state.watchedTimetables.indexOf(timetable);
+        const item = createTimetablePreferenceItem(timetable, globalIndex);
+        container.appendChild(item);
+    });
+}
+
+/**
  * Render preferences UI for selected timetables
  */
 export function renderSelectedTimetablesPreferences() {

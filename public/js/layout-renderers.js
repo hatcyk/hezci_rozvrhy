@@ -968,3 +968,121 @@ export function renderCompactListLayout() {
     // Add day swipe navigation
     initDaySwipeNavigation('horizontal');
 }
+
+/**
+ * Render Agenda Layout
+ * Timeline view: time column on left, lesson card on right
+ */
+export function renderAgendaLayout() {
+    const container = document.querySelector('.timetable-container');
+    if (!container) return;
+
+    const data = state.currentTimetableData;
+    const selectedDay = state.selectedDayIndex;
+
+    const dayLessons = data
+        .filter(lesson => lesson.day === selectedDay)
+        .sort((a, b) => a.hour - b.hour);
+
+    const allHours = [...new Set(dayLessons.map(d => d.hour))].sort((a, b) => a - b);
+    const minHour = allHours.length > 0 ? Math.min(...allHours) : 0;
+    const maxHour = allHours.length > 0 ? Math.max(...allHours) : -1;
+    const isEmpty = dayLessons.length === 0 || maxHour < 0;
+
+    if (isEmpty) {
+        container.innerHTML = `
+            <div class="agenda-wrapper">
+                <div class="agenda-empty-day">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                    <p>Žádná výuka</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    const lessonMap = {};
+    dayLessons.forEach(lesson => {
+        if (!lessonMap[lesson.hour]) lessonMap[lesson.hour] = [];
+        lessonMap[lesson.hour].push(lesson);
+    });
+
+    const todayIndex = getTodayIndex();
+    const currentHour = getCurrentHour();
+
+    let html = '<div class="agenda-wrapper">';
+
+    for (let hour = minHour; hour <= maxHour; hour++) {
+        const lessons = lessonMap[hour];
+        const timeInfo = lessonTimes.find(t => t.hour === hour);
+        const startTime = timeInfo
+            ? `${String(timeInfo.start[0]).padStart(2, '0')}:${String(timeInfo.start[1]).padStart(2, '0')}`
+            : `${hour}.`;
+
+        if (!lessons || lessons.length === 0) {
+            html += `
+                <div class="agenda-row agenda-row-empty">
+                    <div class="agenda-time">${startTime}</div>
+                    <div class="agenda-card agenda-card-empty">Volno</div>
+                </div>
+            `;
+        } else {
+            lessons.forEach((lesson, lessonIdx) => {
+                const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
+                const isChanged = lesson.changed;
+
+                let rowClasses = 'agenda-row';
+                if (isRemoved) rowClasses += ' agenda-removed';
+                else if (isChanged) rowClasses += ' agenda-changed';
+
+                if (state.selectedScheduleType === 'actual' && !isRemoved) {
+                    if (selectedDay === todayIndex && hour === currentHour) {
+                        rowClasses += ' agenda-current';
+                    } else if (isPastLesson(selectedDay, hour)) {
+                        rowClasses += ' agenda-past';
+                    }
+                }
+
+                html += `
+                    <div class="${rowClasses}" data-lesson-id="${lesson.day}-${hour}-${lessonIdx}">
+                        <div class="agenda-time">${lessonIdx === 0 ? startTime : ''}</div>
+                        <div class="agenda-card">
+                            ${lesson.group ? `<div class="agenda-group">${lesson.group}</div>` : ''}
+                            <div class="agenda-subject">${lesson.subject}</div>
+                            <div class="agenda-details">
+                                ${lesson.teacher ? `<span class="agenda-detail">${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}</span>` : ''}
+                                ${lesson.room ? `<span class="agenda-detail agenda-room">${lesson.room}</span>` : ''}
+                            </div>
+                            ${(isChanged || isRemoved) ? `
+                                <div class="agenda-badge ${isRemoved ? 'removed' : 'changed'}">
+                                    ${isRemoved ? 'Zrušeno' : 'Změna'}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            });
+        }
+    }
+
+    html += '</div>';
+    container.innerHTML = html;
+
+    // Click listeners
+    document.querySelectorAll('.agenda-row[data-lesson-id]').forEach(row => {
+        const parts = row.dataset.lessonId.split('-').map(Number);
+        const hour = parts[1];
+        const idx = parts[2];
+        const lessons = lessonMap[hour];
+        if (lessons && lessons[idx]) {
+            row.addEventListener('click', () => showLessonModal(lessons[idx]));
+        }
+    });
+
+    initDaySwipeNavigation('horizontal');
+}
