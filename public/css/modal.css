@@ -41,14 +41,19 @@
 
 .modal-content {
     background: var(--card-bg);
-    border-radius: 16px;
-    border: 2px solid var(--border);
+    border-radius: 12px;
+    border: 1px solid var(--border);
     box-shadow: 0 8px 32px var(--shadow);
-    max-width: 600px;
+    max-width: 560px;
     width: 100%;
     max-height: 90vh;
     overflow-y: auto;
     transition: background var(--theme-transition), border-color var(--theme-transition), box-shadow var(--theme-transition);
+}
+
+/* Orange accent only on the desktop lesson dialog */
+.modal-overlay .modal-content {
+    border-left: 3px solid var(--spsd-orange);
 }
 
 .modal-content,
@@ -65,15 +70,15 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 24px;
-    border-bottom: 2px solid var(--border);
-    background: linear-gradient(135deg, var(--header-bg) 0%, var(--sidebar-accent) 100%);
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card-bg);
     transition: background var(--theme-transition), border-color var(--theme-transition);
 }
 
 .modal-header h2 {
     margin: 0;
-    font-size: 1.5rem;
+    font-size: 1.25rem;
     font-weight: 700;
     color: var(--text-main);
     transition: color var(--theme-transition);
@@ -99,25 +104,29 @@
 }
 
 .modal-body {
-    padding: 24px;
+    padding: 16px 20px 20px;
 }
 
 .modal-info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
+    display: flex;
+    flex-direction: column;
     margin-bottom: 20px;
 }
 
 .modal-info-item {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding: 12px;
-    background: var(--accent-light);
-    border-radius: 10px;
-    border-left: 3px solid var(--accent);
-    transition: background var(--theme-transition), border-color var(--theme-transition);
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    border-radius: 0;
+    transition: none;
+}
+
+.modal-info-item:last-child {
+    border-bottom: none;
 }
 
 .modal-label {
@@ -126,13 +135,15 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-dim);
+    flex-shrink: 0;
     transition: color var(--theme-transition);
 }
 
 .modal-value {
-    font-size: 1rem;
+    font-size: 0.92rem;
     font-weight: 600;
     color: var(--text-main);
+    text-align: right;
     transition: color var(--theme-transition);
 }
 

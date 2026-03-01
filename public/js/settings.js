@@ -6,36 +6,20 @@
 import { state } from './state.js';
 import { switchLayout } from './layout-manager.js';
 import { getAvailableLayouts, getLayoutById } from './layout-registry.js';
+import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
 
 /**
  * Show settings modal
  */
 export function showSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    if (!modal) return;
-
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    openBottomSheet('settingsModal');
 }
 
 /**
  * Close settings modal
  */
 export function closeSettingsModal() {
-    const modal = document.getElementById('settingsModal');
-    if (!modal) return;
-
-    // Add closing animation class
-    modal.classList.add('closing');
-
-    const onAnimationEnd = () => {
-        modal.classList.add('hidden');
-        modal.classList.remove('closing');
-        modal.style.display = 'none';
-        modal.removeEventListener('animationend', onAnimationEnd);
-    };
-
-    modal.addEventListener('animationend', onAnimationEnd);
+    closeBottomSheet('settingsModal');
 }
 
 /**
@@ -56,15 +40,6 @@ export function initSettings() {
         settingsModalClose.addEventListener('click', closeSettingsModal);
     }
 
-    // Close on overlay click
-    if (settingsModal) {
-        settingsModal.addEventListener('click', (e) => {
-            if (e.target === settingsModal) {
-                closeSettingsModal();
-            }
-        });
-    }
-
     // Settings options handlers
     const settingsNotifications = document.getElementById('settingsNotifications');
     const settingsCalendar = document.getElementById('settingsCalendar');
@@ -72,8 +47,8 @@ export function initSettings() {
 
     if (settingsNotifications) {
         settingsNotifications.addEventListener('click', () => {
-            closeSettingsModal();
-            // Trigger notification bell click
+            // Keep settings open - notification modal opens on top
+            // so back button in notification modal will reveal settings again
             const notificationBell = document.getElementById('notificationBell');
             if (notificationBell) {
                 notificationBell.click();
@@ -84,8 +59,7 @@ export function initSettings() {
     const settingsLayout = document.getElementById('settingsLayout');
     if (settingsLayout) {
         settingsLayout.addEventListener('click', () => {
-            closeSettingsModal();
-            showLayoutModal();
+            toggleLayoutPanel();
         });
     }
 
@@ -100,89 +74,79 @@ export function initSettings() {
         });
     }
 
-    // Initialize layout modal
-    initLayoutModal();
-
     // Update layout description on page load
     updateLayoutDescription(state.layoutMode);
 }
 
 /**
- * Show layout selection modal
+ * Toggle inline layout panel inside settings modal
+ */
+function toggleLayoutPanel() {
+    const panel = document.getElementById('settingsLayoutPanel');
+    const arrow = document.getElementById('settingsLayoutArrow');
+    if (!panel) return;
+
+    const isOpen = panel.classList.contains('expanded');
+    if (!isOpen) {
+        populateInlineLayoutOptions();
+    }
+    panel.classList.toggle('expanded');
+    if (arrow) arrow.classList.toggle('rotated', !isOpen);
+}
+
+/**
+ * Populate layout options inline inside settings modal
+ */
+function populateInlineLayoutOptions() {
+    const container = document.getElementById('settingsLayoutOptionsContainer');
+    if (!container) return;
+
+    const layouts = getAvailableLayouts('mobile');
+    const currentLayout = state.layoutMode;
+
+    let cardsHtml = '';
+    layouts.forEach(layout => {
+        const isActive = layout.id === currentLayout;
+        cardsHtml += `
+            <button class="layout-option-card${isActive ? ' active' : ''}" data-layout-id="${layout.id}">
+                <div class="layout-option-card-icon">${layout.icon}</div>
+                <div class="layout-option-card-name">${layout.name}</div>
+            </button>
+        `;
+    });
+
+    container.innerHTML = `<div class="layout-options-grid">${cardsHtml}</div>`;
+
+    container.querySelectorAll('.layout-option-card').forEach(card => {
+        card.addEventListener('click', async () => {
+            const layoutId = card.dataset.layoutId;
+            await switchLayout(layoutId);
+
+            container.querySelectorAll('.layout-option-card').forEach(c => {
+                c.classList.toggle('active', c.dataset.layoutId === layoutId);
+            });
+
+            updateLayoutDescription(layoutId);
+
+            // Close the whole settings sheet, keep panel expanded for next open
+            closeSettingsModal();
+        });
+    });
+}
+
+/**
+ * Show layout selection modal (kept for external callers)
  */
 export function showLayoutModal() {
-    const modal = document.getElementById('layoutModal');
-    if (!modal) return;
-
-    // Populate layout options
-    populateLayoutOptions();
-
-    modal.classList.remove('hidden');
-    modal.style.display = 'flex';
+    populateInlineLayoutOptions();
+    openBottomSheet('layoutModal');
 }
 
 /**
  * Close layout modal
  */
 export function closeLayoutModal() {
-    const modal = document.getElementById('layoutModal');
-    if (!modal) return;
-
-    // Add closing animation class
-    modal.classList.add('closing');
-
-    const onAnimationEnd = () => {
-        modal.classList.add('hidden');
-        modal.classList.remove('closing');
-        modal.style.display = 'none';
-        modal.removeEventListener('animationend', onAnimationEnd);
-    };
-
-    modal.addEventListener('animationend', onAnimationEnd);
-}
-
-/**
- * Populate layout options in modal
- */
-function populateLayoutOptions() {
-    const container = document.getElementById('layoutOptionsContainer');
-    if (!container) return;
-
-    const layouts = getAvailableLayouts('mobile');
-    const currentLayout = state.layoutMode;
-
-    let html = '';
-
-    layouts.forEach(layout => {
-        const isActive = layout.id === currentLayout;
-
-        html += `
-            <div class="layout-option ${isActive ? 'active' : ''}" data-layout-id="${layout.id}">
-                <div class="layout-option-icon">
-                    ${layout.icon}
-                </div>
-                <div class="layout-option-content">
-                    <div class="layout-option-title">${layout.name}</div>
-                    <div class="layout-option-description">${layout.description}</div>
-                </div>
-            </div>
-        `;
-    });
-
-    container.innerHTML = html;
-
-    // Add click listeners
-    container.querySelectorAll('.layout-option').forEach(option => {
-        option.addEventListener('click', async () => {
-            const layoutId = option.dataset.layoutId;
-            await switchLayout(layoutId);
-
-            // Update current layout description in settings modal
-            updateLayoutDescription(layoutId);
-
-            closeLayoutModal();
-        });
-    });
+    closeBottomSheet('layoutModal');
 }
 
 /**
@@ -197,22 +161,3 @@ export function updateLayoutDescription(layoutId) {
     }
 }
 
-/**
- * Initialize layout modal listeners
- */
-function initLayoutModal() {
-    const layoutModalClose = document.getElementById('layoutModalClose');
-    const layoutModal = document.getElementById('layoutModal');
-
-    if (layoutModalClose) {
-        layoutModalClose.addEventListener('click', closeLayoutModal);
-    }
-
-    if (layoutModal) {
-        layoutModal.addEventListener('click', (e) => {
-            if (e.target === layoutModal) {
-                closeLayoutModal();
-            }
-        });
-    }
-}

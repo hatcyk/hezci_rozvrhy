@@ -8,7 +8,7 @@ import { initCustomDropdown, setDropdownValue, getDropdownValue, openDropdown } 
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek } from './utils.js';
 import { initSunData } from './suntime.js';
 import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from './firebase-client.js';
-import { registerServiceWorker, initializeMessaging, initNotificationButton, showNotificationModal, closeNotificationModal, enableNotifications, disableNotificationsHandler, toggleMultiselect, filterMultiselectOptions, setupMultiselectGlobalListeners } from './notifications.js';
+import { registerServiceWorker, initializeMessaging, initNotificationButton, showNotificationModal, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
@@ -66,13 +66,13 @@ async function updateOutageBannerText() {
             const date = new Date(lastUpdate.seconds * 1000);
             const hours = date.getHours().toString().padStart(2, '0');
             const minutes = date.getMinutes().toString().padStart(2, '0');
-            textElement.textContent = `Bakaláři nedostupní - data z ${hours}:${minutes}`;
+            textElement.textContent = `Probíhá výpadek Bakalářů - data z ${hours}:${minutes}`;
         } else {
-            textElement.textContent = 'Bakaláři nedostupní - zobrazuji uložená data';
+            textElement.textContent = 'Probíhá výpadek Bakalářů - Používám nejnovější dostupná data';
         }
     } catch (error) {
         console.error('Failed to get last update time:', error);
-        textElement.textContent = 'Bakaláři nedostupní - zobrazuji uložená data';
+        textElement.textContent = 'Probíhá výpadek Bakalářů - Používám nejnovější dostupná data';
     }
 }
 
@@ -224,7 +224,6 @@ async function init() {
         initScheduleTypeButtons();
         initWeekViewToggle();
         initNotificationButton();
-        setupMultiselectGlobalListeners();
         initSettings();
         initRefresh();
 
@@ -238,31 +237,6 @@ async function init() {
         if (dom.notificationToggleDisable) {
             dom.notificationToggleDisable.addEventListener('click', disableNotificationsHandler);
         }
-        if (dom.multiselectTrigger) {
-            dom.multiselectTrigger.addEventListener('click', toggleMultiselect);
-        }
-        if (dom.multiselectSearch) {
-            dom.multiselectSearch.addEventListener('input', (e) => {
-                filterMultiselectOptions(e.target.value);
-            });
-        }
-        if (dom.notificationModal) {
-            dom.notificationModal.addEventListener('click', (e) => {
-                if (e.target === dom.notificationModal) {
-                    closeNotificationModal();
-                }
-            });
-        }
-        // Close multiselect when clicking outside
-        document.addEventListener('click', (e) => {
-            if (dom.multiselectTrigger && dom.multiselectMenu) {
-                if (!dom.multiselectTrigger.contains(e.target) && !dom.multiselectMenu.contains(e.target)) {
-                    if (dom.multiselectMenu.classList.contains('active')) {
-                        toggleMultiselect();
-                    }
-                }
-            }
-        });
 
         // Restore saved selection
         const savedType = localStorage.getItem('selectedType');

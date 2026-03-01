@@ -11,60 +11,78 @@
     header {
         flex-direction: column;
         align-items: stretch;
-        padding: 12px;
-        padding-top: 16px;
-        gap: 12px;
+        padding: 0;
+        gap: 0;
         position: relative;
+        border-left: 1px solid var(--border);
     }
 
-    /* First row: Logo left, Title center, Theme button right */
+    /* Row 1: "Rozvrh" vlevo, logo školy vpravo */
     .header-left {
         display: flex;
         flex-direction: row;
         align-items: center;
-        justify-content: center;
-        position: relative;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        position: static;
+        gap: 10px;
     }
 
     .logo {
-        position: absolute;
-        left: 0;
+        position: static;
+        height: 28px;
+        order: 2;
     }
 
     h1 {
-        font-size: 1.3rem;
-        display: flex;
-        align-items: center;
-        gap: 6px;
+        font-size: 0.95rem;
+        order: 1;
         margin: 0;
     }
 
     .controls {
         flex-direction: column;
-        gap: 10px;
-        align-items: center;
+        gap: 0;
+        align-items: stretch;
     }
 
     .schedule-type-selector,
     .type-selector {
         width: 100%;
         max-width: 100%;
-        justify-content: center;
-        gap: 3px;
-        padding: 3px;
+        justify-content: space-between;
+        gap: 0;
+        padding: 0;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
     }
 
-    /* Flex row for dropdown + week toggle + theme toggle */
+    .schedule-type-btn,
+    .type-btn {
+        flex: 1;
+        justify-content: center;
+        padding: 11px 6px 9px;
+        font-size: 0.8rem;
+        border-radius: 0;
+        min-width: 0;
+    }
+
+    /* Flex row for dropdown + settings toggle */
     .dropdown-row {
         display: flex;
         gap: 8px;
         width: 100%;
         align-items: center;
+        padding: 8px 12px;
     }
 
     .custom-dropdown {
         flex: 1;
         min-width: 0;
+        margin: 0;
+        align-self: auto;
     }
 
     /* Week view toggle button (mobile only) */
@@ -116,15 +134,6 @@
         height: 44px;
     }
 
-    .schedule-type-btn,
-    .type-btn {
-        flex: 1;
-        text-align: center;
-        padding: 8px 10px;
-        font-size: 0.82rem;
-        min-width: 0;
-        border-radius: 5px;
-    }
 
     .custom-dropdown-trigger {
         padding: 9px 14px;
@@ -158,6 +167,7 @@
         opacity: 1;
         transform: translateY(0);
         transition: opacity 0.3s ease, transform 0.3s ease;
+        overflow: hidden; /* Keep border-radius clipping on buttons */
     }
 
     /* Hide day selector when showing whole week */

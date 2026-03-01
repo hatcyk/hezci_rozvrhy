@@ -1,0 +1,213 @@
+/* ===== Agenda Layout — Timeline Design ===== */
+
+.timetable-container.agenda-mode {
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.agenda-wrapper {
+    padding: 8px 0 40px;
+    position: relative;
+}
+
+/* Vertical timeline rail */
+.agenda-wrapper::before {
+    content: '';
+    position: absolute;
+    left: 52px;
+    top: 28px;
+    bottom: 28px;
+    width: 1.5px;
+    background: var(--border);
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* ---- Row ---- */
+.agenda-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    padding: 2px 0;
+    cursor: pointer;
+    position: relative;
+    transition: opacity 0.15s;
+}
+
+.agenda-row:hover .agenda-card {
+    opacity: 0.8;
+}
+
+/* ---- Time column ---- */
+.agenda-time {
+    width: 44px;
+    flex-shrink: 0;
+    font-size: 0.72em;
+    font-weight: 600;
+    color: var(--text-dim);
+    padding-top: 7px;
+    padding-right: 4px;
+    text-align: right;
+    line-height: 1.2;
+    position: relative;
+}
+
+/* Dot on the timeline rail */
+.agenda-time::after {
+    content: '';
+    position: absolute;
+    right: -12px;
+    top: 10px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    border: 2px solid var(--card-bg);
+    z-index: 1;
+}
+
+/* ---- Lesson card (minimal, no box) ---- */
+.agenda-card {
+    flex: 1;
+    padding: 4px 4px 14px 14px;
+    min-width: 0;
+    transition: opacity 0.15s;
+}
+
+.agenda-subject {
+    font-size: 0.95em;
+    font-weight: 600;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.agenda-group {
+    font-size: 0.72em;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+}
+
+.agenda-details {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.agenda-detail {
+    font-size: 0.8em;
+    color: var(--text-dim);
+}
+
+.agenda-room {
+    background: var(--border-light);
+    color: var(--text-dim);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.78em;
+}
+
+.agenda-badge {
+    display: inline-block;
+    font-size: 0.68em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-top: 4px;
+}
+
+.agenda-badge.changed {
+    background: rgba(255, 165, 0, 0.15);
+    color: #e07800;
+}
+
+.agenda-badge.removed {
+    background: rgba(220, 38, 38, 0.12);
+    color: #dc2626;
+}
+
+/* ---- State: past ---- */
+.agenda-row.agenda-past .agenda-card {
+    opacity: 0.4;
+}
+
+.agenda-row.agenda-past .agenda-time {
+    opacity: 0.4;
+}
+
+/* ---- State: current ---- */
+.agenda-row.agenda-current .agenda-time {
+    color: var(--spsd-orange, #f97316);
+    font-weight: 700;
+}
+
+.agenda-row.agenda-current .agenda-time::after {
+    background: var(--spsd-orange, #f97316);
+    width: 10px;
+    height: 10px;
+    right: -13px;
+    top: 9px;
+    border-color: var(--card-bg);
+}
+
+.agenda-row.agenda-current .agenda-subject {
+    color: var(--spsd-orange, #f97316);
+}
+
+/* ---- State: removed ---- */
+.agenda-row.agenda-removed .agenda-card {
+    opacity: 0.65;
+}
+
+.agenda-row.agenda-removed .agenda-subject {
+    text-decoration: line-through;
+    color: #dc2626;
+}
+
+/* ---- State: changed ---- */
+.agenda-row.agenda-changed .agenda-subject {
+    color: #e07800;
+}
+
+/* ---- Empty hour row ---- */
+.agenda-row-empty {
+    cursor: default;
+}
+
+.agenda-row-empty:hover .agenda-card {
+    opacity: 1;
+}
+
+.agenda-card-empty {
+    flex: 1;
+    padding: 0 4px 10px 14px;
+    font-size: 0.78em;
+    color: var(--text-dim);
+    opacity: 0.45;
+}
+
+/* ---- Empty day ---- */
+.agenda-empty-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    text-align: center;
+    gap: 12px;
+}
+
+.agenda-empty-day p {
+    font-size: 1.1em;
+    margin: 0;
+}
