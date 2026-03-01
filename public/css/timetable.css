@@ -117,10 +117,11 @@
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     border-right: 1px solid var(--border);
+    background: var(--bg-color);
     vertical-align: top;
     min-width: 180px;
     height: 120px;
-    transition: border-color var(--theme-transition);
+    transition: border-color var(--theme-transition), background var(--theme-transition);
 }
 
 /* Center single lesson card when there's only one */
