@@ -27,6 +27,7 @@ export function updateNotificationBellUI() {
         dom.notificationBell.classList.add('disabled');
         dom.notificationBell.setAttribute('title', 'Notifikace vypnuty');
     }
+
 }
 
 /**
