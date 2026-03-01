@@ -155,3 +155,75 @@ body.no-transitions .bottom-sheet-overlay {
 .bottom-sheet .sheet-body {
     padding: 16px 20px 24px;
 }
+
+/* ---- Dropdown mobile sheet ---- */
+.dropdown-sheet-search-wrap {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--card-bg);
+    z-index: 1;
+}
+
+.dropdown-sheet-search {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--sidebar-accent);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-main);
+    font-size: 0.95rem;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.dropdown-sheet-search:focus {
+    border-color: var(--spsd-orange);
+}
+
+.dropdown-sheet-search::placeholder {
+    color: var(--text-dim);
+}
+
+.dropdown-sheet-list {
+    overflow-y: auto;
+    padding-bottom: 8px;
+}
+
+.dropdown-sheet-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 14px 16px;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-main);
+    font-size: 0.95rem;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s;
+    gap: 8px;
+}
+
+.dropdown-sheet-option:last-child {
+    border-bottom: none;
+}
+
+.dropdown-sheet-option:active {
+    background: var(--border-light);
+}
+
+.dropdown-sheet-option.selected {
+    color: var(--spsd-orange);
+    font-weight: 600;
+}
+
+.dropdown-sheet-option.selected svg {
+    flex-shrink: 0;
+    color: var(--spsd-orange);
+    stroke: var(--spsd-orange);
+}
