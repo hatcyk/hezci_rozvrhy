@@ -169,6 +169,10 @@ function createTimetablePreferenceItem(timetable, index) {
     const body = document.createElement('div');
     body.className = 'timetable-preference-body';
 
+    // Inner wrapper required for grid-template-rows animation
+    const bodyInner = document.createElement('div');
+    bodyInner.className = 'timetable-preference-body-inner';
+
     // Group filter (pouze pro třídy)
     if (timetable.type === 'Class') {
         const groupFilterSection = document.createElement('div');
@@ -187,7 +191,7 @@ function createTimetablePreferenceItem(timetable, index) {
                 </div>
             </div>
         `;
-        body.appendChild(groupFilterSection);
+        bodyInner.appendChild(groupFilterSection);
 
         // Async načtení skupin a nastavení
         const multiselectElement = groupFilterSection.querySelector('.multiselect-dropdown');
@@ -253,19 +257,15 @@ function createTimetablePreferenceItem(timetable, index) {
             groupDiv.appendChild(optionDiv);
         }
 
-        body.appendChild(groupDiv);
+        bodyInner.appendChild(groupDiv);
     }
+
+    body.appendChild(bodyInner);
 
     // Toggle expand/collapse
     header.addEventListener('click', () => {
-        const isExpanded = header.classList.contains('expanded');
-        if (isExpanded) {
-            header.classList.remove('expanded');
-            body.classList.remove('expanded');
-        } else {
-            header.classList.add('expanded');
-            body.classList.add('expanded');
-        }
+        header.classList.toggle('expanded');
+        body.classList.toggle('expanded');
     });
 
     item.appendChild(header);

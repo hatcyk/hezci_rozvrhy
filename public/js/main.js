@@ -66,13 +66,13 @@ async function updateOutageBannerText() {
             const date = new Date(lastUpdate.seconds * 1000);
             const hours = date.getHours().toString().padStart(2, '0');
             const minutes = date.getMinutes().toString().padStart(2, '0');
-            textElement.textContent = `Bakaláři nedostupní - data z ${hours}:${minutes}`;
+            textElement.textContent = `Probíhá výpadek Bakalářů - data z ${hours}:${minutes}`;
         } else {
-            textElement.textContent = 'Bakaláři nedostupní - zobrazuji uložená data';
+            textElement.textContent = 'Probíhá výpadek Bakalářů - Používám nejnovější dostupná data';
         }
     } catch (error) {
         console.error('Failed to get last update time:', error);
-        textElement.textContent = 'Bakaláři nedostupní - zobrazuji uložená data';
+        textElement.textContent = 'Probíhá výpadek Bakalářů - Používám nejnovější dostupná data';
     }
 }
 

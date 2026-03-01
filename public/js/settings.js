@@ -47,8 +47,8 @@ export function initSettings() {
 
     if (settingsNotifications) {
         settingsNotifications.addEventListener('click', () => {
-            closeSettingsModal();
-            // Trigger notification bell click
+            // Keep settings open - notification modal opens on top
+            // so back button in notification modal will reveal settings again
             const notificationBell = document.getElementById('notificationBell');
             if (notificationBell) {
                 notificationBell.click();
@@ -59,8 +59,7 @@ export function initSettings() {
     const settingsLayout = document.getElementById('settingsLayout');
     if (settingsLayout) {
         settingsLayout.addEventListener('click', () => {
-            closeSettingsModal();
-            showLayoutModal();
+            toggleLayoutPanel();
         });
     }
 
@@ -75,43 +74,39 @@ export function initSettings() {
         });
     }
 
-    // Initialize layout modal
-    initLayoutModal();
-
     // Update layout description on page load
     updateLayoutDescription(state.layoutMode);
 }
 
 /**
- * Show layout selection modal
+ * Toggle inline layout panel inside settings modal
  */
-export function showLayoutModal() {
-    populateLayoutOptions();
-    openBottomSheet('layoutModal');
+function toggleLayoutPanel() {
+    const panel = document.getElementById('settingsLayoutPanel');
+    const arrow = document.getElementById('settingsLayoutArrow');
+    if (!panel) return;
+
+    const isOpen = panel.classList.contains('expanded');
+    if (!isOpen) {
+        populateInlineLayoutOptions();
+    }
+    panel.classList.toggle('expanded');
+    if (arrow) arrow.classList.toggle('rotated', !isOpen);
 }
 
 /**
- * Close layout modal
+ * Populate layout options inline inside settings modal
  */
-export function closeLayoutModal() {
-    closeBottomSheet('layoutModal');
-}
-
-/**
- * Populate layout options in modal as a 2-column grid
- */
-function populateLayoutOptions() {
-    const container = document.getElementById('layoutOptionsContainer');
+function populateInlineLayoutOptions() {
+    const container = document.getElementById('settingsLayoutOptionsContainer');
     if (!container) return;
 
     const layouts = getAvailableLayouts('mobile');
     const currentLayout = state.layoutMode;
 
     let cardsHtml = '';
-
     layouts.forEach(layout => {
         const isActive = layout.id === currentLayout;
-
         cardsHtml += `
             <button class="layout-option-card${isActive ? ' active' : ''}" data-layout-id="${layout.id}">
                 <div class="layout-option-card-icon">${layout.icon}</div>
@@ -122,23 +117,36 @@ function populateLayoutOptions() {
 
     container.innerHTML = `<div class="layout-options-grid">${cardsHtml}</div>`;
 
-    // Add click listeners
     container.querySelectorAll('.layout-option-card').forEach(card => {
         card.addEventListener('click', async () => {
             const layoutId = card.dataset.layoutId;
             await switchLayout(layoutId);
 
-            // Update active state in grid
             container.querySelectorAll('.layout-option-card').forEach(c => {
                 c.classList.toggle('active', c.dataset.layoutId === layoutId);
             });
 
-            // Update current layout description in settings modal
             updateLayoutDescription(layoutId);
 
-            closeLayoutModal();
+            // Close the whole settings sheet, keep panel expanded for next open
+            closeSettingsModal();
         });
     });
+}
+
+/**
+ * Show layout selection modal (kept for external callers)
+ */
+export function showLayoutModal() {
+    populateInlineLayoutOptions();
+    openBottomSheet('layoutModal');
+}
+
+/**
+ * Close layout modal
+ */
+export function closeLayoutModal() {
+    closeBottomSheet('layoutModal');
 }
 
 /**
@@ -153,13 +161,3 @@ export function updateLayoutDescription(layoutId) {
     }
 }
 
-/**
- * Initialize layout modal listeners
- */
-function initLayoutModal() {
-    const layoutModalClose = document.getElementById('layoutModalClose');
-
-    if (layoutModalClose) {
-        layoutModalClose.addEventListener('click', closeLayoutModal);
-    }
-}

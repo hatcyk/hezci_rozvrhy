@@ -5,6 +5,16 @@
 
 const openSheets = new Set();
 
+// Disable CSS transitions during viewport resize to prevent cross-breakpoint sliding
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+    document.body.classList.add('no-transitions');
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+        document.body.classList.remove('no-transitions');
+    }, 150);
+}, { passive: true });
+
 /**
  * Open a bottom sheet by ID
  * @param {string} id - Element ID of the bottom sheet
@@ -29,6 +39,11 @@ export function openBottomSheet(id, options = {}) {
     if (options.fullHeight) {
         sheet.classList.add('bottom-sheet-full');
     }
+
+    // Stack z-index so newer sheets always appear above earlier ones
+    const level = openSheets.size;
+    overlay.style.zIndex = 901 + level * 2;
+    sheet.style.zIndex = 902 + level * 2;
 
     overlay.classList.add('active');
     sheet.classList.add('active');
@@ -61,8 +76,10 @@ export function closeBottomSheet(id) {
     const overlay = sheet.previousElementSibling;
 
     sheet.classList.remove('active');
+    sheet.style.zIndex = '';
     if (overlay && overlay.classList.contains('bottom-sheet-overlay')) {
         overlay.classList.remove('active');
+        overlay.style.zIndex = '';
     }
 
     openSheets.delete(id);
