@@ -1,0 +1,57 @@
+/* ===== Bottom Navigation Bar (Mobile Only) ===== */
+
+@media (max-width: 768px) {
+    .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 500;
+        background: var(--card-bg);
+        border-top: 1px solid var(--border);
+        display: flex;
+        align-items: stretch;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    .bottom-nav-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 10px 0 12px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text-dim);
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        transition: color 0.18s;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .bottom-nav-item:active {
+        opacity: 0.7;
+    }
+
+    .bottom-nav-item.nav-active {
+        color: var(--spsd-orange, #f97316);
+    }
+
+    .bottom-nav-item svg {
+        flex-shrink: 0;
+    }
+
+    .bottom-nav-item.disabled {
+        opacity: 0.4;
+    }
+}
+
+@media (min-width: 769px) {
+    .bottom-nav {
+        display: none;
+    }
+}
