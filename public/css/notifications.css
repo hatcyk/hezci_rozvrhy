@@ -642,3 +642,201 @@
 .group-filter-section .multiselect-menu {
     border-color: var(--spsd-orange);
 }
+
+/* ===== Flat List with Toggle Switches ===== */
+
+.flat-list-search {
+    padding-bottom: 12px;
+}
+
+.flat-list-search input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text-main);
+    font-size: 0.9em;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+}
+
+.flat-list-search input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.flat-list-category {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    padding: 14px 0 6px;
+}
+
+.flat-list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+}
+
+.flat-item-name {
+    font-size: 0.95em;
+    color: var(--text-main);
+    flex: 1;
+}
+
+/* iOS-style toggle */
+.flat-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.flat-toggle-input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.flat-toggle-track {
+    display: inline-block;
+    width: 44px;
+    height: 26px;
+    background: var(--border);
+    border-radius: 13px;
+    transition: background 0.2s;
+    position: relative;
+}
+
+.flat-toggle-track::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.flat-toggle-input:checked + .flat-toggle-track {
+    background: var(--spsd-blue, #0066cc);
+}
+
+.flat-toggle-input:checked + .flat-toggle-track::after {
+    transform: translateX(18px);
+}
+
+/* Disabled flat list */
+.flat-timetable-list.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* ===== Accordion Categories ===== */
+
+.flat-accordion {
+    margin-bottom: 4px;
+}
+
+.flat-accordion-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 0 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.flat-accordion-label {
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    flex: 1;
+}
+
+.flat-accordion-count {
+    font-size: 0.7em;
+    font-weight: 700;
+    background: var(--spsd-blue, #0066cc);
+    color: white;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.flat-accordion-chevron {
+    color: var(--text-dim);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+}
+
+.flat-accordion.open .flat-accordion-chevron {
+    transform: rotate(180deg);
+}
+
+.flat-accordion-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    overflow: hidden;
+    transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.flat-accordion-body-inner {
+    overflow: hidden;
+}
+
+.flat-accordion.open .flat-accordion-body {
+    grid-template-rows: 1fr;
+}
+
+/* ===== Settings gear button per item ===== */
+
+.flat-item-settings {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: color 0.15s, background 0.15s;
+}
+
+.flat-item-settings:hover {
+    color: var(--text-main);
+    background: rgba(0, 0, 0, 0.08);
+}
+
+.flat-item-settings.hidden {
+    display: none;
+}
+
+/* ===== Notification modal header navigation ===== */
+
+.notif-modal-header {
+    position: relative;
+}
+
+.notif-title-list,
+.notif-title-prefs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}

@@ -26,11 +26,8 @@ export const dom = {
     notificationSection: null,
     iosWarning: null,
     watchedTimetablesList: null,
-    multiselectTrigger: null,
-    multiselectLabel: null,
-    multiselectMenu: null,
-    multiselectSearch: null,
-    multiselectOptions: null
+    flatTimetableList: null,
+    flatListSearch: null
 };
 
 // Initialize DOM references
@@ -61,11 +58,8 @@ export function initDOM() {
     dom.notificationSection = document.getElementById('notificationSection');
     dom.iosWarning = document.getElementById('iosWarning');
     dom.watchedTimetablesList = document.getElementById('watchedTimetablesList');
-    dom.multiselectTrigger = document.getElementById('multiselectTrigger');
-    dom.multiselectLabel = document.getElementById('multiselectLabel');
-    dom.multiselectMenu = document.getElementById('multiselectMenu');
-    dom.multiselectSearch = document.getElementById('multiselectSearch');
-    dom.multiselectOptions = document.getElementById('multiselectOptions');
+    dom.flatTimetableList = document.getElementById('flatTimetableList');
+    dom.flatListSearch = document.getElementById('flatListSearch');
 
     // Check if modal elements exist
     if (!dom.lessonModal || !dom.modalClose) {

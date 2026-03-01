@@ -6,9 +6,13 @@
 import { state, updateState } from './state.js';
 import { dom } from './dom.js';
 import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences } from './notifications-core.js';
-import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes } from './notifications-multiselect.js';
-import { renderSelectedTimetablesPreferences } from './notifications-preferences.js';
+import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes, filterFlatList } from './notifications-multiselect.js';
+import { renderSelectedTimetablesPreferences, renderTimetablePreferencesView } from './notifications-preferences.js';
 import { debug } from './debug.js';
+import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+
+// Track which view is currently shown in the notification sheet
+let currentNotifView = 'list';
 
 /**
  * Update notification bell button UI
@@ -31,30 +35,82 @@ export function updateNotificationBellUI() {
 export function showNotificationModal() {
     if (!dom.notificationModal) return;
 
-    // Load preferences and update UI - this will only happen ONCE when modal opens
+    // Always start at list view
+    showNotifListView();
+
+    // Load preferences and update UI
     initializeModal();
 
-    dom.notificationModal.classList.remove('hidden');
-    dom.notificationModal.style.display = 'flex';
+    openBottomSheet('notificationModal', { fullHeight: true });
 }
 
 /**
- * Close notification settings modal
+ * Close notification settings modal (context-aware: back in prefs view, close in list view)
  */
 export function closeNotificationModal() {
-    if (!dom.notificationModal) return;
+    if (currentNotifView === 'preferences') {
+        showNotifListView();
+    } else {
+        closeBottomSheet('notificationModal');
+    }
+}
 
-    // Add closing animation class (assuming CSS supports it, if not it will just close)
-    dom.notificationModal.classList.add('closing');
+/**
+ * Navigate to list view
+ */
+export function showNotifListView() {
+    currentNotifView = 'list';
 
-    const onAnimationEnd = () => {
-        dom.notificationModal.classList.add('hidden');
-        dom.notificationModal.classList.remove('closing');
-        dom.notificationModal.style.display = 'none';
-        dom.notificationModal.removeEventListener('animationend', onAnimationEnd);
-    };
+    const listView = document.getElementById('notifListView');
+    const prefsView = document.getElementById('notifPreferencesView');
+    const titleList = document.querySelector('.notif-title-list');
+    const titlePrefs = document.querySelector('.notif-title-prefs');
+    const closeIcon = document.getElementById('notifCloseIcon');
 
-    dom.notificationModal.addEventListener('animationend', onAnimationEnd);
+    if (listView) listView.style.display = '';
+    if (prefsView) prefsView.style.display = 'none';
+    if (titleList) titleList.style.display = '';
+    if (titlePrefs) titlePrefs.style.display = 'none';
+
+    // Restore X close icon
+    if (closeIcon) {
+        closeIcon.innerHTML = `
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        `;
+    }
+}
+
+/**
+ * Navigate to per-timetable preferences view
+ */
+export function showNotifPreferencesView(type, id, name) {
+    currentNotifView = 'preferences';
+
+    const listView = document.getElementById('notifListView');
+    const prefsView = document.getElementById('notifPreferencesView');
+    const titleList = document.querySelector('.notif-title-list');
+    const titlePrefs = document.querySelector('.notif-title-prefs');
+    const closeIcon = document.getElementById('notifCloseIcon');
+    const prefsContainer = document.getElementById('notifPreferencesContainer');
+
+    if (listView) listView.style.display = 'none';
+    if (prefsView) prefsView.style.display = '';
+    if (titleList) titleList.style.display = 'none';
+    if (titlePrefs) {
+        titlePrefs.textContent = name;
+        titlePrefs.style.display = '';
+    }
+
+    // Replace X with back arrow
+    if (closeIcon) {
+        closeIcon.innerHTML = `<polyline points="15 18 9 12 15 6"></polyline>`;
+    }
+
+    // Render preferences for this timetable
+    if (prefsContainer) {
+        renderTimetablePreferencesView(type, id, prefsContainer);
+    }
 }
 
 /**
@@ -84,18 +140,18 @@ async function initializeModal() {
  * Update UI state based on notification enabled/disabled
  */
 export function updateNotificationUIState() {
-    const multiselect = document.getElementById('timetablesMultiselect');
+    const flatList = document.getElementById('flatTimetableList');
 
     if (state.notificationsEnabled) {
-        // Notifications are ON - show disable button, disable dropdown
+        // Notifications are ON - show disable button, disable list
         if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'none';
         if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'block';
-        if (multiselect) multiselect.classList.add('disabled');
+        if (flatList) flatList.classList.add('disabled');
     } else {
-        // Notifications are OFF - show enable button, enable dropdown
+        // Notifications are OFF - show enable button, enable list
         if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'block';
         if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'none';
-        if (multiselect) multiselect.classList.remove('disabled');
+        if (flatList) flatList.classList.remove('disabled');
 
         // Update enable button state based on selection
         updateEnableButtonState();
@@ -358,6 +414,18 @@ export async function initNotificationButton() {
     if (dom.notificationBell) {
         dom.notificationBell.addEventListener('click', showNotificationModal);
     }
+
+    // Flat list search
+    const flatListSearch = document.getElementById('flatListSearch');
+    if (flatListSearch) {
+        flatListSearch.addEventListener('input', (e) => filterFlatList(e.target.value));
+    }
+
+    // Navigate to preferences view when settings gear is clicked on a flat list item
+    window.addEventListener('showNotifPreferences', (e) => {
+        const { type, id, name } = e.detail;
+        showNotifPreferencesView(type, id, name);
+    });
 
     // Listen for changes in watched timetables to update button state
     window.addEventListener('watchedTimetablesChanged', () => {

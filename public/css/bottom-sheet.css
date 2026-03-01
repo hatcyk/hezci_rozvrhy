@@ -1,0 +1,142 @@
+/* ===== Bottom Sheet System ===== */
+
+.bottom-sheet-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0);
+    z-index: 900;
+    pointer-events: none;
+    transition: background 0.3s ease;
+}
+
+.bottom-sheet-overlay.active {
+    background: rgba(0, 0, 0, 0.5);
+    pointer-events: all;
+}
+
+/* ---- Mobile: slide up from bottom ---- */
+@media (max-width: 768px) {
+    .bottom-sheet {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        z-index: 1000;
+        background: var(--card-bg);
+        border-radius: 20px 20px 0 0;
+        box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.3);
+        max-height: 90vh;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        /* Start off-screen */
+        transform: translateY(100%);
+        transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    }
+
+    .bottom-sheet.active {
+        transform: translateY(0);
+    }
+
+    .bottom-sheet.bottom-sheet-full {
+        max-height: 95vh;
+    }
+
+    body.sheet-open {
+        overflow: hidden;
+    }
+}
+
+/* ---- Desktop: centered dialog (unchanged visual) ---- */
+@media (min-width: 769px) {
+    .bottom-sheet {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        z-index: 1000;
+        background: var(--card-bg);
+        border-radius: 16px;
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
+        width: 90%;
+        max-width: 560px;
+        max-height: 85vh;
+        overflow-y: auto;
+        transform: translate(-50%, -50%) scale(0.96);
+        opacity: 0;
+        transition: transform 0.25s ease, opacity 0.25s ease;
+        pointer-events: none;
+    }
+
+    .bottom-sheet.active {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+        pointer-events: all;
+    }
+
+    .bottom-sheet-handle {
+        display: none;
+    }
+}
+
+/* ---- Handle bar (drag indicator) ---- */
+.bottom-sheet-handle {
+    width: 36px;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 12px auto 0;
+    cursor: grab;
+    touch-action: none;
+    flex-shrink: 0;
+}
+
+/* ---- Sheet header ---- */
+.bottom-sheet .modal-header,
+.bottom-sheet .sheet-header {
+    padding: 16px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    background: var(--card-bg);
+    z-index: 1;
+}
+
+.bottom-sheet .modal-header h2,
+.bottom-sheet .sheet-header h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ---- Close button ---- */
+.bottom-sheet .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s, background 0.2s;
+    flex-shrink: 0;
+}
+
+.bottom-sheet .modal-close:hover {
+    color: var(--text-main);
+    background: var(--border);
+}
+
+/* ---- Body padding ---- */
+.bottom-sheet .modal-body,
+.bottom-sheet .modal-content,
+.bottom-sheet .sheet-body {
+    padding: 16px 20px 24px;
+}
