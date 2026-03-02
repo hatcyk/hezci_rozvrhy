@@ -20,8 +20,10 @@ function adjustSheetsForViewport() {
     if (!window.visualViewport || openSheets.size === 0) return;
 
     const vv = window.visualViewport;
-    // Keyboard height = layout viewport bottom minus visual viewport bottom
-    const keyboardOffset = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+    // Keyboard height = how much the visual viewport shrank from the layout viewport
+    // Do NOT subtract vv.offsetTop — body.sheet-open has overflow:hidden so page can't scroll,
+    // and offsetTop skews the calculation causing a gap between sheet and keyboard.
+    const keyboardOffset = Math.max(0, window.innerHeight - vv.height);
 
     openSheets.forEach(id => {
         const sheet = document.getElementById(id);
