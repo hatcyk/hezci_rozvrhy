@@ -15,6 +15,27 @@ window.addEventListener('resize', () => {
     }, 150);
 }, { passive: true });
 
+// Reposition active sheets when virtual keyboard appears/disappears (mobile)
+function adjustSheetsForViewport() {
+    if (!window.visualViewport || openSheets.size === 0) return;
+
+    const vv = window.visualViewport;
+    // Keyboard height = layout viewport bottom minus visual viewport bottom
+    const keyboardOffset = Math.max(0, window.innerHeight - vv.offsetTop - vv.height);
+
+    openSheets.forEach(id => {
+        const sheet = document.getElementById(id);
+        if (!sheet || !sheet.classList.contains('active')) return;
+        sheet.style.bottom = keyboardOffset + 'px';
+        sheet.style.maxHeight = (vv.height * 0.95) + 'px';
+    });
+}
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', adjustSheetsForViewport, { passive: true });
+    window.visualViewport.addEventListener('scroll', adjustSheetsForViewport, { passive: true });
+}
+
 /**
  * Open a bottom sheet by ID
  * @param {string} id - Element ID of the bottom sheet
@@ -77,6 +98,8 @@ export function closeBottomSheet(id) {
 
     sheet.classList.remove('active');
     sheet.style.zIndex = '';
+    sheet.style.bottom = '';
+    sheet.style.maxHeight = '';
     if (overlay && overlay.classList.contains('bottom-sheet-overlay')) {
         overlay.classList.remove('active');
         overlay.style.zIndex = '';
