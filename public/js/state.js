@@ -10,6 +10,7 @@ export const state = {
     showWholeWeek: false, // DEPRECATED - use layoutMode instead
     notificationsEnabled: false,
     watchedTimetables: [],
+    favoriteTimetables: [],
     layoutMode: 'single-day',
     layoutPreferences: {
         'single-day': {},
