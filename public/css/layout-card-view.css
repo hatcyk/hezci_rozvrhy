@@ -408,7 +408,7 @@
 }
 
 /* Mobile Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     .timetable-container.card-view-mode {
         min-height: 350px;
         padding: 16px 0;
@@ -449,7 +449,7 @@
 }
 
 /* Desktop: Keep navigation buttons visible */
-@media (min-width: 769px) {
+@media (min-width: 1080px) {
     .card-view-navigation {
         display: flex;
     }

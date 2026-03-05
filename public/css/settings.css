@@ -90,7 +90,7 @@
 }
 
 /* Mobile-specific styles */
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     /* Show settings button on mobile — integrated style */
     .settings-toggle.mobile-only {
         display: flex;

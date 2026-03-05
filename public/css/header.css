@@ -123,7 +123,7 @@ h1 svg {
 }
 
 /* ---- Dropdown row (desktop: display: contents) ---- */
-@media (min-width: 769px) {
+@media (min-width: 1080px) {
     .dropdown-row {
         display: contents;
     }
@@ -312,6 +312,6 @@ h1 svg {
 }
 
 /* ---- Mobile: smaller logo ---- */
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     .logo { height: 30px; }
 }

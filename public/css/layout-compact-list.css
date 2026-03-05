@@ -372,7 +372,7 @@
 }
 
 /* Mobile Responsive */
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     .timetable-container.compact-list-mode {
         padding: 8px;
     }

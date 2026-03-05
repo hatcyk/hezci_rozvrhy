@@ -1,6 +1,6 @@
 /* ===== Bottom Navigation Bar (Mobile Only) ===== */
 
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     .bottom-nav {
         position: fixed;
         bottom: 0;
@@ -50,7 +50,7 @@
     }
 }
 
-@media (min-width: 769px) {
+@media (min-width: 1080px) {
     .bottom-nav {
         display: none;
     }
