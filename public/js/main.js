@@ -11,6 +11,8 @@ import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from 
 import { registerServiceWorker, initializeMessaging, initNotificationButton, showNotificationModal, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
+import { loadFavorites } from './favorites.js';
+import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 
 /**
@@ -175,7 +177,8 @@ async function init() {
         // Fetch definitions and check Bakalari status in parallel
         const [definitions, isBakalariUp] = await Promise.all([
             fetchDefinitions(),
-            checkBakalariStatus()
+            checkBakalariStatus(),
+            loadFavorites()
         ]);
 
         updateState('definitions', definitions);
@@ -225,6 +228,7 @@ async function init() {
         initWeekViewToggle();
         initNotificationButton();
         initSettings();
+        initFavoritesModal();
         initRefresh();
 
         // Initialize notification modal listeners

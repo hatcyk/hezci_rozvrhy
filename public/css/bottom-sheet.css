@@ -15,7 +15,7 @@
 }
 
 /* ---- Mobile: slide up from bottom ---- */
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     .bottom-sheet {
         position: fixed;
         bottom: 0;
@@ -53,7 +53,7 @@
 }
 
 /* ---- Desktop: centered dialog (unchanged visual) ---- */
-@media (min-width: 769px) {
+@media (min-width: 1080px) {
     .bottom-sheet {
         position: fixed;
         top: 50%;

@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Přihlášení — Lepší Rozvrh</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <meta name="theme-color" content="#07111F">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg:        hsl(210, 65%, 5%);
+            --surface:   hsl(208, 55%, 9%);
+            --surface-2: hsl(208, 50%, 13%);
+            --border:    hsl(207, 35%, 18%);
+            --border-hi: hsl(207, 35%, 26%);
+            --text:      hsl(210, 40%, 96%);
+            --text-dim:  hsl(207, 20%, 55%);
+            --blue:      #002B4F;
+            --orange:    #EB5D43;
+            --orange-hi: #f0705a;
+            --ms-white:  #ffffff;
+        }
+
+        html, body {
+            height: 100%;
+            min-height: 100dvh;
+        }
+
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* ─── BACKGROUND: timetable grid ─── */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .bg-grid::before {
+            content: '';
+            position: absolute;
+            inset: -5%;
+            background-image:
+                linear-gradient(rgba(0, 43, 79, 0.18) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 43, 79, 0.18) 1px, transparent 1px);
+            background-size: 52px 52px;
+            mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 100%);
+            -webkit-mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 100%);
+            animation: grid-drift 18s ease-in-out infinite alternate;
+        }
+
+        @keyframes grid-drift {
+            from { transform: translateY(0)   scale(1);    opacity: 0.6; }
+            to   { transform: translateY(-26px) scale(1.03); opacity: 1; }
+        }
+
+        /* departure-board ticker dots */
+        .bg-ticker {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg,
+                transparent 0%,
+                var(--orange) 30%,
+                var(--orange) 70%,
+                transparent 100%);
+            opacity: 0;
+            animation: ticker-slide 4s cubic-bezier(0.4, 0, 0.2, 1) 0.3s forwards;
+            z-index: 2;
+        }
+
+        @keyframes ticker-slide {
+            0%   { opacity: 0; transform: scaleX(0); transform-origin: left; }
+            40%  { opacity: 1; transform: scaleX(1); transform-origin: left; }
+            80%  { opacity: 1; }
+            100% { opacity: 0.3; transform: scaleX(1); }
+        }
+
+        /* ─── CARD ─── */
+        .card {
+            position: relative;
+            z-index: 10;
+            width: min(440px, calc(100vw - 32px));
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 40px 36px 32px;
+            box-shadow:
+                0 0 0 1px rgba(235, 93, 67, 0.06),
+                0 32px 80px rgba(0, 0, 0, 0.55),
+                0 8px 24px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(20px);
+            animation: card-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+        }
+
+        @keyframes card-in {
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* top accent stripe */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 24px;
+            right: 24px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--orange), transparent);
+            border-radius: 0 0 2px 2px;
+            opacity: 0.7;
+        }
+
+        /* ─── LOGO AREA ─── */
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+
+        .brand-logo {
+            height: 34px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .brand-divider {
+            width: 1px;
+            height: 28px;
+            background: var(--border-hi);
+        }
+
+        .brand-title {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+
+        .brand-title span:first-child {
+            font-size: 0.72rem;
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .brand-title span:last-child {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.01em;
+        }
+
+        /* ─── HEADER ─── */
+        .card-header {
+            margin-bottom: 10px;
+        }
+
+        .lock-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(235, 93, 67, 0.1);
+            border: 1px solid rgba(235, 93, 67, 0.2);
+            border-radius: 20px;
+            padding: 4px 10px 4px 7px;
+            font-size: 0.72rem;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--orange);
+            margin-bottom: 14px;
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .lock-badge svg {
+            flex-shrink: 0;
+        }
+
+        h1 {
+            font-size: 1.55rem;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.02em;
+            line-height: 1.25;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 0.88rem;
+            color: var(--text-dim);
+            line-height: 1.55;
+        }
+
+        /* ─── SEPARATOR ─── */
+        .sep {
+            height: 1px;
+            background: var(--border);
+            margin: 24px 0;
+        }
+
+        /* ─── MICROSOFT BUTTON ─── */
+        .btn-microsoft {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            padding: 14px 20px;
+            background: #ffffff;
+            color: #1f1f1f;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Roboto', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+            cursor: pointer;
+            text-decoration: none;
+            transition:
+                background 0.15s ease,
+                box-shadow 0.15s ease,
+                transform 0.1s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-microsoft::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0);
+            transition: background 0.15s ease;
+        }
+
+        .btn-microsoft:hover {
+            background: #f5f5f5;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+            transform: translateY(-1px);
+        }
+
+        .btn-microsoft:active {
+            transform: translateY(0);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-microsoft:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Microsoft logo SVG */
+        .ms-logo {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+        }
+
+        /* ─── LOGGED IN STATE ─── */
+        .user-info {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin-bottom: 16px;
+        }
+
+        .user-info.visible { display: flex; }
+
+        .user-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--blue), var(--orange));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: white;
+            flex-shrink: 0;
+            letter-spacing: 0.02em;
+        }
+
+        .user-details {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .user-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .user-email {
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            font-family: 'Roboto Mono', monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .btn-enter {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            padding: 14px 20px;
+            background: var(--orange);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Roboto', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+            box-shadow: 0 4px 16px rgba(235, 93, 67, 0.3);
+        }
+
+        .btn-enter:hover {
+            background: var(--orange-hi);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(235, 93, 67, 0.4);
+        }
+
+        .btn-enter:active { transform: translateY(0); }
+
+        .btn-logout {
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px;
+            background: transparent;
+            color: var(--text-dim);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Roboto', sans-serif;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+            text-align: center;
+        }
+
+        .btn-logout:hover {
+            color: var(--text);
+            border-color: var(--border-hi);
+            background: rgba(255,255,255,0.03);
+        }
+
+        /* ─── GDPR NOTICE ─── */
+        .gdpr-notice {
+            margin-top: 20px;
+            padding: 12px 14px;
+            background: rgba(0, 43, 79, 0.2);
+            border: 1px solid rgba(0, 43, 79, 0.4);
+            border-radius: 8px;
+            font-size: 0.78rem;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        .gdpr-notice strong {
+            color: hsl(207, 60%, 75%);
+            font-weight: 500;
+        }
+
+        .gdpr-notice a {
+            color: hsl(207, 70%, 70%);
+            text-decoration: none;
+            border-bottom: 1px solid rgba(100, 160, 210, 0.3);
+            transition: color 0.15s, border-color 0.15s;
+        }
+
+        .gdpr-notice a:hover {
+            color: hsl(207, 80%, 80%);
+            border-color: rgba(100, 160, 210, 0.6);
+        }
+
+        /* ─── FOOTER ─── */
+        .page-footer {
+            position: relative;
+            z-index: 10;
+            margin-top: 24px;
+            font-size: 0.75rem;
+            color: hsl(207, 20%, 35%);
+            font-family: 'Roboto Mono', monospace;
+            letter-spacing: 0.05em;
+            opacity: 0;
+            animation: card-in 0.6s ease 0.5s forwards;
+        }
+
+        /* ─── LOADING SPINNER (inside button) ─── */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .spinner-sm {
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(30, 30, 30, 0.2);
+            border-top-color: #1f1f1f;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+
+        /* ─── RESPONSIVE ─── */
+        @media (max-width: 480px) {
+            .card {
+                padding: 32px 24px 28px;
+                border-radius: 16px;
+            }
+            h1 { font-size: 1.35rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-ticker" aria-hidden="true"></div>
+
+    <main class="card" role="main">
+
+        <!-- Brand -->
+        <div class="brand">
+            <picture>
+                <img src="spsd_logo_white.png" alt="SPŠD Logo" class="brand-logo">
+            </picture>
+            <div class="brand-divider" aria-hidden="true"></div>
+            <div class="brand-title">
+                <span>SPŠ dopravní</span>
+                <span>Lepší Rozvrh</span>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <div class="card-header">
+            <div class="lock-badge" aria-label="Přístup omezen">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                Přístup z vnější sítě
+            </div>
+            <h1>Přihlaste se školním účtem</h1>
+            <p class="subtitle">
+                Na školní síti je přístup volný. Zvenčí se ověřte pomocí školního Microsoft účtu&nbsp;(@sps-dopravni.cz).
+            </p>
+        </div>
+
+        <div class="sep" aria-hidden="true"></div>
+
+        <!-- Logged-in state (shown after auth) -->
+        <div class="user-info" id="userInfo" aria-live="polite">
+            <div class="user-avatar" id="userAvatar">??</div>
+            <div class="user-details">
+                <div class="user-name" id="userName">Načítám...</div>
+                <div class="user-email" id="userEmail"></div>
+            </div>
+        </div>
+
+        <!-- Login button -->
+        <a href="/auth/microsoft" class="btn-microsoft" id="btnLogin" role="button">
+            <!-- Microsoft logo -->
+            <svg class="ms-logo" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+            </svg>
+            Přihlásit se školním účtem
+        </a>
+
+        <!-- Enter button (shown after login) -->
+        <a href="/" class="btn-enter" id="btnEnter" style="display:none" role="button">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                <polyline points="10 17 15 12 10 7"/>
+                <line x1="15" y1="12" x2="3" y2="12"/>
+            </svg>
+            Vstoupit do rozvrhu
+        </a>
+
+        <!-- Logout button (shown after login) -->
+        <button class="btn-logout" id="btnLogout" style="display:none">
+            Odhlásit se
+        </button>
+
+        <!-- GDPR notice -->
+        <div class="gdpr-notice" role="note">
+            <strong>Ochrana osobních údajů:</strong> Při přihlášení získáme pouze vaše jméno a školní e-mail ze&nbsp;školního Microsoft účtu. Tyto údaje jsou použity výhradně k ověření příslušnosti ke&nbsp;škole a ukládány do&nbsp;šifrované session po&nbsp;dobu přihlášení.
+            <!-- <a href="/gdpr">Zásady ochrany osobních údajů →</a> -->
+        </div>
+
+    </main>
+
+    <footer class="page-footer" aria-label="Verze">
+        LEPŠÍ ROZVRH &nbsp;·&nbsp; SPŠ DOPRAVNÍ
+    </footer>
+
+    <script>
+        // Show logged-in state if user data is passed from server via query params
+        // (In production this will be populated server-side or via a /api/me endpoint)
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const name  = params.get('name');
+            const email = params.get('email');
+
+            if (name && email) {
+                showLoggedIn(name, email);
+            }
+
+            // Also check /api/me on load (for when user already has valid session)
+            fetch('/api/me', { credentials: 'include' })
+                .then(r => r.ok ? r.json() : null)
+                .catch(() => null)
+                .then(data => {
+                    if (data && data.name) {
+                        showLoggedIn(data.name, data.email);
+                    }
+                });
+
+            function showLoggedIn(name, email) {
+                const initials = name
+                    .split(' ')
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map(p => p[0].toUpperCase())
+                    .join('');
+
+                document.getElementById('userAvatar').textContent = initials || '?';
+                document.getElementById('userName').textContent   = name;
+                document.getElementById('userEmail').textContent  = email;
+                document.getElementById('userInfo').classList.add('visible');
+                document.getElementById('btnLogin').style.display  = 'none';
+                document.getElementById('btnEnter').style.display  = 'flex';
+                document.getElementById('btnLogout').style.display = 'block';
+            }
+
+            document.getElementById('btnLogout').addEventListener('click', function () {
+                this.disabled = true;
+                this.textContent = 'Odhlašuji...';
+                fetch('/auth/logout', { method: 'POST', credentials: 'include' })
+                    .finally(() => window.location.reload());
+            });
+
+            // Show loading state on login click
+            document.getElementById('btnLogin').addEventListener('click', function (e) {
+                const btn = this;
+                btn.innerHTML = '<div class="spinner-sm"></div> Přesměrovávám...';
+                btn.style.pointerEvents = 'none';
+                btn.style.opacity = '0.8';
+            });
+        })();
+    </script>
+
+</body>
+</html>

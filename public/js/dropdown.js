@@ -1,5 +1,11 @@
 import { dom } from './dom.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+import { isFavorite, toggleFavorite, HEART_FILLED_SVG, HEART_OUTLINE_SVG } from './favorites.js';
+import { state } from './state.js';
+
+// Will be replaced by real import once favorites-modal.js is available
+let updateFavoritesAccessBtn = () => {};
+export function setFavoritesAccessBtnUpdater(fn) { updateFavoritesAccessBtn = fn; }
 
 // Custom dropdown state
 let currentValue = '';
@@ -25,10 +31,32 @@ export function initCustomDropdown(onChangeCallback) {
     });
 
     // Handle option selection
-    dom.valueDropdownMenu.addEventListener('click', (e) => {
-        if (e.target.classList.contains('custom-dropdown-option')) {
-            const value = e.target.dataset.value;
-            selectOption(value, e.target.textContent);
+    dom.valueDropdownMenu.addEventListener('click', async (e) => {
+        // Heart button click
+        const favBtn = e.target.closest('.favorite-btn');
+        if (favBtn) {
+            e.stopPropagation();
+            const value = favBtn.dataset.favValue;
+            try {
+                await toggleFavorite(state.selectedType, value);
+                const isFav = isFavorite(state.selectedType, value);
+                favBtn.classList.toggle('is-favorite', isFav);
+                favBtn.innerHTML = isFav ? HEART_FILLED_SVG : HEART_OUTLINE_SVG;
+                favBtn.title = isFav ? 'Odebrat z oblíbených' : 'Přidat do oblíbených';
+                favBtn.setAttribute('aria-label', isFav ? 'Odebrat z oblíbených' : 'Přidat do oblíbených');
+                updateTriggerHeartIndicator();
+                updateFavoritesAccessBtn();
+            } catch {
+                console.error('Failed to toggle favorite');
+            }
+            return;
+        }
+        // Option click – select schedule
+        const option = e.target.closest('.custom-dropdown-option');
+        if (option) {
+            const value = option.dataset.value;
+            const label = option.querySelector('.option-label').textContent;
+            selectOption(value, label);
             closeDropdown();
             if (changeCallback) {
                 changeCallback();
@@ -61,7 +89,7 @@ function toggleDropdown() {
 }
 
 function isMobile() {
-    return window.innerWidth <= 768;
+    return window.innerWidth <= 1079;
 }
 
 // Open dropdown
@@ -136,17 +164,42 @@ function openMobileSheet() {
 
     // Populate list
     const list = sheet.querySelector('#dropdownSheetList');
-    list.innerHTML = allOptions.map(item => `
+    list.innerHTML = allOptions.map(item => {
+        const isFav = isFavorite(state.selectedType, item.value);
+        return `
         <button class="dropdown-sheet-option${item.value === currentValue ? ' selected' : ''}" data-value="${item.value}">
-            <span>${item.label}</span>
+            <span class="option-label">${item.label}</span>
+            <span class="favorite-btn${isFav ? ' is-favorite' : ''}" data-fav-value="${item.value}" role="button" aria-label="${isFav ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}">
+                ${isFav ? HEART_FILLED_SVG : HEART_OUTLINE_SVG}
+            </span>
             ${item.value === currentValue ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>` : ''}
         </button>
-    `).join('');
+        `;
+    }).join('');
 
     list.querySelectorAll('.dropdown-sheet-option').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async (e) => {
+            // Heart button
+            const favSpan = e.target.closest('.favorite-btn');
+            if (favSpan) {
+                e.stopPropagation();
+                const value = favSpan.dataset.favValue;
+                try {
+                    await toggleFavorite(state.selectedType, value);
+                    const isFav = isFavorite(state.selectedType, value);
+                    favSpan.classList.toggle('is-favorite', isFav);
+                    favSpan.innerHTML = isFav ? HEART_FILLED_SVG : HEART_OUTLINE_SVG;
+                    favSpan.setAttribute('aria-label', isFav ? 'Odebrat z oblíbených' : 'Přidat do oblíbených');
+                    updateTriggerHeartIndicator();
+                    updateFavoritesAccessBtn();
+                } catch {
+                    console.error('Failed to toggle favorite');
+                }
+                return;
+            }
+            // Option select
             const value = btn.dataset.value;
-            const label = btn.querySelector('span').textContent.trim();
+            const label = btn.querySelector('.option-label').textContent.trim();
             selectOption(value, label);
             closeBottomSheet('dropdownMobileSheet');
             if (changeCallback) changeCallback();
@@ -159,7 +212,7 @@ function openMobileSheet() {
     searchEl.oninput = () => {
         const q = searchEl.value.toLowerCase();
         list.querySelectorAll('.dropdown-sheet-option').forEach(btn => {
-            const text = btn.querySelector('span').textContent.toLowerCase();
+            const text = btn.querySelector('.option-label').textContent.toLowerCase();
             btn.style.display = text.includes(q) ? '' : 'none';
         });
     };
@@ -181,6 +234,18 @@ function selectOption(value, label) {
             opt.classList.remove('selected');
         }
     });
+    updateTriggerHeartIndicator();
+}
+
+function updateTriggerHeartIndicator() {
+    const heartEl = document.getElementById('dropdownTriggerHeart');
+    if (!heartEl) return;
+    const fav = currentValue && isFavorite(state.selectedType, currentValue);
+    heartEl.classList.toggle('visible', !!fav);
+}
+
+export function refreshDropdownHeartIndicator() {
+    updateTriggerHeartIndicator();
 }
 
 // Populate dropdown options
@@ -223,8 +288,15 @@ export function populateDropdown(items) {
         const option = document.createElement('div');
         option.className = 'custom-dropdown-option';
         option.dataset.value = item.value;
-        option.textContent = item.label;
         option.dataset.searchText = item.label.toLowerCase();
+
+        const isFav = isFavorite(state.selectedType, item.value);
+        option.innerHTML = `
+            <span class="option-label">${item.label}</span>
+            <button class="favorite-btn${isFav ? ' is-favorite' : ''}" data-fav-value="${item.value}" aria-label="${isFav ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}" title="${isFav ? 'Odebrat z oblíbených' : 'Přidat do oblíbených'}">
+                ${isFav ? HEART_FILLED_SVG : HEART_OUTLINE_SVG}
+            </button>
+        `;
 
         if (item.value === currentValue) {
             option.classList.add('selected');
@@ -258,7 +330,8 @@ export function setDropdownValue(value, label) {
         // Find the label from the options
         const option = dom.valueDropdownMenu.querySelector(`[data-value="${value}"]`);
         if (option) {
-            dom.valueDropdownLabel.textContent = option.textContent;
+            const labelEl = option.querySelector('.option-label');
+            dom.valueDropdownLabel.textContent = labelEl ? labelEl.textContent : option.textContent;
         }
     }
 
@@ -270,6 +343,7 @@ export function setDropdownValue(value, label) {
             opt.classList.remove('selected');
         }
     });
+    updateTriggerHeartIndicator();
 }
 
 // Get current dropdown value
@@ -284,7 +358,8 @@ function selectFirstVisibleOption() {
     for (const option of options) {
         if (option.style.display !== 'none') {
             const value = option.dataset.value;
-            const label = option.textContent;
+            const labelEl = option.querySelector('.option-label');
+            const label = labelEl ? labelEl.textContent : option.textContent;
             selectOption(value, label);
             closeDropdown();
 

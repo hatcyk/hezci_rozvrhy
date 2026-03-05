@@ -64,7 +64,7 @@ footer a:hover::after {
     width: 100%;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     footer {
         display: none;
     }

@@ -75,7 +75,7 @@ body:has(.offline-banner:not(.hidden)):has(.outage-banner:not(.hidden)) .outage-
 }
 
 /* Mobile adjustments */
-@media (max-width: 768px) {
+@media (max-width: 1079px) {
     .outage-banner {
         padding: 10px 16px;
     }

@@ -16,7 +16,7 @@ export function initLayoutSystem() {
     const savedPreferences = localStorage.getItem('layoutPreferences');
 
     // Set default layout mode
-    const platform = window.innerWidth <= 768 ? 'mobile' : 'desktop';
+    const platform = window.innerWidth <= 1079 ? 'mobile' : 'desktop';
     if (savedLayout && layoutExists(savedLayout)) {
         const savedLayoutConfig = getLayoutById(savedLayout);
         // Only restore saved layout if it's supported on the current platform
@@ -236,7 +236,7 @@ export function requiresDaySelector() {
  * @returns {string} 'mobile' or 'desktop'
  */
 function getCurrentPlatform() {
-    return window.innerWidth <= 768 ? 'mobile' : 'desktop';
+    return window.innerWidth <= 1079 ? 'mobile' : 'desktop';
 }
 
 /**

@@ -1,0 +1,180 @@
+/* ===== Favorites – Heart buttons in dropdown ===== */
+
+.custom-dropdown-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.custom-dropdown-option .option-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.favorite-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    transition: color 0.15s, transform 0.15s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.favorite-btn svg {
+    display: block;
+}
+
+.favorite-btn:hover {
+    color: #ef4444;
+    transform: scale(1.15);
+}
+
+.favorite-btn.is-favorite {
+    color: #ef4444;
+}
+
+/* Mobile sheet – same heart button */
+.dropdown-sheet-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.dropdown-sheet-option .option-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Heart indicator in dropdown trigger */
+.dropdown-trigger-heart {
+    display: none;
+    color: #ef4444;
+    flex-shrink: 0;
+    margin-right: 4px;
+}
+
+.dropdown-trigger-heart.visible {
+    display: flex;
+    align-items: center;
+}
+
+/* Favorites access button in header */
+.favorites-access-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-dim);
+    border-radius: 8px;
+    transition: color 0.15s, background 0.15s;
+    flex-shrink: 0;
+}
+
+/* Mobile: match settings toggle style */
+@media (max-width: 1079px) {
+    .favorites-access-btn {
+        width: 42px;
+        height: 42px;
+        background: var(--sidebar-accent);
+        color: var(--text-main);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+}
+
+/* Desktop: match notification bell strip style */
+@media (min-width: 1080px) {
+    .favorites-access-btn {
+        width: 48px;
+        height: auto;
+        align-self: stretch;
+        border-radius: 0;
+    }
+}
+
+.favorites-access-btn:hover {
+    color: #ef4444;
+    background: var(--hover-bg, rgba(0,0,0,0.06));
+}
+
+.favorites-access-btn.has-favorites {
+    color: #ef4444;
+}
+
+/* Favorites bottom sheet list */
+.favorites-sheet-list {
+    padding: 8px 0 16px;
+}
+
+.favorites-sheet-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-main);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.favorites-sheet-item:last-child {
+    border-bottom: none;
+}
+
+.favorites-sheet-item:hover {
+    background: var(--hover-bg, rgba(0,0,0,0.04));
+}
+
+.favorites-sheet-item:active {
+    background: var(--hover-bg, rgba(0,0,0,0.05));
+}
+
+.favorites-sheet-empty {
+    padding: 32px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+}
+
+.favorites-sheet-type-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--border);
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.favorites-modal-heart-icon {
+    color: #ef4444;
+}

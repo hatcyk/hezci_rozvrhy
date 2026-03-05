@@ -13,6 +13,7 @@ const debugRoutes = require('./routes/debug');
 const statusRoutes = require('./routes/status');
 const testNotificationsRoutes = require('./routes/test-notifications');
 const cronRoutes = require('./routes/cron');
+const favoritesRoutes = require('./routes/favorites');
 
 // Debug mode
 const DEBUG = process.env.DEBUG === 'true';
@@ -36,6 +37,11 @@ app.use((req, res, next) => {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve login page without .html extension
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
 // Mount API routes
 app.use('/api', timetableRoutes);
 app.use('/api', authRoutes);
@@ -45,6 +51,7 @@ app.use('/api/fcm', fcmRoutes);
 app.use('/api/prefetch', prefetchRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/cron', cronRoutes);
+app.use('/api', favoritesRoutes);
 
 // Get local IP address
 function getLocalIP() {
