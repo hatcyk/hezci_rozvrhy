@@ -61,13 +61,43 @@ function detectLessonChanges(oldLesson, newLesson) {
 }
 
 /**
+ * Check if a lesson_removed change is just a revert back to the permanent schedule.
+ * E.g. week had German as exception, next week Czech (permanent) is back → not a real change.
+ * @param {Object} change - The detected change (must be lesson_removed)
+ * @param {Array} newData - Current snapshot of lessons
+ * @param {Array} permanentData - Permanent schedule lessons
+ * @returns {boolean} True if this removal is just a revert to normal (should be suppressed)
+ */
+function isRevertToNormal(change, newData, permanentData) {
+    if (!permanentData || permanentData.length === 0) return false;
+
+    const normalize = (s) => (s || '').trim().toLowerCase();
+    const slotKey = (lesson) => `${lesson.day}-${lesson.hour}-${normalize(lesson.group || '')}`;
+
+    const slot = slotKey(change.lesson);
+
+    // Find what permanent schedule says for this slot
+    const permanentLesson = permanentData.find(p => p.type !== 'removed' && slotKey(p) === slot);
+    if (!permanentLesson) return false;
+
+    // Find what the new data has at this slot
+    const newLesson = newData.find(n => n.type !== 'removed' && slotKey(n) === slot);
+    if (!newLesson) return false;
+
+    // If new state matches permanent → this is just a revert, suppress the notification
+    return normalize(newLesson.subject) === normalize(permanentLesson.subject) &&
+           normalize(newLesson.teacher) === normalize(permanentLesson.teacher);
+}
+
+/**
  * Compare two timetable snapshots and detect all changes
  * @param {Array} oldData - Previous snapshot of lessons
  * @param {Array} newData - Current snapshot of lessons
  * @param {Object} metadata - Timetable metadata (type, id, name)
+ * @param {Array|null} permanentData - Optional permanent schedule for revert-detection
  * @returns {Array} List of detected changes
  */
-function detectTimetableChanges(oldData, newData, metadata) {
+function detectTimetableChanges(oldData, newData, metadata, permanentData = null) {
     const changes = [];
 
     // Create maps for efficient lookup
@@ -180,6 +210,18 @@ function detectTimetableChanges(oldData, newData, metadata) {
             }
         }
     });
+
+    // Filter out changes that are just reverting back to the permanent schedule.
+    // E.g. last week had German (exception), this week Czech is back (permanent) →
+    // don't send "German removed" notification.
+    if (permanentData && permanentData.length > 0) {
+        return changes.filter(change => {
+            if (change.type === 'lesson_removed') {
+                return !isRevertToNormal(change, newData, permanentData);
+            }
+            return true;
+        });
+    }
 
     return changes;
 }
