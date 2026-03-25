@@ -632,13 +632,15 @@ async function prefetchAllData() {
                     const docKey = `${task.type}_${task.entity.id}_${task.scheduleType}`;
 
                     // For Actual schedules of Classes, add removed lessons from Permanent schedule
-                    // This ensures removed group lessons are displayed with strikethrough
+                    // This ensures removed group lessons are displayed with strikethrough.
+                    // Also keep permanentData so change-detector can filter out "revert to normal" events.
+                    let permanentData = null;
                     if (task.scheduleType === 'Actual' && task.type === 'Class') {
                         const permanentDocKey = `${task.type}_${task.entity.id}_Permanent`;
                         const permanentDoc = await db.collection('timetables').doc(permanentDocKey).get();
 
                         if (permanentDoc.exists) {
-                            const permanentData = permanentDoc.data().data;
+                            permanentData = permanentDoc.data().data;
                             timetableData = addRemovedLessonsFromPermanent(timetableData, permanentData);
                         }
                     }
@@ -657,7 +659,7 @@ async function prefetchAllData() {
                             scheduleType: task.scheduleType
                         };
 
-                        const changes = detectTimetableChanges(previousData, timetableData, metadata);
+                        const changes = detectTimetableChanges(previousData, timetableData, metadata, permanentData);
 
                         // Store detected changes
                         if (changes.length > 0) {

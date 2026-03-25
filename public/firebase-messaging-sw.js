@@ -9,13 +9,13 @@ importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-comp
 
 // Firebase configuration (must match your project)
 const firebaseConfig = {
-    apiKey: "AIzaSyBEB_6eoR-4xVkyN7ap4MxYsLMS4azeF_0",
-    authDomain: "barat-bakalari.firebaseapp.com",
-    projectId: "barat-bakalari",
-    storageBucket: "barat-bakalari.firebasestorage.app",
-    messagingSenderId: "576497158390",
-    appId: "1:576497158390:web:33a1349e14200d146a44d7",
-    measurementId: "G-PH8HE2CJNQ"
+  apiKey: "AIzaSyBEB_6eoR-4xVkyN7ap4MxYsLMS4azeF_0",
+  authDomain: "barat-bakalari.firebaseapp.com",
+  projectId: "barat-bakalari",
+  storageBucket: "barat-bakalari.firebasestorage.app",
+  messagingSenderId: "576497158390",
+  appId: "1:576497158390:web:33a1349e14200d146a44d7",
+  measurementId: "G-PH8HE2CJNQ",
 };
 
 // Initialize Firebase
