@@ -134,6 +134,7 @@ h1 svg {
     position: relative;
     flex: 1;
     min-width: 180px;
+    max-width: 420px;
     align-self: center;
     margin: 8px 12px;
 }
@@ -215,7 +216,6 @@ h1 svg {
     transition: background 0.1s;
     color: var(--text-main);
     font-size: 0.88rem;
-    text-align: center;
 }
 
 .custom-dropdown-option:hover {
