@@ -4,7 +4,8 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: stretch;
-    margin-bottom: 20px;
+    max-width: 1080px;
+    margin: 0 auto 20px;
     padding: 0;
     background: var(--card-bg);
     border-radius: 12px;
@@ -211,6 +212,9 @@ h1 svg {
 }
 
 .custom-dropdown-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     padding: 10px 14px;
     cursor: pointer;
     transition: background 0.1s;
