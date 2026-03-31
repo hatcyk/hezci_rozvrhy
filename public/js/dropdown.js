@@ -314,7 +314,7 @@ function filterOptions(searchText) {
     options.forEach(option => {
         const text = option.dataset.searchText;
         if (text.includes(searchLower)) {
-            option.style.display = 'block';
+            option.style.display = '';
         } else {
             option.style.display = 'none';
         }
