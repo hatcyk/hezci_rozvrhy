@@ -2,13 +2,13 @@ import { initDOM, dom } from './dom.js';
 import { state, updateState } from './state.js';
 import { initTheme, initThemeToggle } from './theme.js';
 import { initModalListeners } from './modal.js';
-import { loadTimetable, populateValueSelect, createDaySelector, initWeekViewToggle } from './timetable.js';
+import { loadTimetable, populateValueSelect, initWeekViewToggle } from './timetable.js';
 import { fetchDefinitions, checkBakalariStatus } from './api.js';
-import { initCustomDropdown, setDropdownValue, getDropdownValue, openDropdown } from './dropdown.js';
+import { initCustomDropdown, setDropdownValue, openDropdown } from './dropdown.js';
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek } from './utils.js';
 import { initSunData } from './suntime.js';
 import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from './firebase-client.js';
-import { registerServiceWorker, initializeMessaging, initNotificationButton, showNotificationModal, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
+import { registerServiceWorker, initializeMessaging, initNotificationButton, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
 import { loadFavorites } from './favorites.js';
@@ -271,7 +271,7 @@ async function init() {
     } catch (e) {
         console.error('Initialization error:', e);
         if (dom.errorDiv) {
-            dom.errorDiv.textContent = "Nepodařilo se načíst seznamy. Běží backend?";
+            dom.errorDiv.textContent = "Nepodařilo se načíst rozvrhy.";
             dom.errorDiv.classList.remove('hidden');
         }
     } finally {
