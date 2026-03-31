@@ -4,7 +4,7 @@ header {
     display: flex;
     justify-content: space-between;
     align-items: stretch;
-    max-width: 1920px;
+    max-width: 1080px;
     margin: 0 auto 20px;
     padding: 0;
     background: var(--card-bg);
