@@ -50,7 +50,7 @@
 .lesson-card-full.upcoming {
     background: linear-gradient(135deg, rgba(235, 93, 67, 0.06) 0%, rgba(235, 93, 67, 0.02) 100%);
     border: 2px solid rgba(235, 93, 67, 0.2);
-    border-bottom: 4px solid rgba(235, 93, 67, 0.5);
+    border-bottom: 4px solid #ffffff;
 }
 
 .lesson-card-full.past {
