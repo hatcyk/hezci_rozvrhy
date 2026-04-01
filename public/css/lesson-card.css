@@ -16,14 +16,14 @@
 
 /* ---- Status: current lesson ---- */
 .lesson-card.current-time {
-    border-bottom-color: var(--spsd-orange);
+    border-bottom-color: #ffffff;
     background: rgba(235, 93, 67, 0.10);
     box-shadow: 0 2px 12px rgba(235, 93, 67, 0.2), inset 0 0 0 1px rgba(235, 93, 67, 0.08);
 }
 
 /* ---- Status: upcoming ---- */
 .lesson-card.upcoming {
-    border-bottom-color: #ffffff;
+    border-bottom-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.04);
 }
 
@@ -54,13 +54,13 @@
 
 /* Changed + current: current-time border wins, keep changed dot */
 .lesson-card.changed.current-time {
-    border-bottom-color: var(--spsd-orange);
+    border-bottom-color: #ffffff;
     background: rgba(235, 93, 67, 0.10);
 }
 
 /* Changed + upcoming: upcoming border wins */
 .lesson-card.changed.upcoming {
-    border-bottom-color: #ffffff;
+    border-bottom-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.04);
 }
 
