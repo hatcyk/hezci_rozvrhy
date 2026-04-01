@@ -23,7 +23,7 @@
 
 /* ---- Status: upcoming ---- */
 .lesson-card.upcoming {
-    border-bottom-color: rgba(235, 93, 67, 0.45);
+    border-bottom-color: #ffffff;
     background: rgba(235, 93, 67, 0.04);
 }
 
@@ -60,7 +60,7 @@
 
 /* Changed + upcoming: upcoming border wins */
 .lesson-card.changed.upcoming {
-    border-bottom-color: rgba(235, 93, 67, 0.45);
+    border-bottom-color: #ffffff;
     background: rgba(235, 93, 67, 0.04);
 }
 
