@@ -217,7 +217,7 @@
 
 /* Status Indicators */
 .compact-lesson-item.current-time {
-    border-bottom-color: #ffffff;
+    border-bottom-color: var(--text-main);
     background: linear-gradient(90deg, rgba(235, 93, 67, 0.08) 0%, var(--card-bg) 100%);
 }
 
@@ -272,7 +272,7 @@
 }
 
 .compact-lesson-item.changed.current-time {
-    border-bottom-color: #ffffff;
+    border-bottom-color: var(--text-main);
 }
 
 .compact-lesson-item.changed.past {
