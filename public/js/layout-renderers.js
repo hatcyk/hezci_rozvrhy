@@ -185,7 +185,7 @@ function renderSingleLesson(lesson) {
 
     return `
         <div class="card-lessons-split">
-            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''}">
+            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}">
                 ${lesson.group ? `<div class="lesson-group-badge">${lesson.group}</div>` : ''}
 
                 <div class="lesson-subject-name">${lesson.subject}</div>
@@ -256,7 +256,7 @@ function renderSplitLessons(lessons) {
         const isChanged = lesson.changed;
 
         html += `
-            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''}">
+            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}">
                 ${lesson.group ? `<div class="lesson-group-badge">${lesson.group}</div>` : ''}
                 <div class="lesson-subject-name">${lesson.subject}</div>
 
@@ -1014,6 +1014,7 @@ export function renderAgendaLayout() {
 
     const todayIndex = getTodayIndex();
     const currentHour = getCurrentHour();
+    const upcomingHour = getUpcomingHour();
 
     let html = '<div class="agenda-wrapper">';
 
@@ -1043,6 +1044,8 @@ export function renderAgendaLayout() {
                 if (state.selectedScheduleType === 'actual' && !isRemoved) {
                     if (selectedDay === todayIndex && hour === currentHour) {
                         rowClasses += ' agenda-current';
+                    } else if (selectedDay === todayIndex && hour === upcomingHour && hour !== currentHour) {
+                        rowClasses += ' agenda-upcoming';
                     } else if (isPastLesson(selectedDay, hour)) {
                         rowClasses += ' agenda-past';
                     }
