@@ -126,8 +126,8 @@
 }
 
 .agenda-badge.changed {
-    background: rgba(255, 165, 0, 0.15);
-    color: #e07800;
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
 }
 
 .agenda-badge.removed {
@@ -136,6 +136,10 @@
 }
 
 /* ---- State: past ---- */
+.agenda-row.agenda-past {
+    filter: saturate(0.4);
+}
+
 .agenda-row.agenda-past .agenda-card {
     opacity: 0.4;
 }
@@ -161,21 +165,50 @@
 
 .agenda-row.agenda-current .agenda-subject {
     color: var(--spsd-orange, #f97316);
+    font-weight: 700;
+}
+
+/* ---- State: upcoming ---- */
+.agenda-row.agenda-upcoming .agenda-time {
+    color: rgba(235, 93, 67, 0.65);
+    font-weight: 600;
+}
+
+.agenda-row.agenda-upcoming .agenda-time::after {
+    background: rgba(235, 93, 67, 0.5);
+    width: 9px;
+    height: 9px;
+    right: -12.5px;
+    top: 9.5px;
+}
+
+.agenda-row.agenda-upcoming .agenda-subject {
+    color: rgba(235, 93, 67, 0.65);
 }
 
 /* ---- State: removed ---- */
 .agenda-row.agenda-removed .agenda-card {
-    opacity: 0.65;
+    opacity: 0.5;
 }
 
 .agenda-row.agenda-removed .agenda-subject {
     text-decoration: line-through;
-    color: #dc2626;
+    text-decoration-color: rgba(239, 68, 68, 0.6);
+    text-decoration-thickness: 1.5px;
+    color: var(--text-dim);
+}
+
+.agenda-row.agenda-removed .agenda-time::after {
+    background: #ef4444;
 }
 
 /* ---- State: changed ---- */
 .agenda-row.agenda-changed .agenda-subject {
-    color: #e07800;
+    color: #f59e0b;
+}
+
+.agenda-row.agenda-changed .agenda-time::after {
+    background: #f59e0b;
 }
 
 /* ---- Empty hour row ---- */

@@ -5,20 +5,41 @@
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid var(--border);
+    border-left: 3.5px solid transparent;
     box-shadow: 0 1px 4px var(--shadow-light);
-    transition: border-color 0.15s, box-shadow 0.15s;
+    transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;
     position: relative;
     min-height: 60px;
     display: flex;
     flex-direction: column;
 }
 
-/* ---- Status: changed ---- */
-.lesson-card.changed {
-    background: rgba(235, 93, 67, 0.05);
+/* ---- Status: current lesson ---- */
+.lesson-card.current-time {
+    border-left-color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.10);
+    box-shadow: 0 2px 12px rgba(235, 93, 67, 0.2), inset 0 0 0 1px rgba(235, 93, 67, 0.08);
 }
 
-/* Small dot indicator top-right */
+/* ---- Status: upcoming ---- */
+.lesson-card.upcoming {
+    border-left-color: rgba(235, 93, 67, 0.45);
+    background: rgba(235, 93, 67, 0.04);
+}
+
+/* ---- Status: past ---- */
+.lesson-card.past {
+    opacity: 0.4;
+    filter: saturate(0.4);
+}
+
+/* ---- Status: changed ---- */
+.lesson-card.changed {
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.05);
+}
+
+/* Changed dot indicator top-right */
 .lesson-card.changed::after {
     content: '';
     position: absolute;
@@ -27,53 +48,50 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: var(--spsd-orange);
+    background: #f59e0b;
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+}
+
+/* Changed + current: current-time border wins, keep changed dot */
+.lesson-card.changed.current-time {
+    border-left-color: var(--spsd-orange);
+    background: rgba(235, 93, 67, 0.10);
+}
+
+/* Changed + upcoming: upcoming border wins */
+.lesson-card.changed.upcoming {
+    border-left-color: rgba(235, 93, 67, 0.45);
+    background: rgba(235, 93, 67, 0.04);
+}
+
+/* Changed + past: muted changed border */
+.lesson-card.changed.past {
+    border-left-color: rgba(245, 158, 11, 0.35);
 }
 
 /* ---- Status: removed ---- */
 .lesson-card.removed {
-    opacity: 0.65;
-    position: relative;
+    border-left-color: #ef4444;
+    opacity: 0.5;
 }
 
-/* Diagonal line */
-.lesson-card.removed::before {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: -2px;
-    right: -2px;
-    bottom: -2px;
-    background-image: url("data:image/svg+xml,%3Csvg width='100%25' height='100%25' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='0' x2='100%25' y2='100%25' stroke='%23ef4444' stroke-width='1.5' stroke-linecap='round' opacity='0.5'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 2;
+.lesson-card.removed .lesson-subject {
+    text-decoration: line-through;
+    text-decoration-color: rgba(239, 68, 68, 0.6);
+    text-decoration-thickness: 1.5px;
 }
 
 /* ---- Status: absent ---- */
 .lesson-card.absent {
-    background: rgba(168, 85, 247, 0.05);
-    opacity: 0.85;
+    border-left-color: #a855f7;
+    background: rgba(168, 85, 247, 0.04);
+    opacity: 0.55;
 }
 
-/* ---- Status: current lesson ---- */
-.lesson-card.current-time {
-    background: rgba(235, 93, 67, 0.08);
-    box-shadow: 0 2px 12px rgba(235, 93, 67, 0.2);
-}
-
-/* ---- Status: upcoming ---- */
-.lesson-card.upcoming {
-    background: rgba(235, 93, 67, 0.04);
-}
-
-/* ---- Status: past ---- */
-.lesson-card.past {
-    opacity: 0.5;
-}
-
-.lesson-card.past .lesson-subject,
-.lesson-card.past .lesson-details {
-    opacity: 0.8;
+.lesson-card.absent .lesson-subject {
+    text-decoration: line-through;
+    text-decoration-color: rgba(168, 85, 247, 0.5);
+    text-decoration-thickness: 1.5px;
 }
 
 /* ---- Text ---- */
@@ -131,9 +149,7 @@
 }
 
 /* Offset group badge when there's a change dot */
-.lesson-card.changed .lesson-group,
-.lesson-card.removed .lesson-group,
-.lesson-card.absent .lesson-group {
+.lesson-card.changed .lesson-group {
     top: 22px;
 }
 
