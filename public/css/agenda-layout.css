@@ -193,8 +193,8 @@
 
 .agenda-row.agenda-removed .agenda-subject {
     text-decoration: line-through;
-    text-decoration-color: rgba(239, 68, 68, 0.6);
-    text-decoration-thickness: 1.5px;
+    text-decoration-color: rgba(239, 68, 68, 0.7);
+    text-decoration-thickness: 2.5px;
     color: var(--text-dim);
 }
 

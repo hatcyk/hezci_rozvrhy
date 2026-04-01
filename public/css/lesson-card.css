@@ -5,7 +5,7 @@
     padding: 8px 10px;
     border-radius: 10px;
     border: 1px solid var(--border);
-    border-left: 3.5px solid transparent;
+    border-bottom: 3px solid transparent;
     box-shadow: 0 1px 4px var(--shadow-light);
     transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s, filter 0.2s;
     position: relative;
@@ -16,14 +16,14 @@
 
 /* ---- Status: current lesson ---- */
 .lesson-card.current-time {
-    border-left-color: var(--spsd-orange);
+    border-bottom-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.10);
     box-shadow: 0 2px 12px rgba(235, 93, 67, 0.2), inset 0 0 0 1px rgba(235, 93, 67, 0.08);
 }
 
 /* ---- Status: upcoming ---- */
 .lesson-card.upcoming {
-    border-left-color: rgba(235, 93, 67, 0.45);
+    border-bottom-color: rgba(235, 93, 67, 0.45);
     background: rgba(235, 93, 67, 0.04);
 }
 
@@ -35,7 +35,7 @@
 
 /* ---- Status: changed ---- */
 .lesson-card.changed {
-    border-left-color: #f59e0b;
+    border-bottom-color: #f59e0b;
     background: rgba(245, 158, 11, 0.05);
 }
 
@@ -54,44 +54,44 @@
 
 /* Changed + current: current-time border wins, keep changed dot */
 .lesson-card.changed.current-time {
-    border-left-color: var(--spsd-orange);
+    border-bottom-color: var(--spsd-orange);
     background: rgba(235, 93, 67, 0.10);
 }
 
 /* Changed + upcoming: upcoming border wins */
 .lesson-card.changed.upcoming {
-    border-left-color: rgba(235, 93, 67, 0.45);
+    border-bottom-color: rgba(235, 93, 67, 0.45);
     background: rgba(235, 93, 67, 0.04);
 }
 
 /* Changed + past: muted changed border */
 .lesson-card.changed.past {
-    border-left-color: rgba(245, 158, 11, 0.35);
+    border-bottom-color: rgba(245, 158, 11, 0.35);
 }
 
 /* ---- Status: removed ---- */
 .lesson-card.removed {
-    border-left-color: #ef4444;
+    border-bottom-color: #ef4444;
     opacity: 0.5;
 }
 
 .lesson-card.removed .lesson-subject {
     text-decoration: line-through;
-    text-decoration-color: rgba(239, 68, 68, 0.6);
-    text-decoration-thickness: 1.5px;
+    text-decoration-color: rgba(239, 68, 68, 0.7);
+    text-decoration-thickness: 2.5px;
 }
 
 /* ---- Status: absent ---- */
 .lesson-card.absent {
-    border-left-color: #a855f7;
+    border-bottom-color: #a855f7;
     background: rgba(168, 85, 247, 0.04);
     opacity: 0.55;
 }
 
 .lesson-card.absent .lesson-subject {
     text-decoration: line-through;
-    text-decoration-color: rgba(168, 85, 247, 0.5);
-    text-decoration-thickness: 1.5px;
+    text-decoration-color: rgba(168, 85, 247, 0.6);
+    text-decoration-thickness: 2.5px;
 }
 
 /* ---- Text ---- */

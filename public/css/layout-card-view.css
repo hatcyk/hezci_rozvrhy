@@ -43,14 +43,14 @@
 .lesson-card-full.current-time {
     background: linear-gradient(135deg, rgba(235, 93, 67, 0.12) 0%, rgba(235, 93, 67, 0.06) 100%);
     border: 2px solid rgba(235, 93, 67, 0.4);
-    border-left: 5px solid var(--spsd-orange);
+    border-bottom: 4px solid var(--spsd-orange);
     box-shadow: 0 4px 20px rgba(235, 93, 67, 0.15);
 }
 
 .lesson-card-full.upcoming {
     background: linear-gradient(135deg, rgba(235, 93, 67, 0.06) 0%, rgba(235, 93, 67, 0.02) 100%);
     border: 2px solid rgba(235, 93, 67, 0.2);
-    border-left: 5px solid rgba(235, 93, 67, 0.5);
+    border-bottom: 4px solid rgba(235, 93, 67, 0.5);
 }
 
 .lesson-card-full.past {
@@ -86,8 +86,8 @@
 
 .lesson-subject-name.removed {
     text-decoration: line-through;
-    text-decoration-color: rgba(239, 68, 68, 0.6);
-    text-decoration-thickness: 2px;
+    text-decoration-color: rgba(239, 68, 68, 0.7);
+    text-decoration-thickness: 2.5px;
     opacity: 0.6;
 }
 
@@ -202,17 +202,17 @@
 
 .card-lesson-half.lesson-removed {
     opacity: 0.55;
-    border-left: 3px solid #ef4444;
+    border-bottom: 3px solid #ef4444;
 }
 
 .card-lesson-half.lesson-removed .lesson-subject-name {
     text-decoration: line-through;
-    text-decoration-color: rgba(239, 68, 68, 0.6);
-    text-decoration-thickness: 2px;
+    text-decoration-color: rgba(239, 68, 68, 0.7);
+    text-decoration-thickness: 2.5px;
 }
 
 .card-lesson-half.lesson-changed:not(.lesson-removed) {
-    border-left: 3px solid #f59e0b;
+    border-bottom: 3px solid #f59e0b;
 }
 
 .lesson-group-badge {
