@@ -24,6 +24,7 @@
     padding: 20px;
     background: var(--card-bg);
     border: 2px solid var(--border);
+    border-bottom: 4px solid var(--border);
     border-radius: 16px;
     box-shadow: 0 4px 16px var(--shadow);
     margin: 0 8px;
