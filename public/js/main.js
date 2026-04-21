@@ -156,15 +156,22 @@ async function init() {
         initLayoutSystem();
         initResizeListener();
 
-        // Initialize Firebase. Auth requires network; if it fails (e.g. offline),
-        // the app still boots and falls back to localStorage cache.
+        // Initialize Firebase. Both SDK init and auth require network; if they
+        // fail (e.g. offline, Firebase SDK script not in SW cache), the app
+        // still boots and falls back to localStorage cache.
         console.log('Initializing Firebase...');
-        await initializeFirebase(window.firebaseConfig);
+        let firebaseReady = false;
         try {
-            await authenticateWithFirebase();
-            console.log('Firebase ready!');
-        } catch (authErr) {
-            console.warn('⚠️ Firebase auth failed — running in offline fallback mode:', authErr?.message || authErr);
+            await initializeFirebase(window.firebaseConfig);
+            try {
+                await authenticateWithFirebase();
+                firebaseReady = true;
+                console.log('Firebase ready!');
+            } catch (authErr) {
+                console.warn('⚠️ Firebase auth failed — offline fallback mode:', authErr?.message || authErr);
+            }
+        } catch (initErr) {
+            console.warn('⚠️ Firebase init failed — offline fallback mode:', initErr?.message || initErr);
         }
 
         // Cleanup old Service Workers before initializing new ones
