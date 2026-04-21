@@ -2,7 +2,7 @@
 node_modules/
 debug_output/
 .env
-
+.DS_Store
 # Firebase credentials
 firebase-service-account.json
 **/firebase-service-account.json
