@@ -73,4 +73,124 @@ self.addEventListener('notificationclick', (event) => {
     );
 });
 
+/* ────────────────────────────────────────────────────────────────────
+ * App-shell caching (offline support)
+ * Bump SHELL_CACHE version whenever the precache list changes.
+ * ──────────────────────────────────────────────────────────────────── */
+const SHELL_CACHE = 'bakalari-shell-v1';
+const PRECACHE_URLS = [
+    '/',
+    '/index.html',
+    '/manifest.webmanifest',
+    '/favicon.ico',
+    '/icon-180.png',
+    '/icon-192.png',
+    '/icon-512.png',
+    '/spsd_logo_dark.png',
+    '/spsd_logo_white.png',
+    '/spsd_long_dark.png',
+    '/spsd_long_white.png',
+    '/css/main.css',
+    '/css/theme-warning.css',
+    '/css/notifications.css',
+    '/css/settings.css',
+    '/css/layout-modal.css',
+    '/css/layout-card-view.css',
+    '/css/layout-compact-list.css',
+    '/css/outage.css',
+    '/css/footer.css',
+    '/css/favorites.css',
+    '/css/variables.css',
+    '/css/base.css',
+    '/css/header.css',
+    '/css/timetable.css',
+    '/css/lesson-card.css',
+    '/css/modal.css',
+    '/css/offline.css',
+    '/css/mobile.css',
+    '/css/bottom-sheet.css',
+    '/css/agenda-layout.css',
+    '/css/bottom-nav.css',
+    '/css/navigation.css',
+    '/js/main.js',
+    '/js/api.js',
+    '/js/bottom-nav.js',
+    '/js/bottom-sheet.js',
+    '/js/cache.js',
+    '/js/constants.js',
+    '/js/debug.js',
+    '/js/dom.js',
+    '/js/dropdown.js',
+    '/js/favorites-modal.js',
+    '/js/favorites.js',
+    '/js/firebase-client.js',
+    '/js/layout-manager.js',
+    '/js/layout-registry.js',
+    '/js/layout-renderers.js',
+    '/js/modal.js',
+    '/js/navigation.js',
+    '/js/notifications-core.js',
+    '/js/notifications-modal.js',
+    '/js/notifications-multiselect.js',
+    '/js/notifications-preferences.js',
+    '/js/notifications.js',
+    '/js/offline.js',
+    '/js/refresh.js',
+    '/js/settings.js',
+    '/js/state.js',
+    '/js/suntime.js',
+    '/js/theme.js',
+    '/js/timetable.js',
+    '/js/utils.js',
+];
+
+self.addEventListener('install', (event) => {
+    console.log('[firebase-messaging-sw.js] Install — precaching app shell');
+    event.waitUntil(
+        caches.open(SHELL_CACHE)
+            .then((cache) => cache.addAll(PRECACHE_URLS.map((url) => new Request(url, { cache: 'reload' }))))
+            .catch((err) => console.warn('[sw] Precache failed:', err))
+            .then(() => self.skipWaiting())
+    );
+});
+
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys().then((names) => Promise.all(
+            names
+                .filter((n) => n.startsWith('bakalari-shell-') && n !== SHELL_CACHE)
+                .map((n) => caches.delete(n))
+        )).then(() => self.clients.claim())
+    );
+});
+
+self.addEventListener('fetch', (event) => {
+    const { request } = event;
+
+    if (request.method !== 'GET') return;
+
+    const url = new URL(request.url);
+
+    // Only handle same-origin GETs. Let Firebase SDK, Firestore, analytics, etc. pass through.
+    if (url.origin !== self.location.origin) return;
+
+    // Don't intercept backend API calls (auth, status) — these must be live.
+    if (url.pathname.startsWith('/api/')) return;
+
+    // Stale-while-revalidate: respond from cache, update cache in background.
+    event.respondWith(
+        caches.open(SHELL_CACHE).then(async (cache) => {
+            const cached = await cache.match(request);
+            const network = fetch(request).then((response) => {
+                if (response && response.status === 200 && response.type === 'basic') {
+                    cache.put(request, response.clone()).catch(() => { /* ignore quota errors */ });
+                }
+                return response;
+            }).catch(() => cached);
+
+            return cached || network;
+        })
+    );
+});
+
 console.log('[firebase-messaging-sw.js] Service Worker loaded');

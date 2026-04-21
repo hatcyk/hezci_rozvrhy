@@ -14,6 +14,7 @@ import { initRefresh } from './refresh.js';
 import { loadFavorites } from './favorites.js';
 import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
+import { initOfflineDetection } from './offline.js';
 
 /**
  * Cleanup old Service Workers (especially sw.js)
@@ -144,6 +145,9 @@ async function init() {
         // Initialize DOM references first
         initDOM();
 
+        // Initialize offline detection early so the banner can show during boot
+        initOfflineDetection();
+
         // Initialize theme
         initTheme();
         initThemeToggle();
@@ -152,11 +156,16 @@ async function init() {
         initLayoutSystem();
         initResizeListener();
 
-        // Initialize Firebase
+        // Initialize Firebase. Auth requires network; if it fails (e.g. offline),
+        // the app still boots and falls back to localStorage cache.
         console.log('Initializing Firebase...');
         await initializeFirebase(window.firebaseConfig);
-        await authenticateWithFirebase();
-        console.log('Firebase ready!');
+        try {
+            await authenticateWithFirebase();
+            console.log('Firebase ready!');
+        } catch (authErr) {
+            console.warn('⚠️ Firebase auth failed — running in offline fallback mode:', authErr?.message || authErr);
+        }
 
         // Cleanup old Service Workers before initializing new ones
         await cleanupOldServiceWorkers();
