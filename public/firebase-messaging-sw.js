@@ -77,7 +77,16 @@ self.addEventListener('notificationclick', (event) => {
  * App-shell caching (offline support)
  * Bump SHELL_CACHE version whenever the precache list changes.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-v1';
+const SHELL_CACHE = 'bakalari-shell-v2';
+
+// Cross-origin scripts the app needs to boot. Cached as opaque responses
+// (status 0) so that offline loads still have the Firebase SDK available.
+const CROSS_ORIGIN_PRECACHE = [
+    'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js',
+    'https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js',
+];
 const PRECACHE_URLS = [
     '/',
     '/index.html',
@@ -146,12 +155,29 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (event) => {
     console.log('[firebase-messaging-sw.js] Install — precaching app shell');
-    event.waitUntil(
-        caches.open(SHELL_CACHE)
-            .then((cache) => cache.addAll(PRECACHE_URLS.map((url) => new Request(url, { cache: 'reload' }))))
-            .catch((err) => console.warn('[sw] Precache failed:', err))
-            .then(() => self.skipWaiting())
-    );
+    event.waitUntil((async () => {
+        const cache = await caches.open(SHELL_CACHE);
+
+        // Same-origin precache (atomic, forces fresh network fetch)
+        try {
+            await cache.addAll(PRECACHE_URLS.map((url) => new Request(url, { cache: 'reload' })));
+        } catch (err) {
+            console.warn('[sw] Same-origin precache failed:', err);
+        }
+
+        // Cross-origin precache (Firebase SDK). no-cors yields opaque responses
+        // which cache.addAll rejects, so we put them one-by-one.
+        await Promise.all(CROSS_ORIGIN_PRECACHE.map(async (url) => {
+            try {
+                const response = await fetch(url, { mode: 'no-cors', cache: 'reload' });
+                await cache.put(url, response);
+            } catch (err) {
+                console.warn(`[sw] Cross-origin precache failed for ${url}:`, err);
+            }
+        }));
+
+        await self.skipWaiting();
+    })());
 });
 
 self.addEventListener('activate', (event) => {
@@ -171,7 +197,24 @@ self.addEventListener('fetch', (event) => {
 
     const url = new URL(request.url);
 
-    // Only handle same-origin GETs. Let Firebase SDK, Firestore, analytics, etc. pass through.
+    // Firebase SDK served from gstatic — cache-first so it boots offline.
+    if (url.hostname === 'www.gstatic.com' && url.pathname.includes('/firebasejs/')) {
+        event.respondWith((async () => {
+            const cache = await caches.open(SHELL_CACHE);
+            const cached = await cache.match(request);
+            if (cached) return cached;
+            try {
+                const response = await fetch(request, { mode: 'no-cors' });
+                cache.put(request, response.clone()).catch(() => { /* ignore */ });
+                return response;
+            } catch (err) {
+                return cached || Response.error();
+            }
+        })());
+        return;
+    }
+
+    // Ignore other cross-origin requests (Firestore, analytics, etc.)
     if (url.origin !== self.location.origin) return;
 
     // Don't intercept backend API calls (auth, status) — these must be live.
