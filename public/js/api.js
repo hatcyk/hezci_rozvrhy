@@ -3,6 +3,8 @@
  */
 
 import { fetchDefinitionsFromFirebase, fetchTimetableFromFirebase } from './firebase-client.js';
+import { setCache, getCacheEvenExpired, getCacheAge, TTL } from './cache.js';
+import { setOfflineMode, isOffline } from './offline.js';
 
 // Session cache for faster repeated access
 const sessionCache = {
@@ -10,8 +12,12 @@ const sessionCache = {
     timetables: new Map(),
 };
 
+const DEFINITIONS_KEY = 'definitions';
+const timetableKey = (type, id, scheduleType) => `timetable_${type}_${id}_${scheduleType}`;
+
 /**
  * Fetch definitions (classes, teachers, rooms) from Firebase
+ * Falls back to localStorage cache when offline.
  */
 export async function fetchDefinitions() {
     // Check session cache first
@@ -20,31 +26,67 @@ export async function fetchDefinitions() {
         return sessionCache.definitions;
     }
 
+    // If browser reports offline, prefer cached data immediately
+    if (!navigator.onLine) {
+        const cached = getCacheEvenExpired(DEFINITIONS_KEY);
+        if (cached) {
+            console.log('📴 Offline — using cached definitions');
+            sessionCache.definitions = cached;
+            setOfflineMode(true, getCacheAge(DEFINITIONS_KEY));
+            return cached;
+        }
+    }
+
     try {
         const definitions = await fetchDefinitionsFromFirebase();
 
-        // Cache in session
         sessionCache.definitions = definitions;
+        setCache(DEFINITIONS_KEY, definitions, TTL.DEFINITIONS);
+
+        if (isOffline() && navigator.onLine) setOfflineMode(false);
 
         console.log(`Loaded definitions from Firebase: ${definitions.classes.length} classes, ${definitions.teachers.length} teachers, ${definitions.rooms.length} rooms`);
 
         return definitions;
     } catch (error) {
         console.error('Failed to fetch definitions:', error);
+
+        // Network/Firebase failure — fall back to any cached copy
+        const cached = getCacheEvenExpired(DEFINITIONS_KEY);
+        if (cached) {
+            console.warn('⚠️ Using cached definitions (fetch failed)');
+            sessionCache.definitions = cached;
+            setOfflineMode(true, getCacheAge(DEFINITIONS_KEY));
+            return cached;
+        }
+
         throw new Error('Nepodařilo se načíst seznamy z Firebase');
     }
 }
 
 /**
  * Fetch timetable from Firebase
+ * Falls back to localStorage cache when offline.
  */
 export async function fetchTimetable(type, id, scheduleType, date = null) {
-    const cacheKey = `${type}_${id}_${scheduleType}_${date || 'current'}`;
+    const sessionKey = `${type}_${id}_${scheduleType}_${date || 'current'}`;
+    const persistKey = timetableKey(type, id, scheduleType);
 
     // Check session cache first
-    if (sessionCache.timetables.has(cacheKey)) {
-        console.log(`Using session-cached timetable: ${cacheKey}`);
-        return sessionCache.timetables.get(cacheKey);
+    if (sessionCache.timetables.has(sessionKey)) {
+        console.log(`Using session-cached timetable: ${sessionKey}`);
+        return sessionCache.timetables.get(sessionKey);
+    }
+
+    // If browser reports offline, prefer cached data immediately
+    if (!navigator.onLine) {
+        const cached = getCacheEvenExpired(persistKey);
+        if (cached) {
+            console.log(`📴 Offline — using cached timetable: ${persistKey}`);
+            sessionCache.timetables.set(sessionKey, cached);
+            setOfflineMode(true, getCacheAge(persistKey));
+            return cached;
+        }
     }
 
     try {
@@ -52,14 +94,26 @@ export async function fetchTimetable(type, id, scheduleType, date = null) {
         // not by date. The backend prefetches all schedule types.
         const data = await fetchTimetableFromFirebase(type, id, scheduleType);
 
-        // Cache in session
-        sessionCache.timetables.set(cacheKey, data);
+        sessionCache.timetables.set(sessionKey, data);
+        setCache(persistKey, data, TTL.TIMETABLE);
 
-        console.log(`Loaded timetable from Firebase: ${cacheKey} (${data.length} lessons)`);
+        if (isOffline() && navigator.onLine) setOfflineMode(false);
+
+        console.log(`Loaded timetable from Firebase: ${sessionKey} (${data.length} lessons)`);
 
         return data;
     } catch (error) {
         console.error(`Failed to fetch timetable:`, error);
+
+        // Network/Firebase failure — fall back to any cached copy
+        const cached = getCacheEvenExpired(persistKey);
+        if (cached) {
+            console.warn(`⚠️ Using cached timetable (fetch failed): ${persistKey}`);
+            sessionCache.timetables.set(sessionKey, cached);
+            setOfflineMode(true, getCacheAge(persistKey));
+            return cached;
+        }
+
         throw error;
     }
 }
