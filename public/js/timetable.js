@@ -15,6 +15,24 @@ import { showLessonModal } from './modal.js';
 import { fetchTimetable } from './api.js';
 import { getMondayOfWeek } from './utils.js';
 import { populateDropdown, getDropdownValue } from './dropdown.js';
+import { refreshNextLessonWidget } from './next-lesson.js';
+
+// Loading skeleton shown while a timetable is being fetched.
+function showSkeleton() {
+    const el = document.getElementById('timetableSkeleton');
+    if (!el) return;
+    if (!el.dataset.filled) {
+        el.innerHTML = Array.from({ length: 8 }).map(() =>
+            '<div class="skel-card"><div class="skel-line w35"></div><div class="skel-line w70"></div><div class="skel-line w55"></div></div>'
+        ).join('');
+        el.dataset.filled = '1';
+    }
+    el.classList.remove('hidden');
+}
+function hideSkeleton() {
+    const el = document.getElementById('timetableSkeleton');
+    if (el) el.classList.add('hidden');
+}
 
 // Populate value selector
 export function populateValueSelect() {
@@ -463,9 +481,9 @@ export async function loadTimetable() {
     localStorage.setItem('selectedType', state.selectedType);
     localStorage.setItem('selectedValue', id);
 
-    dom.loading.classList.remove('hidden');
     dom.errorDiv.classList.add('hidden');
     dom.timetableGrid.innerHTML = '';
+    showSkeleton();
 
     try {
         // Calculate the Monday of the selected week for the API
@@ -489,6 +507,7 @@ export async function loadTimetable() {
         });
 
         updateState('currentTimetableData', filteredData);
+        hideSkeleton();
         createDaySelector();
         renderTimetable(filteredData);
 
@@ -499,10 +518,13 @@ export async function loadTimetable() {
         // ✓ Aplikovat layout po vygenerování HTML
         await applyLayout();
 
+        // Update the "next lesson" widget for the freshly loaded timetable
+        refreshNextLessonWidget();
+
     } catch (e) {
         dom.errorDiv.textContent = e.message;
         dom.errorDiv.classList.remove('hidden');
     } finally {
-        dom.loading.classList.add('hidden');
+        hideSkeleton();
     }
 }

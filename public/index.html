@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="css/theme-warning.css">
     <link rel="stylesheet" href="css/notifications.css">
     <link rel="stylesheet" href="css/toast.css">
+    <link rel="stylesheet" href="css/timetable-extras.css">
     <link rel="stylesheet" href="css/settings.css">
     <link rel="stylesheet" href="css/layout-modal.css">
     <link rel="stylesheet" href="css/layout-card-view.css">
@@ -148,7 +149,12 @@
             <!-- Day selector buttons will be generated here for mobile -->
         </div>
 
+        <!-- "Next lesson" widget: shows the current/next lesson for today -->
+        <div id="nextLessonWidget" class="next-lesson-widget hidden" aria-live="polite"></div>
+
         <div class="timetable-container">
+            <!-- Skeleton placeholder shown while the timetable loads -->
+            <div id="timetableSkeleton" class="timetable-skeleton hidden" aria-hidden="true"></div>
             <div class="timetable-grid" id="timetable">
                 <!-- Tady se vygenerují dny a hodiny -->
             </div>

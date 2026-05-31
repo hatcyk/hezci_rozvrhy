@@ -21,10 +21,10 @@
     padding: 12px 12px 12px 14px;
     border-radius: 14px;
     background: var(--card-bg, #1e1e24);
-    color: var(--text-color, #f2f2f5);
+    color: var(--text-main, #f2f2f5);
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-    border-left: 4px solid var(--accent, #4f8cff);
+    border: 1px solid var(--border, rgba(255, 255, 255, 0.08));
+    border-left: 4px solid var(--current-time, #4f8cff);
     opacity: 0;
     transform: translateY(-14px) scale(0.98);
     transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);

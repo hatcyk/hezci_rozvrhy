@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Frontend nápady — náhled</title>
+<style>
+    :root{
+        --bg:#0f0f13; --panel:#16161c; --card:#1e1e25; --card2:#23232b;
+        --text:#f2f2f5; --muted:#9a9aa6; --border:rgba(255,255,255,.08);
+        --accent:#4f8cff; --change:#ff9800; --removed:#ff5252; --ok:#3ddc97;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:-apple-system,"Roboto","Segoe UI",system-ui,sans-serif;
+        background:radial-gradient(1200px 600px at 50% -10%,#1a1a24,var(--bg));color:var(--text);
+        min-height:100vh;padding:26px 16px 90px}
+    .wrap{max-width:760px;margin:0 auto}
+    header.page{text-align:center;margin-bottom:22px}
+    header.page h1{font-size:1.6rem;margin:0 0 6px}
+    header.page p{color:var(--muted);margin:0 auto;max-width:540px;line-height:1.5}
+    .pill{display:inline-block;font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);
+        border:1px solid var(--border);border-radius:999px;padding:4px 12px;margin-bottom:14px}
+
+    section.demo{background:var(--panel);border:1px solid var(--border);border-radius:18px;padding:18px;margin-bottom:20px}
+    .head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+    .head h2{font-size:1.05rem;margin:0;display:flex;align-items:center;gap:8px}
+    .head .num{font-size:.8rem;color:var(--muted);background:var(--card2);border:1px solid var(--border);
+        border-radius:8px;padding:2px 8px}
+    .desc{color:var(--muted);font-size:.86rem;line-height:1.45;margin:0 0 14px}
+
+    .toggle{display:inline-flex;border:1px solid var(--border);border-radius:11px;overflow:hidden}
+    .toggle button{font:inherit;font-weight:600;cursor:pointer;border:0;background:transparent;color:var(--muted);padding:9px 15px;font-size:.86rem}
+    .toggle button.active{background:var(--card2);color:var(--text)}
+
+    .stage{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:14px;margin-top:4px}
+
+    /* lesson cards */
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+    .lc{position:relative;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 10px 10px 13px;min-height:80px;overflow:hidden}
+    .lc .hr{font-size:.7rem;color:var(--muted);margin-bottom:5px}
+    .lc .subj{font-weight:700;font-size:.95rem}
+    .lc .meta{font-size:.78rem;color:var(--muted);margin-top:4px}
+    .lc.changed{border-color:var(--change)}
+    .lc.changed .subj{color:var(--change)}
+    .lc .stripe{display:none;position:absolute;left:0;top:0;bottom:0;width:5px}
+    .colored .lc .stripe{display:block}
+    .colored .lc{padding-left:14px}
+
+    /* next-lesson widget */
+    .nlw{display:none;align-items:center;gap:14px;background:linear-gradient(90deg,rgba(79,140,255,.16),rgba(79,140,255,.04));
+        border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+    .nlw.show{display:flex}
+    .nlw .now,.nlw .next{display:flex;flex-direction:column;gap:2px;min-width:0}
+    .nlw .lbl{font-size:.64rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+    .nlw .big{font-weight:700;font-size:.98rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .nlw .sub{font-size:.76rem;color:var(--muted)}
+    .nlw .sep{flex:1;height:1px;background:var(--border);min-width:14px}
+    .nlw .cd{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
+
+    /* changes filter */
+    .filterbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+    .badge{font-size:.72rem;font-weight:700;background:rgba(255,152,0,.16);color:var(--change);border-radius:999px;padding:3px 9px}
+    .chip{font:inherit;font-size:.82rem;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);
+        color:var(--text);border-radius:999px;padding:7px 13px}
+    .chip.on{background:var(--change);border-color:transparent;color:#1a1207}
+    .lc.dim-hidden{display:none}
+
+    /* skeleton */
+    .sk{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px;min-height:80px}
+    .sk .bar{height:11px;border-radius:6px;background:linear-gradient(90deg,#26262e 25%,#33333d 37%,#26262e 63%);
+        background-size:400% 100%;animation:shimmer 1.3s ease infinite;margin-bottom:9px}
+    .sk .bar.w40{width:40%}.sk .bar.w70{width:70%}.sk .bar.w55{width:55%}
+    @keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+    .spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;
+        margin:24px auto;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .btn{font:inherit;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--card);color:var(--text);
+        border-radius:11px;padding:9px 15px;font-size:.86rem}
+    .btn:hover{background:var(--card2)}
+
+    @media (prefers-reduced-motion:reduce){.sk .bar,.spinner{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header class="page">
+        <div class="pill">Frontend nápady · náhled</div>
+        <h1>🧪 Co by appka mohla umět</h1>
+        <p>Každá sekce má přepínač <strong>PŮVODNÍ / NOVÉ</strong>. Projeď a řekni u každého jen <em>jo</em> nebo <em>ne</em> — co schválíš, zapojím do appky naživo.</p>
+    </header>
+
+    <!-- 1. Next-lesson widget -->
+    <section class="demo" id="s1">
+        <div class="head">
+            <h2>⏱️ „Další hodina" widget <span class="num">nápad 1</span></h2>
+            <div class="toggle" data-target="s1">
+                <button data-mode="off" class="active">Původní</button>
+                <button data-mode="on">Nové</button>
+            </div>
+        </div>
+        <p class="desc">Lišta nahoře, co bez hledání řekne, co máš teď a co je další — s živým odpočtem. Data už v appce jsou (zvýrazňuje se aktuální/nadcházející hodina), jen je shrnout na jedno místo.</p>
+        <div class="stage">
+            <div class="nlw" id="nlw">
+                <div class="now"><span class="lbl">Teď</span><span class="big">Programování</span><span class="sub">učebna 410 · končí za <span class="cd" id="cdNow">07:00</span></span></div>
+                <div class="sep"></div>
+                <div class="next"><span class="lbl">Další</span><span class="big">Matematika</span><span class="sub">učebna 305 · za <span class="cd" id="cdNext">12:00</span></span></div>
+            </div>
+            <div class="grid" id="g1"></div>
+        </div>
+    </section>
+
+    <!-- 2. Subject colors -->
+    <section class="demo" id="s2">
+        <div class="head">
+            <h2>🎨 Barvy předmětů <span class="num">nápad 2</span></h2>
+            <div class="toggle" data-target="s2">
+                <button data-mode="off" class="active">Původní</button>
+                <button data-mode="on">Nové</button>
+            </div>
+        </div>
+        <p class="desc">Každý předmět dostane stabilní barvu (barevný proužek + jemný nádech). Rozvrh se pak čte mnohem rychleji — oko „skočí" na hledaný předmět podle barvy.</p>
+        <div class="stage"><div class="grid" id="g2"></div></div>
+    </section>
+
+    <!-- 3. Changes-only filter -->
+    <section class="demo" id="s3">
+        <div class="head">
+            <h2>🔁 Filtr „jen změny" <span class="num">nápad 3</span></h2>
+            <div class="toggle" data-target="s3">
+                <button data-mode="off" class="active">Původní</button>
+                <button data-mode="on">Nové</button>
+            </div>
+        </div>
+        <p class="desc">Počet změn v daném dni + přepínač, co schová nezměněné hodiny. Hned vidíš jen suplování/odpadlé/přesunuté.</p>
+        <div class="stage">
+            <div class="filterbar" id="fbar" style="display:none">
+                <span class="badge" id="chCount">2 změny</span>
+                <button class="chip" id="chBtn">Jen změny</button>
+            </div>
+            <div class="grid" id="g3"></div>
+        </div>
+    </section>
+
+    <!-- 4. Skeleton loading -->
+    <section class="demo" id="s4">
+        <div class="head">
+            <h2>💀 Skeleton načítání <span class="num">nápad 4</span></h2>
+            <div class="toggle" data-target="s4">
+                <button data-mode="off" class="active">Původní</button>
+                <button data-mode="on">Nové</button>
+            </div>
+        </div>
+        <p class="desc">Místo prázdného spinneru se ukáže „kostra" rozvrhu, která se prolne v data. Působí to rychleji a méně to skáče.</p>
+        <div class="stage">
+            <button class="btn" id="reload">↻ Načíst znovu</button>
+            <div id="g4" style="margin-top:12px"></div>
+        </div>
+    </section>
+</div>
+
+<script>
+const LESSONS=[
+    {hr:'1.',subj:'Anglický jazyk',meta:'Dvořáková · 201'},
+    {hr:'2.',subj:'Fyzika',meta:'Horák · 312'},
+    {hr:'3.',subj:'Programování',meta:'Kozakovič · 410'},
+    {hr:'4.',subj:'Matematika',meta:'Velingerová · 305'},
+    {hr:'5.',subj:'Tělesná výchova',meta:'Beneš · TV'},
+    {hr:'6.',subj:'Programování',meta:'Kozakovič · 410'},
+];
+const CHANGED=new Set([3,4]); // indexes that are "changed" in section 3
+
+// stable color per subject
+function hue(name){let h=0;for(const c of name)h=(h*31+c.charCodeAt(0))%360;return h;}
+function cardHTML(l,{colored=false}={}){
+    const h=hue(l.subj);
+    const stripe=`<span class="stripe" style="background:hsl(${h},60%,58%)"></span>`;
+    const tint=colored?`style="background:hsla(${h},55%,55%,.10)"`:'';
+    return `<div class="lc" ${tint}>${stripe}<div class="hr">${l.hr}</div><div class="subj">${l.subj}</div><div class="meta">${l.meta}</div></div>`;
+}
+function fill(el,opts={}){el.innerHTML=LESSONS.map(l=>cardHTML(l,opts)).join('');}
+
+// generic toggles
+document.querySelectorAll('.toggle').forEach(t=>{
+    const target=t.dataset.target;
+    t.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+        t.querySelectorAll('button').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        onMode(target,b.dataset.mode);
+    }));
+});
+
+function onMode(target,mode){
+    const on=mode==='on';
+    if(target==='s1'){ document.getElementById('nlw').classList.toggle('show',on); }
+    if(target==='s2'){ document.getElementById('g2').classList.toggle('colored',on); }
+    if(target==='s3'){
+        document.getElementById('fbar').style.display=on?'flex':'none';
+        if(!on){ // reset filter
+            document.getElementById('chBtn').classList.remove('on');
+            document.querySelectorAll('#g3 .lc').forEach(c=>c.classList.remove('dim-hidden'));
+        }
+    }
+    if(target==='s4'){ loadSection4(on); }
+}
+
+// section 1
+fill(document.getElementById('g1'));
+// section 2 (colored toggled via class)
+fill(document.getElementById('g2'),{colored:true});
+// section 3 with change markers
+(function(){
+    const el=document.getElementById('g3');
+    el.innerHTML=LESSONS.map((l,i)=>{
+        const ch=CHANGED.has(i);
+        const meta=ch?(i===3?'supluje Novák · 208':'PŘESUNUTO z 6.h'):l.meta;
+        return `<div class="lc ${ch?'changed':''}" data-changed="${ch}"><div class="hr">${l.hr}</div><div class="subj">${l.subj}</div><div class="meta">${meta}</div></div>`;
+    }).join('');
+})();
+document.getElementById('chBtn').addEventListener('click',function(){
+    const on=this.classList.toggle('on');
+    document.querySelectorAll('#g3 .lc').forEach(c=>{
+        c.classList.toggle('dim-hidden', on && c.dataset.changed!=='true');
+    });
+    this.textContent=on?'Zobrazit vše':'Jen změny';
+});
+
+// section 4 skeleton vs spinner
+function loadSection4(useSkeleton){
+    const el=document.getElementById('g4');
+    if(useSkeleton){
+        el.className='grid';
+        el.innerHTML=Array.from({length:6}).map(()=>`<div class="sk"><div class="bar w40"></div><div class="bar w70"></div><div class="bar w55"></div></div>`).join('');
+    }else{
+        el.className='';
+        el.innerHTML='<div class="spinner"></div>';
+    }
+    clearTimeout(el._t);
+    el._t=setTimeout(()=>{ el.className='grid'; fill(el); },1300);
+}
+document.getElementById('reload').addEventListener('click',()=>{
+    const mode=document.querySelector('#s4 .toggle button.active').dataset.mode;
+    loadSection4(mode==='on');
+});
+loadSection4(false); // initial: spinner mode (original)
+
+// live countdowns for section 1
+let nowS=7*60, nextS=12*60;
+function fmt(s){const m=Math.floor(s/60),x=s%60;return `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`;}
+setInterval(()=>{
+    nowS=nowS>0?nowS-1:7*60; nextS=nextS>0?nextS-1:12*60;
+    document.getElementById('cdNow').textContent=fmt(nowS);
+    document.getElementById('cdNext').textContent=fmt(nextS);
+},1000);
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+/* "Next lesson" widget + timetable loading skeleton */
+
+/* ── Next lesson widget ───────────────────────────────────────────── */
+.next-lesson-widget {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 0 0 12px;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--current-time);
+    border-radius: 12px;
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--current-time) 12%, transparent),
+        transparent 70%);
+    background-color: var(--card-bg);
+}
+.next-lesson-widget.hidden { display: none; }
+
+.nlw-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.nlw-block .nlw-lbl {
+    font-size: 0.62rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+}
+.nlw-block .nlw-main {
+    font-weight: 700;
+    font-size: 0.96rem;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.nlw-block .nlw-sub {
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+}
+.nlw-sep { flex: 1; height: 1px; background: var(--border); min-width: 12px; }
+.nlw-cd {
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    color: var(--current-time);
+}
+.nlw-block.nlw-next .nlw-cd { color: var(--today-highlight); }
+
+/* On narrow screens stack the two blocks */
+@media (max-width: 520px) {
+    .next-lesson-widget { gap: 8px; }
+    .nlw-block .nlw-main { font-size: 0.9rem; }
+}
+
+/* ── Loading skeleton ─────────────────────────────────────────────── */
+.timetable-skeleton {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+    padding: 4px 0;
+}
+.timetable-skeleton.hidden { display: none; }
+
+.skel-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    min-height: 84px;
+}
+.skel-line {
+    height: 11px;
+    border-radius: 6px;
+    margin-bottom: 9px;
+    background-color: var(--border-light); /* fallback if color-mix unsupported */
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--text-dim) 14%, transparent) 25%,
+        color-mix(in srgb, var(--text-dim) 28%, transparent) 37%,
+        color-mix(in srgb, var(--text-dim) 14%, transparent) 63%);
+    background-size: 400% 100%;
+    animation: skel-shimmer 1.3s ease infinite;
+}
+.skel-line.w35 { width: 35%; }
+.skel-line.w70 { width: 70%; }
+.skel-line.w55 { width: 55%; margin-bottom: 0; }
+
+@keyframes skel-shimmer {
+    0%   { background-position: 100% 0; }
+    100% { background-position: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skel-line { animation: none; }
+}
