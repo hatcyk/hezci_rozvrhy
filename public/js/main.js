@@ -15,6 +15,22 @@ import { loadFavorites } from './favorites.js';
 import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 import { initOfflineDetection } from './offline.js';
+import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
+
+/**
+ * Listen for deep-link messages from the service worker (fallback for browsers
+ * where client.navigate isn't available on notification click).
+ */
+function initServiceWorkerMessages() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        const data = event.data;
+        if (data && data.kind === 'deep-link' && data.path) {
+            const link = parseDeepLinkParams(new URL(data.path, location.origin).search);
+            if (link) applyDeepLink(link).catch(err => console.error('Deep link failed:', err));
+        }
+    });
+}
 
 /**
  * Cleanup old Service Workers (especially sw.js)
@@ -256,6 +272,20 @@ async function init() {
         }
         if (dom.notificationToggleDisable) {
             dom.notificationToggleDisable.addEventListener('click', disableNotificationsHandler);
+        }
+
+        // React to deep-link navigations sent by the SW after this page is loaded
+        initServiceWorkerMessages();
+
+        // If we were opened from a notification deep link (/?type=...&id=...),
+        // honor it instead of the saved/default selection.
+        const deepLink = parseDeepLinkParams();
+        if (deepLink) {
+            console.log('🔗 Opening from notification deep link:', deepLink);
+            await applyDeepLink(deepLink);
+            // Clean the URL so a refresh doesn't re-trigger the deep link.
+            history.replaceState(null, '', location.pathname);
+            return;
         }
 
         // Restore saved selection

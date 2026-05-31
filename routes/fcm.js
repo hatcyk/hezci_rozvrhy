@@ -5,7 +5,7 @@
 
 const express = require('express');
 const { getFirestore } = require('../backend/firebase-admin-init');
-const { processPendingChanges } = require('../backend/fcm');
+const { processPendingChanges, deriveWatchIndex } = require('../backend/fcm');
 
 const router = express.Router();
 
@@ -44,6 +44,8 @@ router.post('/subscribe', async (req, res) => {
                 preferences: {
                     watchedTimetables: []
                 },
+                watchedKeys: [],
+                hasReminders: false,
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
             });
@@ -109,9 +111,14 @@ router.post('/update-preferences', async (req, res) => {
         const userRef = db.collection('users').doc(userId);
         const userDoc = await userRef.get();
 
+        // Denormalized index fields for efficient watcher/reminder queries.
+        const { watchedKeys, hasReminders } = deriveWatchIndex(watchedTimetables);
+
         if (userDoc.exists) {
             await userRef.update({
                 'preferences.watchedTimetables': watchedTimetables,
+                watchedKeys,
+                hasReminders,
                 lastUpdated: new Date().toISOString()
             });
         } else {
@@ -120,6 +127,8 @@ router.post('/update-preferences', async (req, res) => {
                 preferences: {
                     watchedTimetables: watchedTimetables
                 },
+                watchedKeys,
+                hasReminders,
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
             });

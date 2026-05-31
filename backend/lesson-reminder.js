@@ -10,7 +10,7 @@
  */
 
 const { getFirestore } = require('./firebase-admin-init');
-const { sendNotificationToTokens, pruneInvalidTokens } = require('./fcm');
+const { sendNotificationToTokens, pruneInvalidTokens, ensureWatchIndexMigrated } = require('./fcm');
 const { getPragueTime, getPragueTimeInfo, isWeekend } = require('./timezone-manager');
 const { calculateNotificationWindows, findLessonsToNotify, formatMinutesToTime } = require('./schedule-calculator');
 const { hasNotificationBeenSent, recordNotificationSent } = require('./notification-tracker');
@@ -143,7 +143,17 @@ function abbreviateSubject(subjectName) {
 async function getUsersWithLessonReminders() {
     try {
         const db = getFirestore();
-        const usersSnapshot = await db.collection('users').get();
+        await ensureWatchIndexMigrated();
+
+        // Only fetch users who have at least one lesson reminder enabled (indexed),
+        // instead of scanning the whole users collection every minute.
+        let usersSnapshot;
+        try {
+            usersSnapshot = await db.collection('users').where('hasReminders', '==', true).get();
+        } catch (queryError) {
+            console.warn('hasReminders query failed, falling back to full scan:', queryError.message);
+            usersSnapshot = await db.collection('users').get();
+        }
 
         const usersWithReminders = [];
 

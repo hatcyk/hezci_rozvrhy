@@ -5,9 +5,46 @@
 
 import { state, updateState } from './state.js';
 import { debug } from './debug.js';
+import { showToast } from './toast.js';
+import { applyDeepLink } from './deeplink.js';
 
 let messaging = null;
 let fcmToken = null;
+let foregroundHandlerBound = false;
+
+/**
+ * Handle a push message that arrives while the app is in the foreground.
+ * FCM does NOT show a system notification in this case, so we surface it as an
+ * in-app toast. For change notifications the toast deep-links to the timetable.
+ */
+function handleForegroundMessage(payload) {
+    const d = (payload && payload.data) || {};
+    debug.log('📩 Foreground message:', d.type || 'unknown');
+
+    const title = d.title || 'Nová notifikace';
+    const body = d.body || '';
+
+    if (d.type === 'timetable_change' && d.timetableType && d.timetableId) {
+        const link = {
+            type: d.timetableType,
+            id: d.timetableId,
+            schedule: (d.scheduleType || 'Actual').toLowerCase(),
+            day: d.day !== undefined && d.day !== '' ? parseInt(d.day, 10) : null,
+            highlight: true,
+        };
+        showToast({
+            title,
+            body,
+            icon: '🔄',
+            variant: 'change',
+            onClick: () => applyDeepLink(link).catch(err => debug.error('Deep link failed:', err)),
+        });
+    } else if (d.type === 'lesson_reminder') {
+        showToast({ title, body, icon: '⏰', variant: 'reminder' });
+    } else {
+        showToast({ title, body, icon: '🔔', variant: 'info' });
+    }
+}
 
 /**
  * Check if push notifications are supported
@@ -44,6 +81,17 @@ export async function initializeMessaging() {
         }
 
         messaging = firebase.messaging();
+
+        // Show foreground messages as in-app toasts (FCM stays silent otherwise).
+        if (!foregroundHandlerBound) {
+            try {
+                messaging.onMessage(handleForegroundMessage);
+                foregroundHandlerBound = true;
+            } catch (err) {
+                debug.error('Failed to bind foreground message handler:', err);
+            }
+        }
+
         debug.log('✅ Firebase Messaging initialized');
         return true;
 
