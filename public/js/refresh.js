@@ -5,6 +5,7 @@
 import { clearSessionCache } from './api.js';
 import { loadTimetable } from './timetable.js';
 import { dom } from './dom.js';
+import { debug } from './debug.js';
 
 // Track last refresh time
 let lastRefreshTime = Date.now();
@@ -16,7 +17,7 @@ let autoRefreshInterval = null;
 export async function manualRefresh() {
     if (!dom.refreshBtn) return;
 
-    console.log('🔄 Manual refresh triggered');
+    debug.log('🔄 Manual refresh triggered');
 
     // Add refreshing state
     dom.refreshBtn.classList.add('refreshing');
@@ -30,7 +31,7 @@ export async function manualRefresh() {
         await loadTimetable();
 
         lastRefreshTime = Date.now();
-        console.log('✅ Manual refresh completed');
+        debug.log('✅ Manual refresh completed');
     } catch (error) {
         console.error('❌ Manual refresh failed:', error);
     } finally {
@@ -48,16 +49,16 @@ function autoRefresh() {
     const timeSinceLastRefresh = now - lastRefreshTime;
     const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
 
-    console.log(`⏰ Auto-refresh check: ${Math.floor(timeSinceLastRefresh / 1000 / 60)} minutes since last refresh`);
+    debug.log(`⏰ Auto-refresh check: ${Math.floor(timeSinceLastRefresh / 1000 / 60)} minutes since last refresh`);
 
     if (timeSinceLastRefresh >= tenMinutes) {
-        console.log('🔄 Auto-refreshing timetable data...');
+        debug.log('🔄 Auto-refreshing timetable data...');
 
         // Clear session cache and reload
         clearSessionCache();
         loadTimetable().then(() => {
             lastRefreshTime = Date.now();
-            console.log('✅ Auto-refresh completed');
+            debug.log('✅ Auto-refresh completed');
         }).catch(error => {
             console.error('❌ Auto-refresh failed:', error);
         });
@@ -71,13 +72,13 @@ export function initRefresh() {
     // Set up manual refresh button
     if (dom.refreshBtn) {
         dom.refreshBtn.addEventListener('click', manualRefresh);
-        console.log('✅ Manual refresh button initialized');
+        debug.log('✅ Manual refresh button initialized');
     }
 
     // Set up auto-refresh every 10 minutes
     // Check every minute, but only refresh if 10 minutes have passed
     autoRefreshInterval = setInterval(autoRefresh, 60 * 1000); // Check every 1 minute
-    console.log('✅ Auto-refresh initialized (checks every minute, refreshes every 10 minutes)');
+    debug.log('✅ Auto-refresh initialized (checks every minute, refreshes every 10 minutes)');
 }
 
 /**
@@ -87,6 +88,6 @@ export function cleanupRefresh() {
     if (autoRefreshInterval) {
         clearInterval(autoRefreshInterval);
         autoRefreshInterval = null;
-        console.log('🧹 Auto-refresh interval cleaned up');
+        debug.log('🧹 Auto-refresh interval cleaned up');
     }
 }

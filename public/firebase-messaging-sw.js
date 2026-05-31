@@ -48,36 +48,65 @@ messaging.onBackgroundMessage((payload) => {
     return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
+// Build a deep-link path from a notification's data payload so clicking a change
+// notification opens the relevant timetable (and day), not the default one.
+function deepLinkPathFromData(data = {}) {
+    if (data.type === 'timetable_change' && data.timetableType && data.timetableId) {
+        const params = new URLSearchParams({
+            type: data.timetableType,
+            id: data.timetableId,
+            schedule: data.scheduleType || 'Actual',
+            hl: 'change',
+        });
+        if (data.day !== undefined && data.day !== null && data.day !== '') {
+            params.set('day', String(data.day));
+        }
+        return `/?${params.toString()}`;
+    }
+    return '/';
+}
+
 // Handle notification click
 self.addEventListener('notificationclick', (event) => {
     console.log('[firebase-messaging-sw.js] Notification clicked:', event);
 
     event.notification.close();
 
-    // Open or focus the app
-    event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then((clientList) => {
-                // If app is already open, focus it
-                for (const client of clientList) {
-                    if (client.url.includes(self.location.origin) && 'focus' in client) {
-                        return client.focus();
-                    }
-                }
+    const path = deepLinkPathFromData(event.notification.data || {});
 
-                // Otherwise, open new window
-                if (clients.openWindow) {
-                    return clients.openWindow('/');
+    event.waitUntil((async () => {
+        try {
+            const clientList = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+
+            // If the app is already open, focus it and navigate to the deep link.
+            for (const client of clientList) {
+                if (client.url.includes(self.location.origin)) {
+                    await client.focus();
+                    if (path !== '/' && 'navigate' in client) {
+                        try { await client.navigate(path); } catch (_) { /* cross-origin/aborted */ }
+                    } else if (path !== '/') {
+                        // Fallback for browsers without client.navigate
+                        client.postMessage({ kind: 'deep-link', path });
+                    }
+                    return;
                 }
-            })
-    );
+            }
+
+            // Otherwise open a new window at the deep link.
+            if (clients.openWindow) {
+                await clients.openWindow(path);
+            }
+        } catch (err) {
+            console.error('[firebase-messaging-sw.js] notificationclick failed:', err);
+        }
+    })());
 });
 
 /* ────────────────────────────────────────────────────────────────────
  * App-shell caching (offline support)
  * Bump SHELL_CACHE version whenever the precache list changes.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-v2';
+const SHELL_CACHE = 'bakalari-shell-v3';
 
 // Cross-origin scripts the app needs to boot. Cached as opaque responses
 // (status 0) so that offline loads still have the Firebase SDK available.
@@ -121,8 +150,11 @@ const PRECACHE_URLS = [
     '/css/agenda-layout.css',
     '/css/bottom-nav.css',
     '/css/navigation.css',
+    '/css/toast.css',
     '/js/main.js',
     '/js/api.js',
+    '/js/deeplink.js',
+    '/js/toast.js',
     '/js/bottom-nav.js',
     '/js/bottom-sheet.js',
     '/js/cache.js',
@@ -221,9 +253,11 @@ self.addEventListener('fetch', (event) => {
     if (url.pathname.startsWith('/api/')) return;
 
     // Stale-while-revalidate: respond from cache, update cache in background.
+    // For navigations (e.g. deep links like /?type=...&id=...) ignore the query
+    // string so the cached app shell is still served offline.
     event.respondWith(
         caches.open(SHELL_CACHE).then(async (cache) => {
-            const cached = await cache.match(request);
+            const cached = await cache.match(request, { ignoreSearch: request.mode === 'navigate' });
             const network = fetch(request).then((response) => {
                 if (response && response.status === 200 && response.type === 'basic') {
                     cache.put(request, response.clone()).catch(() => { /* ignore quota errors */ });

@@ -7,6 +7,7 @@ import { state } from './state.js';
 import { saveWatchedTimetables } from './notifications-core.js';
 import { standardizeGroupName } from './utils.js';
 import { fetchTimetable } from './api.js';
+import { debug } from './debug.js';
 
 // Define notification types
 export const NOTIFICATION_TYPES = {
@@ -293,7 +294,7 @@ async function updateTimetablePreference(index, groupKey, optionKey, value) {
     // Save to server
     try {
         await saveWatchedTimetables(state.watchedTimetables);
-        console.log(`✅ Updated preference: ${groupKey}.${optionKey} = ${value}`);
+        debug.log(`✅ Updated preference: ${groupKey}.${optionKey} = ${value}`);
     } catch (error) {
         console.error('Failed to save preferences:', error);
     }
@@ -317,17 +318,17 @@ function getScheduleTypeLabel(scheduleType) {
  * @returns {Promise<Array<string>>} Array of standardized group names
  */
 async function getAvailableGroups(watchedTimetable) {
-    console.log('🔍 getAvailableGroups called for:', watchedTimetable);
+    debug.log('🔍 getAvailableGroups called for:', watchedTimetable);
 
     // Only classes have groups
     if (watchedTimetable.type !== 'Class') {
-        console.log('   Not a class, no groups available');
+        debug.log('   Not a class, no groups available');
         return [];
     }
 
     try {
         // Fetch groups from database cache via API
-        console.log('   Fetching groups from database cache...');
+        debug.log('   Fetching groups from database cache...');
 
         const response = await fetch(`/api/groups/${watchedTimetable.id}`);
 
@@ -338,7 +339,7 @@ async function getAvailableGroups(watchedTimetable) {
         const data = await response.json();
         const groups = data.groups || [];
 
-        console.log('   ✅ Groups from database:', groups);
+        debug.log('   ✅ Groups from database:', groups);
 
         if (groups.length === 0) {
             console.warn('   ⚠️ No groups found for this class');
@@ -348,7 +349,7 @@ async function getAvailableGroups(watchedTimetable) {
         return groups;
     } catch (error) {
         console.error('   ❌ Failed to get groups from database:', error);
-        console.log('   Falling back to fetching from lessons...');
+        debug.log('   Falling back to fetching from lessons...');
 
         // Fallback: Extract groups from lessons (old method)
         try {
@@ -380,7 +381,7 @@ async function getAvailableGroups(watchedTimetable) {
             // Sort groups alphabetically
             const sorted = Array.from(groupsSet).sort((a, b) => a.localeCompare(b));
 
-            console.log('   ✅ Groups from fallback:', sorted);
+            debug.log('   ✅ Groups from fallback:', sorted);
             return sorted;
         } catch (fallbackError) {
             console.error('   ❌ Fallback also failed:', fallbackError);
@@ -396,10 +397,10 @@ async function getAvailableGroups(watchedTimetable) {
  * @param {Number} index - Index in watchedTimetables array
  */
 async function populateGroupFilter(multiselectElement, watchedTimetable, index) {
-    console.log('📋 populateGroupFilter called');
-    console.log('   Element:', multiselectElement);
-    console.log('   Timetable:', watchedTimetable);
-    console.log('   Current groupFilters:', watchedTimetable.groupFilters);
+    debug.log('📋 populateGroupFilter called');
+    debug.log('   Element:', multiselectElement);
+    debug.log('   Timetable:', watchedTimetable);
+    debug.log('   Current groupFilters:', watchedTimetable.groupFilters);
 
     const trigger = multiselectElement.querySelector('.multiselect-trigger');
     const menu = multiselectElement.querySelector('.multiselect-menu');
@@ -427,7 +428,7 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
     if (watchedTimetable.groupFilters.includes('celá') || watchedTimetable.groupFilters.includes('all')) {
         watchedTimetable.groupFilters = watchedTimetable.groupFilters
             .filter(g => g !== 'celá' && g !== 'all');
-        console.log('   Migrated old "celá"/"all" filter to:', watchedTimetable.groupFilters);
+        debug.log('   Migrated old "celá"/"all" filter to:', watchedTimetable.groupFilters);
     }
 
     // Pokud je groupFilters prázdný nebo obsahuje jen "all", načti všechny dostupné skupiny
@@ -437,7 +438,7 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
         const availableGroups = await getAvailableGroups(watchedTimetable);
         if (availableGroups.length > 0) {
             watchedTimetable.groupFilters = [...availableGroups]; // Všechny skupiny vybrány
-            console.log('   Initialized groupFilters with all available groups:', watchedTimetable.groupFilters);
+            debug.log('   Initialized groupFilters with all available groups:', watchedTimetable.groupFilters);
         } else {
             watchedTimetable.groupFilters = []; // Žádné skupiny k dispozici
         }
@@ -445,11 +446,11 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
 
     // Load available groups
     const groups = await getAvailableGroups(watchedTimetable);
-    console.log('   Got groups:', groups);
+    debug.log('   Got groups:', groups);
 
     // Group aggregation: combine related groups (e.g., 1.sk, 1.ak, TVk1 → "1.")
     const aggregatedGroups = aggregateGroups(groups);
-    console.log('   Aggregated groups:', aggregatedGroups);
+    debug.log('   Aggregated groups:', aggregatedGroups);
 
     // Render checkbox options
     optionsContainer.innerHTML = '';
@@ -497,7 +498,7 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
             });
 
             optionsContainer.appendChild(option);
-            console.log(`   Added option: value="${displayName}", subGroups=${subGroups.join(',')}, checked=${checkbox.checked}`);
+            debug.log(`   Added option: value="${displayName}", subGroups=${subGroups.join(',')}, checked=${checkbox.checked}`);
         } catch (error) {
             console.error(`❌ Failed to render option for group "${displayName}":`, error);
         }
@@ -525,7 +526,7 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
         }
     });
 
-    console.log('✅ populateGroupFilter finished');
+    debug.log('✅ populateGroupFilter finished');
 }
 
 /**
@@ -593,7 +594,7 @@ function aggregateGroups(groups) {
 async function handleAggregatedGroupChange(checkbox, watchedTimetable, subGroups) {
     const isChecked = checkbox.checked;
 
-    console.log(`🔄 Aggregated group toggled: subGroups=${subGroups.join(',')} = ${isChecked}`);
+    debug.log(`🔄 Aggregated group toggled: subGroups=${subGroups.join(',')} = ${isChecked}`);
 
     if (isChecked) {
         // Add all subgroups
@@ -616,7 +617,7 @@ async function handleAggregatedGroupChange(checkbox, watchedTimetable, subGroups
     // Save to server
     try {
         await saveWatchedTimetables(state.watchedTimetables);
-        console.log(`✅ Group filters saved successfully:`, watchedTimetable.groupFilters);
+        debug.log(`✅ Group filters saved successfully:`, watchedTimetable.groupFilters);
     } catch (error) {
         console.error('❌ Failed to save group filters:', error);
     }
@@ -629,7 +630,7 @@ async function handleGroupFilterChange(checkbox, watchedTimetable, allGroups) {
     const value = checkbox.value;
     const isChecked = checkbox.checked;
 
-    console.log(`🔄 Group filter toggled: "${value}" = ${isChecked}`);
+    debug.log(`🔄 Group filter toggled: "${value}" = ${isChecked}`);
 
     // Handle group checkbox toggle (simple add/remove)
     if (isChecked) {
@@ -651,7 +652,7 @@ async function handleGroupFilterChange(checkbox, watchedTimetable, allGroups) {
     // Save to server
     try {
         await saveWatchedTimetables(state.watchedTimetables);
-        console.log(`✅ Group filters saved successfully:`, watchedTimetable.groupFilters);
+        debug.log(`✅ Group filters saved successfully:`, watchedTimetable.groupFilters);
     } catch (error) {
         console.error('❌ Failed to save group filters:', error);
     }

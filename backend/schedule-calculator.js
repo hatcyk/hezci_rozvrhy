@@ -12,8 +12,11 @@ function getNotificationConfig() {
         // Target notification time (minutes before lesson starts)
         minutesBefore: parseInt(process.env.LESSON_REMINDER_MINUTES_BEFORE) || 5,
 
-        // Window start (how early can we send? minutes before lesson)
-        windowStartMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_START) || 15,
+        // Window start (how early can we send? minutes before lesson).
+        // Tight by default: the workflow now polls every minute, so a wide catch-up
+        // window is unnecessary and only makes the "Za X minut" text inconsistent.
+        // The first poll inside [windowEnd, windowStart] fires the reminder.
+        windowStartMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_START) || 6,
 
         // Window end (how late can we send? minutes before lesson)
         windowEndMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_END) || 1,

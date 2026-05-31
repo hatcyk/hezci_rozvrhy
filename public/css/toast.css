@@ -1,0 +1,109 @@
+/* In-app toast notifications + deep-link change highlight */
+
+.toast-container {
+    position: fixed;
+    top: max(12px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(440px, calc(100vw - 24px));
+    pointer-events: none;
+}
+
+.toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 12px 12px 14px;
+    border-radius: 14px;
+    background: var(--card-bg, #1e1e24);
+    color: var(--text-color, #f2f2f5);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    border-left: 4px solid var(--accent, #4f8cff);
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.toast.toast-in {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.toast.toast-leaving {
+    animation: toast-out 0.28s ease forwards;
+}
+
+@keyframes toast-out {
+    to { opacity: 0; transform: translateY(-14px) scale(0.98); }
+}
+
+.toast-change { border-left-color: #ff9800; }
+.toast-reminder { border-left-color: #4f8cff; }
+.toast-info { border-left-color: #8a8a93; }
+
+.toast-icon {
+    font-size: 1.25rem;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
+.toast-content { flex: 1; min-width: 0; }
+.toast-content.toast-clickable { cursor: pointer; }
+
+.toast-title {
+    font-weight: 700;
+    font-size: 0.92rem;
+    line-height: 1.25;
+}
+
+.toast-body {
+    margin-top: 2px;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    opacity: 0.85;
+    white-space: pre-line;
+    word-break: break-word;
+}
+
+.toast-close {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    opacity: 0.6;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 6px;
+}
+.toast-close:hover { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+    .toast { transition: opacity 0.15s ease; transform: none; }
+    .toast.toast-in { transform: none; }
+    .toast.toast-leaving { animation: none; opacity: 0; }
+}
+
+/* Deep-link highlight: pulse the changed lesson(s) when opened from a notification */
+.lesson-card.deep-highlight {
+    animation: deep-highlight-pulse 1.1s ease-in-out 0s 3;
+    outline: 2px solid #ff9800;
+    outline-offset: 1px;
+    border-radius: 10px;
+}
+
+@keyframes deep-highlight-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 152, 0, 0.0); }
+    50%      { box-shadow: 0 0 0 6px rgba(255, 152, 0, 0.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lesson-card.deep-highlight { animation: none; }
+}

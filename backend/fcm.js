@@ -125,6 +125,78 @@ async function sendNotificationToTokens(tokens, notification) {
     }
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// Watch index — denormalized fields so we can query watchers instead of scanning
+// the whole users collection on every run.
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * Derive denormalized index fields from a watchedTimetables array.
+ * - watchedKeys: ["Class_4A_Actual", ...] → query watchers with array-contains
+ * - hasReminders: true if any watched timetable has a lesson reminder enabled
+ * @param {Array} watchedTimetables
+ * @returns {{ watchedKeys: string[], hasReminders: boolean }}
+ */
+function deriveWatchIndex(watchedTimetables) {
+    const list = Array.isArray(watchedTimetables) ? watchedTimetables : [];
+    const watchedKeys = list
+        .filter(t => t && t.type && t.id && t.scheduleType)
+        .map(t => `${t.type}_${t.id}_${t.scheduleType}`);
+    const hasReminders = list.some(t => {
+        const r = t && t.notificationTypes && t.notificationTypes.reminders;
+        return !!(r && (r.next_lesson_room || r.next_lesson_teacher || r.next_lesson_subject));
+    });
+    return { watchedKeys, hasReminders };
+}
+
+let watchIndexMigrated = false;
+
+/**
+ * One-time backfill of the denormalized watch-index fields onto existing user
+ * docs, so the indexed queries below are correct even for users created before
+ * these fields existed. Tracked by a flag doc; after it's set this costs a single
+ * doc read per process. Safe to call before every query.
+ */
+async function ensureWatchIndexMigrated() {
+    if (watchIndexMigrated) return;
+
+    const db = getFirestore();
+    try {
+        const flagRef = db.collection('system').doc('migrations');
+        const flag = await flagRef.get();
+        if (flag.exists && flag.data().watchIndexV1) {
+            watchIndexMigrated = true;
+            return;
+        }
+
+        console.log('🔧 [MIGRATION] Backfilling watch index on user docs...');
+        const usersSnap = await db.collection('users').get();
+        let batch = db.batch();
+        let ops = 0, updated = 0;
+
+        for (const doc of usersSnap.docs) {
+            const data = doc.data();
+            const { watchedKeys, hasReminders } = deriveWatchIndex(data.preferences && data.preferences.watchedTimetables);
+            const cur = data.watchedKeys || [];
+            const sameKeys = cur.length === watchedKeys.length && cur.every((k, i) => k === watchedKeys[i]);
+            if (sameKeys && data.hasReminders === hasReminders) continue;
+
+            batch.update(doc.ref, { watchedKeys, hasReminders });
+            ops++; updated++;
+            if (ops >= 450) { await batch.commit(); batch = db.batch(); ops = 0; }
+        }
+        if (ops > 0) await batch.commit();
+
+        await flagRef.set({ watchIndexV1: true, watchIndexAt: new Date().toISOString() }, { merge: true });
+        watchIndexMigrated = true;
+        console.log(`✅ [MIGRATION] Watch index backfilled (${updated} user docs updated)`);
+    } catch (error) {
+        // Don't set the flag — retry next run. Queries may miss un-migrated docs
+        // until this succeeds, so log loudly but don't crash the job.
+        console.error('[MIGRATION] Watch index backfill failed:', error.message);
+    }
+}
+
 /**
  * Get all users watching a specific timetable with their notification preferences
  * @param {Object} timetable - Timetable metadata (type, id, scheduleType)
@@ -133,9 +205,20 @@ async function sendNotificationToTokens(tokens, notification) {
 async function getUsersWatchingTimetable(timetable) {
     try {
         const db = getFirestore();
+        await ensureWatchIndexMigrated();
 
-        // Query all users
-        const usersSnapshot = await db.collection('users').get();
+        // Query only users watching this timetable (indexed array-contains) instead
+        // of scanning the whole collection. Fall back to a scan if the query fails.
+        const watchKey = `${timetable.type}_${timetable.id}_${timetable.scheduleType}`;
+        let usersSnapshot;
+        try {
+            usersSnapshot = await db.collection('users')
+                .where('watchedKeys', 'array-contains', watchKey)
+                .get();
+        } catch (queryError) {
+            console.warn('watchedKeys query failed, falling back to full scan:', queryError.message);
+            usersSnapshot = await db.collection('users').get();
+        }
 
         const watchingUsers = [];
 
@@ -370,6 +453,8 @@ async function processPendingChanges() {
                             timetableId: timetable.id,
                             scheduleType: timetable.scheduleType,
                             changeCount: filteredChanges.length.toString(),
+                            // Day of the first change so the client can deep-link to it.
+                            day: String(filteredChanges[0] && filteredChanges[0].day != null ? filteredChanges[0].day : ''),
                             timestamp: new Date().toISOString(),
                             detailedBody: detailedSummary
                         },
@@ -477,4 +562,6 @@ module.exports = {
     processPendingChanges,
     cleanupOldChanges,
     pruneInvalidTokens,
+    deriveWatchIndex,
+    ensureWatchIndexMigrated,
 };

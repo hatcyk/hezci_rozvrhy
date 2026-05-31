@@ -1,11 +1,24 @@
 name: Send Lesson Reminders
 
+# GitHub Actions cron has a 5-minute minimum AND is frequently delayed by several
+# minutes, which would make minute-accurate lesson reminders unreliable. To work
+# around both limits, each job loops internally and hits the endpoint every ~55s
+# for ~5 minutes. Combined with the */5 trigger this gives continuous ~1-minute
+# coverage even when a scheduled run starts late; overlapping calls are harmless
+# because the endpoint deduplicates per (user, date, hour).
+#
+# Schedule is restricted to weekday school hours (UTC) to avoid burning Actions
+# minutes overnight/at weekends. 05:00–17:00 UTC covers ~07:00–18:25 Prague in
+# both winter (UTC+1) and summer (UTC+2).
 on:
   schedule:
-    # Every 5 minutes (GitHub Actions minimum) | Prázdninový provoz: Every 60 minutes
-    - cron: '*/5 * * * *'
-    #- cron: '0 * * * *'
+    - cron: '*/5 5-17 * * 1-5'
   workflow_dispatch: # Allow manual triggering
+
+# Avoid piling up overlapping long-running jobs if a run is slow.
+concurrency:
+  group: lesson-reminders
+  cancel-in-progress: false
 
 jobs:
   lesson-reminders:
@@ -13,37 +26,31 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Call Lesson Reminders Endpoint
+      - name: Poll Lesson Reminders Endpoint every minute for ~5 minutes
         run: |
-          MAX_RETRIES=3
-          RETRY_DELAY=10
+          ITERATIONS=5
+          SLEEP_BETWEEN=55
 
-          for i in $(seq 1 $MAX_RETRIES); do
-            echo "Attempt $i/$MAX_RETRIES..."
+          call_endpoint() {
             HTTP_STATUS=$(curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/lesson-reminders" \
               -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
               -H "Content-Type: application/json" \
               -w "\n%{http_code}" \
               -s -S \
               --connect-timeout 10 \
-              --max-time 30)
+              --max-time 30 || echo -e "\n000")
 
             STATUS_CODE=$(echo "$HTTP_STATUS" | tail -1)
             BODY=$(echo "$HTTP_STATUS" | sed '$d')
-            echo "Response: $BODY"
-            echo "HTTP Status: $STATUS_CODE"
+            echo "[$(date -u +%H:%M:%S)] HTTP $STATUS_CODE — $BODY"
+          }
 
-            if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 300 ]; then
-              echo "Success!"
-              exit 0
-            fi
-
-            if [ "$i" -lt "$MAX_RETRIES" ]; then
-              echo "Failed (HTTP $STATUS_CODE), retrying in ${RETRY_DELAY}s..."
-              sleep $RETRY_DELAY
-              RETRY_DELAY=$((RETRY_DELAY * 2))
+          for i in $(seq 1 $ITERATIONS); do
+            echo "Tick $i/$ITERATIONS"
+            call_endpoint
+            if [ "$i" -lt "$ITERATIONS" ]; then
+              sleep $SLEEP_BETWEEN
             fi
           done
 
-          echo "All $MAX_RETRIES attempts failed"
-          exit 1
+          echo "Reminder polling cycle complete"

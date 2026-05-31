@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Demo · Chytré notifikace o změnách</title>
+<style>
+    :root {
+        --bg: #0f0f13;
+        --panel: #17171d;
+        --card: #1e1e25;
+        --card-2: #23232b;
+        --text: #f2f2f5;
+        --muted: #9a9aa6;
+        --border: rgba(255,255,255,0.08);
+        --accent: #4f8cff;
+        --change: #ff9800;
+        --removed: #ff5252;
+        --ok: #3ddc97;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0;
+        font-family: -apple-system, "Roboto", "Segoe UI", system-ui, sans-serif;
+        background: radial-gradient(1200px 600px at 50% -10%, #1a1a24, var(--bg));
+        color: var(--text);
+        min-height: 100vh;
+        padding: 28px 16px 80px;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; }
+    header.page { text-align: center; margin-bottom: 8px; }
+    header.page h1 { font-size: 1.7rem; margin: 0 0 6px; }
+    header.page p { color: var(--muted); margin: 0 auto; max-width: 560px; line-height: 1.5; }
+    .pill {
+        display: inline-block; font-size: 0.72rem; letter-spacing: 0.04em;
+        text-transform: uppercase; color: var(--accent);
+        border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; margin-bottom: 14px;
+    }
+
+    .controls {
+        display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
+        margin: 22px 0 28px;
+    }
+    button.btn {
+        font: inherit; font-weight: 600; cursor: pointer;
+        border: 1px solid var(--border); border-radius: 12px;
+        padding: 12px 18px; color: var(--text); background: var(--card);
+        transition: transform .12s ease, background .15s ease, border-color .15s ease;
+    }
+    button.btn:hover { background: var(--card-2); }
+    button.btn:active { transform: translateY(1px); }
+    button.btn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+    button.btn.primary:hover { filter: brightness(1.07); background: var(--accent); }
+
+    .toggle {
+        display: inline-flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+    }
+    .toggle button {
+        font: inherit; font-weight: 600; cursor: pointer; border: 0; background: transparent;
+        color: var(--muted); padding: 11px 18px;
+    }
+    .toggle button.active { background: var(--card-2); color: var(--text); }
+
+    .compare {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 26px;
+    }
+    @media (max-width: 680px) { .compare { grid-template-columns: 1fr; } }
+    .panel {
+        background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px;
+    }
+    .panel h3 { margin: 0 0 4px; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+    .panel .sub { color: var(--muted); font-size: 0.82rem; margin: 0 0 14px; line-height: 1.4; }
+    .tag { font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+    .tag.before { background: rgba(255,82,82,.15); color: #ff8a8a; }
+    .tag.after  { background: rgba(61,220,151,.15); color: var(--ok); }
+
+    /* Mock notification */
+    .mock-notif {
+        background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--change);
+        border-radius: 12px; padding: 12px 12px 12px 14px; display: flex; gap: 12px; align-items: flex-start;
+    }
+    .mock-notif .ic { font-size: 1.2rem; }
+    .mock-notif .t { font-weight: 700; font-size: 0.9rem; }
+    .mock-notif .b { font-size: 0.82rem; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+    .arrow { text-align: center; color: var(--muted); font-size: 1.4rem; margin: 8px 0; }
+    .lands {
+        font-size: 0.82rem; padding: 10px 12px; border-radius: 10px; background: var(--card-2);
+        border: 1px dashed var(--border);
+    }
+    .lands.bad { color: #ff8a8a; }
+    .lands.good { color: var(--ok); }
+
+    /* Mock timetable */
+    .tt-head { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 12px; }
+    .tt-head .who { font-weight: 700; }
+    .tt-head .day { color: var(--muted); font-size: 0.85rem; }
+    .tt {
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;
+    }
+    .cell { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 10px; min-height: 76px; }
+    .cell .hr { font-size: 0.7rem; color: var(--muted); margin-bottom: 6px; }
+    .cell .subj { font-weight: 700; font-size: 0.95rem; }
+    .cell .meta { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+    .cell.changed { border-color: var(--change); }
+    .cell.changed .subj { color: var(--change); }
+    .cell.removed .subj { text-decoration: line-through; color: var(--removed); opacity: .8; }
+    .cell.deep-highlight { animation: pulse 1.1s ease-in-out 3; outline: 2px solid var(--change); outline-offset: 1px; }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(255,152,0,0); } 50% { box-shadow: 0 0 0 6px rgba(255,152,0,.35); } }
+
+    .note { color: var(--muted); font-size: 0.8rem; text-align: center; margin-top: 8px; }
+    .legend { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin: 18px 0 0; font-size: 0.78rem; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+    /* Toast (mirrors the real app's toast.css) */
+    .toast-container {
+        position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+        z-index: 9999; display: flex; flex-direction: column; gap: 10px;
+        width: min(440px, calc(100vw - 24px)); pointer-events: none;
+    }
+    .toast {
+        pointer-events: auto; display: flex; gap: 12px; align-items: flex-start;
+        padding: 12px 12px 12px 14px; border-radius: 14px; background: var(--card);
+        border: 1px solid var(--border); border-left: 4px solid var(--change);
+        box-shadow: 0 8px 30px rgba(0,0,0,.45);
+        opacity: 0; transform: translateY(-14px) scale(.98);
+        transition: opacity .22s ease, transform .22s cubic-bezier(.2,.8,.2,1);
+    }
+    .toast.in { opacity: 1; transform: none; }
+    .toast .ic { font-size: 1.25rem; }
+    .toast .tt-title { font-weight: 700; font-size: 0.92rem; }
+    .toast .tt-body { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+    .toast .content { cursor: pointer; flex: 1; }
+    .toast .x { background: none; border: 0; color: var(--muted); font-size: 1.2rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <header class="page">
+        <div class="pill">Frontend demo · před / po</div>
+        <h1>🔄 Chytré notifikace o změnách</h1>
+        <p>Ukázka dvou nových věcí: <strong>notifikace ve foregroundu</strong> (in-app toast) a <strong>deep-link na kliknutí</strong> — klik na notifikaci tě hodí přímo na tvůj rozvrh, den a zvýrazní změnu.</p>
+    </header>
+
+    <div class="controls">
+        <button class="btn primary" id="simulate">📲 Simulovat push notifikaci</button>
+        <div class="toggle" role="group" aria-label="Před / Po">
+            <button data-state="before" class="active">Rozvrh: před</button>
+            <button data-state="after">Rozvrh: po změně</button>
+        </div>
+    </div>
+
+    <!-- Behavior comparison: click handling before vs after -->
+    <div class="compare">
+        <div class="panel">
+            <h3><span class="tag before">PŘED</span> Klik na notifikaci</h3>
+            <p class="sub">Service worker otevřel jen <code>/</code> a ignoroval data notifikace.</p>
+            <div class="mock-notif">
+                <div class="ic">🔄</div>
+                <div><div class="t">4.A AKTUÁLNÍ: Změny v rozvrhu</div><div class="b">Po 3.h: Matematika – supluje Novák</div></div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="lands bad">Otevře se výchozí rozvrh (třída ZL), uživatel musí sám najít svoji třídu i den. 😕</div>
+        </div>
+        <div class="panel">
+            <h3><span class="tag after">PO</span> Klik na notifikaci</h3>
+            <p class="sub">SW přečte <code>data</code> a deep-linkne na konkrétní rozvrh + den.</p>
+            <div class="mock-notif">
+                <div class="ic">🔄</div>
+                <div><div class="t">4.A AKTUÁLNÍ: Změny v rozvrhu</div><div class="b">Po 3.h: Matematika – supluje Novák</div></div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="lands good"><code>/?type=Class&id=4A&schedule=Actual&day=0&hl=change</code> → otevře 4.A, pondělí, a zvýrazní změněnou hodinu. ✅</div>
+        </div>
+    </div>
+
+    <!-- Live mock timetable -->
+    <div class="panel">
+        <div class="tt-head">
+            <div class="who" id="ttWho">Třída 4.A — Pondělí</div>
+            <div class="day" id="ttState">stav: před změnou</div>
+        </div>
+        <div class="tt" id="tt"></div>
+        <div class="legend">
+            <span><i class="dot" style="background:var(--accent)"></i> běžná hodina</span>
+            <span><i class="dot" style="background:var(--change)"></i> suplování / změna</span>
+            <span><i class="dot" style="background:var(--removed)"></i> odpadlá</span>
+        </div>
+        <p class="note">Klikni na „Simulovat push notifikaci“ — nahoře vyskočí toast (jako ve foregroundu appky) a změněná hodina se rozbliká.</p>
+    </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+    // The same lesson, before and after a substitution + room change.
+    const LESSONS_BEFORE = [
+        { hr: '1.', subj: 'Anglický jazyk', meta: 'Dvořáková · 201' },
+        { hr: '2.', subj: 'Fyzika', meta: 'Horák · 312' },
+        { hr: '3.', subj: 'Matematika', meta: 'Velingerová · 305', key: 'mat' },
+        { hr: '4.', subj: 'Programování', meta: 'Kozakovič · 410' },
+        { hr: '5.', subj: 'Tělesná výchova', meta: 'Beneš · TV' },
+    ];
+    const LESSONS_AFTER = LESSONS_BEFORE.map(l =>
+        l.key === 'mat'
+            ? { ...l, subj: 'Matematika', meta: 'Novák · 208', changed: true }
+            : l
+    );
+
+    let current = 'before';
+    const ttEl = document.getElementById('tt');
+    const ttState = document.getElementById('ttState');
+
+    function render(stateName) {
+        current = stateName;
+        const lessons = stateName === 'after' ? LESSONS_AFTER : LESSONS_BEFORE;
+        ttState.textContent = stateName === 'after' ? 'stav: po změně (suplování)' : 'stav: před změnou';
+        ttEl.innerHTML = '';
+        lessons.forEach(l => {
+            const c = document.createElement('div');
+            c.className = 'cell' + (l.changed ? ' changed' : '');
+            if (l.key) c.dataset.key = l.key;
+            c.innerHTML = `<div class="hr">${l.hr}</div><div class="subj">${l.subj}</div><div class="meta">${l.meta}</div>`;
+            ttEl.appendChild(c);
+        });
+    }
+
+    function pulseChanged() {
+        const el = ttEl.querySelector('.cell.changed') || ttEl.querySelector('[data-key="mat"]');
+        if (!el) return;
+        el.classList.add('deep-highlight');
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => el.classList.remove('deep-highlight'), 4000);
+    }
+
+    function showToast() {
+        const root = document.getElementById('toasts');
+        const t = document.createElement('div');
+        t.className = 'toast';
+        t.innerHTML = `
+            <div class="ic">🔄</div>
+            <div class="content">
+                <div class="tt-title">4.A AKTUÁLNÍ: Změny v rozvrhu</div>
+                <div class="tt-body">Po 3.h: Matematika – supluje Novák · učebna 305 → 208</div>
+            </div>
+            <button class="x" aria-label="Zavřít">&times;</button>`;
+        const dismiss = () => { t.style.opacity = '0'; setTimeout(() => t.remove(), 250); };
+        t.querySelector('.x').addEventListener('click', dismiss);
+        t.querySelector('.content').addEventListener('click', () => {
+            // Simulate the deep-link: flip to the "after" timetable and highlight.
+            document.querySelector('.toggle button[data-state="after"]').click();
+            pulseChanged();
+            dismiss();
+        });
+        root.appendChild(t);
+        requestAnimationFrame(() => t.classList.add('in'));
+        setTimeout(dismiss, 8000);
+    }
+
+    document.getElementById('simulate').addEventListener('click', () => {
+        if (current !== 'after') render('after');
+        document.querySelector('.toggle button[data-state="after"]').classList.add('active');
+        document.querySelector('.toggle button[data-state="before"]').classList.remove('active');
+        showToast();
+        pulseChanged();
+    });
+
+    document.querySelectorAll('.toggle button').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            render(btn.dataset.state);
+        });
+    });
+
+    render('before');
+</script>
+</body>
+</html>
