@@ -17,6 +17,7 @@ import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 import { initOfflineDetection } from './offline.js';
 import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
 import { debug } from './debug.js';
+import { initNextLessonWidget } from './next-lesson.js';
 
 /**
  * Listen for deep-link messages from the service worker (fallback for browsers
@@ -263,6 +264,7 @@ async function init() {
         initSettings();
         initFavoritesModal();
         initRefresh();
+        initNextLessonWidget();
 
         // Initialize notification modal listeners
         if (dom.notificationModalClose) {
