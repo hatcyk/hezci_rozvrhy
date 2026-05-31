@@ -7,7 +7,8 @@
 const express = require('express');
 const { triggerManualPrefetch } = require('../backend/cron');
 const { sendLessonReminders, getPragueTime } = require('../backend/lesson-reminder');
-const { processPendingChanges } = require('../backend/fcm');
+const { processPendingChanges, cleanupOldChanges } = require('../backend/fcm');
+const { cleanupOldNotifications } = require('../backend/notification-tracker');
 const { initializeFirebaseAdmin, getFirestore } = require('../backend/firebase-admin-init');
 
 const router = express.Router();
@@ -19,10 +20,16 @@ const router = express.Router();
 function verifyCronRequest(req, res, next) {
     const authHeader = req.headers.authorization;
     const cronSecret = process.env.CRON_SECRET;
+    const isProduction = process.env.VERCEL === '1' || process.env.VERCEL === 'true' || process.env.NODE_ENV === 'production';
 
-    // If CRON_SECRET is not set, allow request (for local development)
+    // If CRON_SECRET is not set: allow only in local dev (fail-closed in production
+    // so the endpoints can't be triggered by anyone if the secret is misconfigured).
     if (!cronSecret) {
-        console.warn('⚠️  CRON_SECRET not set - cron endpoint is unprotected');
+        if (isProduction) {
+            console.error('❌ CRON_SECRET not set in production - refusing cron request');
+            return res.status(503).json({ error: 'Cron not configured' });
+        }
+        console.warn('⚠️  CRON_SECRET not set - cron endpoint is unprotected (dev only)');
         return next();
     }
 
@@ -134,6 +141,32 @@ router.get('/process-notifications', verifyCronRequest, async (req, res) => {
             console.error('Failed to save error status:', fsError.message);
         }
 
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/**
+ * Cleanup cron endpoint - prunes old dedup/notification records.
+ * The node-cron daily cleanup in backend/cron.js never runs on serverless (no
+ * long-lived process), so this endpoint is the real cleanup path, driven by a
+ * scheduled GitHub Actions workflow.
+ */
+router.get('/cleanup', verifyCronRequest, async (req, res) => {
+    try {
+        console.log('⏰ Cron: Cleanup triggered');
+        initializeFirebaseAdmin();
+
+        const notifResult = await cleanupOldNotifications(7);
+        const changesResult = await cleanupOldChanges(2);
+
+        res.json({
+            success: true,
+            notificationsDeleted: notifResult.deleted || 0,
+            changesDeleted: changesResult.deleted || 0,
+            timestamp: getPragueTime().toISOString()
+        });
+    } catch (error) {
+        console.error('Cron cleanup error:', error);
         res.status(500).json({ error: error.message });
     }
 });

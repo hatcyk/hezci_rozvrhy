@@ -10,8 +10,11 @@ const { detectTimetableChanges } = require('./change-detector');
 
 // Configuration
 const BAKALARI_BASE_URL = 'https://mot-spsd.bakalari.cz';
-// Reduce concurrent requests on Vercel to avoid rate limiting/DDoS blocks
-const CONCURRENT_REQUESTS = process.env.VERCEL ? 3 : 20; // Slower on Vercel to avoid blocks
+// Reduce concurrent requests on Vercel to avoid rate limiting/DDoS blocks.
+// Can be overridden with PREFETCH_CONCURRENCY (e.g. on a GitHub Actions runner that
+// isn't subject to the same rate limits but still wants to stay gentle on Bakalari).
+const DEFAULT_CONCURRENCY = process.env.VERCEL ? 3 : 20;
+const CONCURRENT_REQUESTS = parseInt(process.env.PREFETCH_CONCURRENCY) || DEFAULT_CONCURRENCY;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = process.env.VERCEL ? 2000 : 1000; // Longer delay on Vercel
 const SCHEDULE_TYPES = ['Actual', 'Permanent', 'Next'];
@@ -203,9 +206,7 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
     // Create a map of actual lessons by unique key (day-hour-subject-teacher-group)
     const actualLessonKeys = new Set();
     actualNonRemoved.forEach(lesson => {
-        const key = createNormalizedKey(lesson);
-        actualLessonKeys.add(key);
-        console.log(`   [ACTUAL] ${key}`);
+        actualLessonKeys.add(createNormalizedKey(lesson));
     });
 
     // Find lessons in permanent that are missing in actual
@@ -215,7 +216,6 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
         if (permLesson.type === 'removed') return;
 
         const key = createNormalizedKey(permLesson);
-        console.log(`   [PERM] ${key} - exists in actual: ${actualLessonKeys.has(key)}`);
 
         // If this lesson exists in permanent but not in actual, it was removed
         if (!actualLessonKeys.has(key)) {

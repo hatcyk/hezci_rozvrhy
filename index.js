@@ -46,7 +46,12 @@ app.get('/login', (req, res) => {
 app.use('/api', timetableRoutes);
 app.use('/api', authRoutes);
 app.use('/api', statusRoutes);
-app.use('/api', testNotificationsRoutes);
+// Test/debug notification endpoints are unauthenticated and can send FCM messages
+// and expose device tokens — only mount them when DEBUG is explicitly enabled.
+if (DEBUG) {
+    app.use('/api', testNotificationsRoutes);
+    console.log('🔧 Test notification endpoints mounted at /api/test-ntf (DEBUG mode)');
+}
 app.use('/api/fcm', fcmRoutes);
 app.use('/api/prefetch', prefetchRoutes);
 app.use('/api/debug', debugRoutes);

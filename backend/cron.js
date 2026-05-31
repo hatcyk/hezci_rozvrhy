@@ -1,6 +1,12 @@
 /**
- * Cron Job Scheduler
- * Automatically runs prefetch every 10 minutes<
+ * Cron Job Scheduler (node-cron)
+ *
+ * NOTE: These node-cron jobs only run when there is a long-lived Node process,
+ * i.e. local/self-hosted runs (`npm start`). On Vercel serverless there is no
+ * persistent process, so these schedules never fire — the real production
+ * scheduler is the set of GitHub Actions workflows in .github/workflows/
+ * (prefetch, process-notifications, lesson-reminders, cleanup), which call the
+ * matching /api/cron/* endpoints. Keep both in sync when changing cadence.
  */
 
 const cron = require('node-cron');
@@ -215,7 +221,8 @@ function startCronJob() {
         runPrefetch().catch(err => console.error('Scheduled prefetch failed:', err));
     });
 
-    // Schedule lesson reminder cron: Every minute
+    // Schedule lesson reminder cron (local/self-hosted only; in production the
+    // lesson-reminders GitHub Actions workflow drives /api/cron/lesson-reminders)
     lessonReminderCron = cron.schedule('* * * * *', () => {
         sendLessonReminders().catch(err => console.error('Lesson reminder failed:', err));
     });

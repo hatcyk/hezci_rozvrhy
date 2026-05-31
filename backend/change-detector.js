@@ -4,57 +4,77 @@
  */
 
 /**
- * Create a unique key for a lesson
- * Used to match lessons between old and new snapshots
- * Includes group to properly detect changes for group-specific lessons
+ * Create a SLOT key for a lesson.
+ *
+ * Matches lessons between old/new snapshots by their position in the timetable
+ * (day + hour + group), NOT by their content. This is what lets us detect a
+ * substitution as a substitution: when the teacher changes, the lesson stays in
+ * the same slot, so we compare old vs. new in that slot and emit one clean
+ * "Suplování X → Y" change instead of a misleading removed+added pair.
+ *
+ * Group is part of the slot because group-divided lessons (1.sk / 2.sk) genuinely
+ * occupy separate, parallel slots in the same day/hour.
  */
 function createLessonKey(lesson) {
-    // Include group in key to distinguish between group-specific lessons
-    // If no group, use empty string to ensure uniqueness
-    const group = lesson.group || '';
-    return `${lesson.day}-${lesson.hour}-${lesson.subject}-${lesson.teacher}-${group}`;
+    const group = standardizeSlotGroup(lesson.group);
+    return `${lesson.day}-${lesson.hour}-${group}`;
 }
 
 /**
- * Compare two lesson objects and detect what changed
+ * Normalize a group name for slot matching so the same group spelled differently
+ * ("1. sk", "skupina 1", "1.sk") maps to one slot. Empty/whole-class → ''.
+ */
+function standardizeSlotGroup(groupName) {
+    if (!groupName) return '';
+    const lower = String(groupName).toLowerCase().trim();
+    if (lower === '' || lower.includes('celá') || lower === 'cela') return '';
+    const m = lower.match(/^(\d+)[\.\s]*(?:skupina|sk)?$|^(?:skupina|sk)[\.\s]*(\d+)$/);
+    if (m) return `${m[1] || m[2]}.sk`;
+    return lower; // special groups (TVk1, TVDi, ...) kept as-is, lowercased for stable matching
+}
+
+/** Normalize a string for comparison (trim + lowercase, null-safe). */
+function norm(value) {
+    return (value == null ? '' : String(value)).trim().toLowerCase();
+}
+
+/**
+ * Compare two lesson objects occupying the SAME slot and detect what changed.
+ *
+ * Because lessons are now matched by slot (day-hour-group), the teacher/subject
+ * branches actually fire — a substitution in a slot is reported as a substitution,
+ * not as a removed+added pair. Changes are prioritized so we emit one clear
+ * headline per slot instead of a pile of overlapping events.
  */
 function detectLessonChanges(oldLesson, newLesson) {
     const changes = [];
+    const oldType = oldLesson.type || 'normal';
+    const newType = newLesson.type || 'normal';
 
-    if (oldLesson.teacher !== newLesson.teacher) {
-        changes.push({
-            field: 'teacher',
-            oldValue: oldLesson.teacher,
-            newValue: newLesson.teacher,
-            type: 'substitution'
-        });
+    // Headline change: the lesson became cancelled or absent. This supersedes any
+    // teacher/room churn on the same slot, so report it alone.
+    if (oldType !== newType && (newType === 'removed' || newType === 'absent')) {
+        changes.push({ field: 'type', oldValue: oldType, newValue: newType, type: 'type_change' });
+        return changes;
     }
 
-    if (oldLesson.room !== newLesson.room) {
-        changes.push({
-            field: 'room',
-            oldValue: oldLesson.room,
-            newValue: newLesson.room,
-            type: 'room_change'
-        });
+    // Already cancelled/absent and staying that way — nothing meaningful to report.
+    if (newType === 'removed' || newType === 'absent') {
+        return changes;
     }
 
-    if (oldLesson.subject !== newLesson.subject) {
-        changes.push({
-            field: 'subject',
-            oldValue: oldLesson.subject,
-            newValue: newLesson.subject,
-            type: 'subject_change'
-        });
+    // Active lesson: a changed subject means the whole lesson was swapped, so report
+    // that instead of also flagging the (implied) teacher change. Otherwise a changed
+    // teacher on the same subject is a substitution.
+    if (norm(oldLesson.subject) !== norm(newLesson.subject)) {
+        changes.push({ field: 'subject', oldValue: oldLesson.subject, newValue: newLesson.subject, type: 'subject_change' });
+    } else if (norm(oldLesson.teacher) !== norm(newLesson.teacher)) {
+        changes.push({ field: 'teacher', oldValue: oldLesson.teacher, newValue: newLesson.teacher, type: 'substitution' });
     }
 
-    if (oldLesson.type !== newLesson.type) {
-        changes.push({
-            field: 'type',
-            oldValue: oldLesson.type,
-            newValue: newLesson.type,
-            type: 'type_change'
-        });
+    // A room change is useful alongside a substitution (often happens together).
+    if (norm(oldLesson.room) !== norm(newLesson.room)) {
+        changes.push({ field: 'room', oldValue: oldLesson.room, newValue: newLesson.room, type: 'room_change' });
     }
 
     return changes;
@@ -72,7 +92,7 @@ function isRevertToNormal(change, newData, permanentData) {
     if (!permanentData || permanentData.length === 0) return false;
 
     const normalize = (s) => (s || '').trim().toLowerCase();
-    const slotKey = (lesson) => `${lesson.day}-${lesson.hour}-${normalize(lesson.group || '')}`;
+    const slotKey = (lesson) => `${lesson.day}-${lesson.hour}-${standardizeSlotGroup(lesson.group)}`;
 
     const slot = slotKey(change.lesson);
 

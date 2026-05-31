@@ -10,7 +10,7 @@
  */
 
 const { getFirestore } = require('./firebase-admin-init');
-const { sendNotificationToTokens } = require('./fcm');
+const { sendNotificationToTokens, pruneInvalidTokens } = require('./fcm');
 const { getPragueTime, getPragueTimeInfo, isWeekend } = require('./timezone-manager');
 const { calculateNotificationWindows, findLessonsToNotify, formatMinutesToTime } = require('./schedule-calculator');
 const { hasNotificationBeenSent, recordNotificationSent } = require('./notification-tracker');
@@ -394,7 +394,9 @@ async function sendLessonReminders(options = {}) {
 
                     console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - not sent yet`);
 
-                    // Get user's lessons for this hour
+                    // Get user's lessons for this hour. Each entry keeps a reference to
+                    // the timetable it came from so we record the correct source below
+                    // (previously metadata always pointed at watchedTimetables[0]).
                     let userHasLesson = false;
                     const userLessons = [];
 
@@ -445,7 +447,9 @@ async function sendLessonReminders(options = {}) {
 
                         if (filteredLessons.length > 0) {
                             userHasLesson = true;
-                            userLessons.push(...filteredLessons);
+                            filteredLessons.forEach(lesson =>
+                                userLessons.push({ lesson, source: watchedTimetable })
+                            );
                         }
                     }
 
@@ -455,7 +459,7 @@ async function sendLessonReminders(options = {}) {
                     }
 
                     // Send notification for first lesson (if multiple, they're usually the same subject)
-                    const lesson = userLessons[0];
+                    const { lesson, source: lessonSource } = userLessons[0];
 
                     console.log(`📚 [TIMETABLE] User ${user.userId} has lesson: ${lesson.subject}`);
                     console.log(`   Room: ${lesson.room}, Teacher: ${lesson.teacher}`);
@@ -473,14 +477,18 @@ async function sendLessonReminders(options = {}) {
                         console.log(`📨 [SEND] Sent to user ${user.userId}: ${notification.title}`);
                         console.log(`   Tokens: ${user.tokens.length}, Success: ${result.successCount}`);
 
-                        // Record notification as sent
+                        // Drop any tokens FCM reported as permanently invalid.
+                        await pruneInvalidTokens(user.userId, user.tokens, result);
+
+                        // Record notification as sent (using the timetable the lesson
+                        // actually came from, not always the first watched one).
                         await recordNotificationSent(
                             user.userId,
                             timeInfo.formattedDate,
                             lessonWindow.hour,
                             {
                                 lessonStartTime: lessonWindow.lessonStartFormatted,
-                                timetableId: `${user.watchedTimetables[0].type}_${user.watchedTimetables[0].id}_Actual`,
+                                timetableId: `${lessonSource.type}_${lessonSource.id}_Actual`,
                                 lessonDetails: {
                                     subject: lesson.subject,
                                     room: lesson.room,
