@@ -16,6 +16,7 @@ import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 import { initOfflineDetection } from './offline.js';
 import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
+import { debug } from './debug.js';
 
 /**
  * Listen for deep-link messages from the service worker (fallback for browsers
@@ -241,8 +242,8 @@ async function init() {
             }
         }, 2 * 60 * 1000); // Check every 2 minutes
 
-        // Expose state and dom to window for debugging
-        if (typeof window !== 'undefined') {
+        // Expose state and dom to window for debugging (only in debug mode)
+        if (typeof window !== 'undefined' && debug.isEnabled()) {
             window.debugState = state;
             window.debugDom = dom;
         }
