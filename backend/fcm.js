@@ -3,8 +3,52 @@
  * Handles push notifications to users
  */
 
+const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('./firebase-admin-init');
 const { createChangeSummary, createDetailedChangeSummary } = require('./change-detector');
+
+// FCM error codes that mean a token is permanently dead and should be pruned.
+const DEAD_TOKEN_ERRORS = new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+    'messaging/invalid-argument'
+]);
+
+/**
+ * Remove FCM tokens that the API reported as permanently invalid from a user doc.
+ * Keeps the user's token list clean so we don't keep sending to dead devices and
+ * so success/failure counts stay meaningful.
+ * @param {String} userId - User document ID
+ * @param {Array<String>} tokens - Tokens used for the multicast (same order as responses)
+ * @param {Object} sendResult - Result from sendNotificationToTokens (has .responses)
+ * @returns {Promise<number>} Number of tokens pruned
+ */
+async function pruneInvalidTokens(userId, tokens, sendResult) {
+    try {
+        const responses = sendResult && sendResult.responses;
+        if (!responses || responses.length === 0) return 0;
+
+        const deadTokens = [];
+        responses.forEach((resp, idx) => {
+            if (!resp.success && resp.error && DEAD_TOKEN_ERRORS.has(resp.error.code)) {
+                if (tokens[idx]) deadTokens.push(tokens[idx]);
+            }
+        });
+
+        if (deadTokens.length === 0) return 0;
+
+        const db = getFirestore();
+        await db.collection('users').doc(userId).update({
+            tokens: admin.firestore.FieldValue.arrayRemove(...deadTokens)
+        });
+
+        console.log(`🧽 [TOKENS] Pruned ${deadTokens.length} dead token(s) for user ${userId}`);
+        return deadTokens.length;
+    } catch (error) {
+        console.error(`[TOKENS] Failed to prune invalid tokens for ${userId}:`, error.message);
+        return 0;
+    }
+}
 
 /**
  * Send notification to a single FCM token
@@ -259,7 +303,29 @@ async function processPendingChanges() {
         let sentCount = 0;
 
         for (const changeDoc of changesSnapshot.docs) {
-            const changeData = changeDoc.data();
+            // Atomically claim this change document so concurrent runs (the every-5-min
+            // workflow, the post-prefetch step and any in-process cron) can't all send
+            // the same notification. Whoever flips sent:false→true wins; the rest skip.
+            let changeData;
+            try {
+                changeData = await db.runTransaction(async (tx) => {
+                    const fresh = await tx.get(changeDoc.ref);
+                    if (!fresh.exists) return null;
+                    const data = fresh.data();
+                    if (data.sent) return null; // already claimed by another run
+                    tx.update(changeDoc.ref, { sent: true, sentAt: new Date().toISOString() });
+                    return data;
+                });
+            } catch (txError) {
+                console.error(`Failed to claim change ${changeDoc.id}:`, txError.message);
+                continue;
+            }
+
+            if (!changeData) {
+                // Lost the race or doc vanished — another processor is handling it.
+                continue;
+            }
+
             const timetable = changeData.timetable;
             const changes = changeData.changes;
 
@@ -268,9 +334,6 @@ async function processPendingChanges() {
 
             if (watchingUsers.length === 0) {
                 console.log(`⏭️  Skipping ${timetable.name} - no users watching`);
-
-                // Mark as sent even though no users are watching
-                await changeDoc.ref.update({ sent: true, sentAt: new Date().toISOString() });
                 processedCount++;
                 continue;
             }
@@ -315,15 +378,16 @@ async function processPendingChanges() {
 
                     const result = await sendNotificationToTokens(user.tokens, notification);
                     totalSent += result.successCount;
+
+                    // Drop any tokens FCM reported as permanently invalid.
+                    await pruneInvalidTokens(user.userId, user.tokens, result);
                 } catch (error) {
                     console.error(`Failed to send to user ${user.userId}:`, error.message);
                 }
             }
 
-            // Mark as sent
+            // Record delivery stats (already marked sent during the claim above).
             await changeDoc.ref.update({
-                sent: true,
-                sentAt: new Date().toISOString(),
                 sentToUsers: watchingUsers.length,
                 sentToDevices: totalSent
             });
@@ -412,4 +476,5 @@ module.exports = {
     getUsersWatchingTimetable,
     processPendingChanges,
     cleanupOldChanges,
+    pruneInvalidTokens,
 };
