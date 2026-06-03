@@ -30,6 +30,16 @@ function endMin(hour) {
     return l ? l.end[0] * 60 + l.end[1] : null;
 }
 
+/** How far (0–100) we are through a lesson running from `start`..`end` (minutes). */
+function progressPct(start, end) {
+    const d = new Date();
+    const nowFrac = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+    const dur = end - start;
+    if (dur <= 0) return 0;
+    const pct = ((nowFrac - start) / dur) * 100;
+    return Math.max(0, Math.min(100, pct)).toFixed(1);
+}
+
 function pluralMin(n) {
     if (n === 1) return 'minutu';
     if (n >= 2 && n <= 4) return 'minuty';
@@ -144,7 +154,7 @@ export function refreshNextLessonWidget() {
     for (const h of hours) {
         const s = startMin(h), e = endMin(h);
         if (s == null) continue;
-        if (now >= s && now <= e) current = { lessons: map.get(h), end: e };
+        if (now >= s && now <= e) current = { lessons: map.get(h), start: s, end: e };
         if (now < s && !next) next = { lessons: map.get(h), start: s };
     }
 
@@ -162,6 +172,12 @@ export function refreshNextLessonWidget() {
         const cd = `<span class="nlw-cd">${inText(until)}</span>`;
         html += (current ? '<div class="nlw-sep"></div>' : '')
             + blockHTML(current ? 'Další' : 'Začátek', next.lessons, cd, true);
+    }
+
+    // Progress bar along the bottom: how much of the current lesson is already behind us.
+    if (current) {
+        const pct = progressPct(current.start, current.end);
+        html += `<div class="nlw-progress" aria-hidden="true"><div class="nlw-progress-fill" style="width:${pct}%"></div></div>`;
     }
 
     el.innerHTML = html;
