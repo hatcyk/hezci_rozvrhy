@@ -2,6 +2,8 @@
 
 /* ── Next lesson widget ───────────────────────────────────────────── */
 .next-lesson-widget {
+    position: relative;
+    overflow: hidden;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -14,6 +16,21 @@
         color-mix(in srgb, var(--today-highlight) 12%, transparent),
         transparent 70%);
     background-color: var(--card-bg);
+}
+
+/* Current-lesson progress along the bottom edge */
+.nlw-progress {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: var(--border);
+}
+.nlw-progress-fill {
+    height: 100%;
+    background: var(--today-highlight);
+    transition: width 0.6s linear;
 }
 .next-lesson-widget.hidden { display: none; }
 
