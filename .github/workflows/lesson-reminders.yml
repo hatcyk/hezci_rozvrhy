@@ -1,19 +1,14 @@
 name: Send Lesson Reminders
 
-# GitHub Actions cron has a 5-minute minimum AND is frequently delayed by several
-# minutes, which would make minute-accurate lesson reminders unreliable. To work
-# around both limits, each job loops internally and hits the endpoint every ~55s
-# for ~5 minutes. Combined with the */5 trigger this gives continuous ~1-minute
-# coverage even when a scheduled run starts late; overlapping calls are harmless
-# because the endpoint deduplicates per (user, date, hour).
-#
-# Schedule is restricted to weekday school hours (UTC) to avoid burning Actions
-# minutes overnight/at weekends. 05:00–17:00 UTC covers ~07:00–18:25 Prague in
-# both winter (UTC+1) and summer (UTC+2).
+# Routine scheduling moved to an external cron-job.org job that hits
+# /api/cron/lesson-reminders every minute (timezone Europe/Prague). GitHub Actions
+# scheduled crons drop most runs (observed ~80-min gaps instead of */5), which made
+# the 5-minute pre-lesson notification window unreliable. This workflow is kept only
+# for manual runs; when dispatched it still polls the endpoint every ~55s for ~5
+# minutes. Overlapping calls are harmless — the endpoint deduplicates per
+# (user, date, hour).
 on:
-  schedule:
-    - cron: '*/5 5-17 * * 1-5'
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch: # Manual trigger only; routine scheduling is external (cron-job.org)
 
 # Avoid piling up overlapping long-running jobs if a run is slow.
 concurrency:
