@@ -8,10 +8,10 @@
     margin: 0 0 12px;
     padding: 11px 14px;
     border: 1px solid var(--border);
-    border-left: 4px solid var(--current-time);
+    border-left: 4px solid var(--today-highlight);
     border-radius: 12px;
     background: linear-gradient(90deg,
-        color-mix(in srgb, var(--current-time) 12%, transparent),
+        color-mix(in srgb, var(--today-highlight) 12%, transparent),
         transparent 70%);
     background-color: var(--card-bg);
 }
@@ -41,19 +41,68 @@
     font-size: 0.76rem;
     color: var(--text-dim);
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.nlw-room {
+    background: var(--border-light);
+    color: var(--text-dim);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.72rem;
 }
 .nlw-sep { flex: 1; height: 1px; background: var(--border); min-width: 12px; }
 .nlw-cd {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
-    color: var(--current-time);
+    color: var(--today-highlight);
 }
-.nlw-block.nlw-next .nlw-cd { color: var(--today-highlight); }
+/* "Next" countdown reads as secondary so "now" stays primary */
+.nlw-block.nlw-next .nlw-cd {
+    color: color-mix(in srgb, var(--today-highlight) 75%, var(--text-dim));
+}
 
-/* On narrow screens stack the two blocks */
+/* ── Split (group) hours: groups shown side by side ───────────────── */
+.nlw-split { gap: 5px; }
+.nlw-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.nlw-head .nlw-sub { white-space: nowrap; }
+.nlw-groups {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+.nlw-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    padding-left: 10px;
+    border-left: 2px solid var(--border);
+}
+.nlw-group:first-child {
+    padding-left: 0;
+    border-left: 0;
+}
+.nlw-gbadge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--today-highlight);
+}
+
+/* On narrow screens tighten spacing */
 @media (max-width: 520px) {
     .next-lesson-widget { gap: 8px; }
     .nlw-block .nlw-main { font-size: 0.9rem; }
+    .nlw-groups { gap: 10px; }
+    .nlw-group { padding-left: 8px; }
 }
 
 /* ── Loading skeleton ─────────────────────────────────────────────── */
