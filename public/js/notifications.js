@@ -11,6 +11,8 @@ export {
     requestNotificationPermission,
     disableNotifications,
     loadNotificationPreferences,
+    ensureTokenRegistered,
+    reconcileLessonReminderToken,
     saveWatchedTimetables
 } from './notifications-core.js';
 

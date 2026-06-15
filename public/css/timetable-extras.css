@@ -81,46 +81,35 @@
     color: color-mix(in srgb, var(--today-highlight) 75%, var(--text-dim));
 }
 
-/* ── Split (group) hours: groups shown side by side ───────────────── */
-.nlw-split { gap: 5px; }
-.nlw-head {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
+/* Live dot on the "Teď" block */
+.nlw-block .nlw-lbl { display: inline-flex; align-items: center; gap: 5px; }
+.nlw-dot { width:5px; height:5px; border-radius:50%; background:var(--today-highlight); flex:0 0 auto; box-shadow:0 0 0 0 color-mix(in srgb, var(--today-highlight) 60%, transparent); animation: nlw-pulse 2s ease-out infinite; }
+@keyframes nlw-pulse { 0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--today-highlight) 55%,transparent);} 70%{box-shadow:0 0 0 5px color-mix(in srgb,var(--today-highlight) 0%,transparent);} 100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--today-highlight) 0%,transparent);} }
+/* Progress refinement */
+.nlw-progress { background: color-mix(in srgb, var(--text-dim) 18%, transparent); }
+.nlw-progress-fill { border-radius:0 2px 2px 0; box-shadow:0 0 6px color-mix(in srgb, var(--today-highlight) 60%, transparent); }
+/* Split groups */
+.nlw-split { gap:5px; }
+.nlw-head { display:flex; align-items:baseline; gap:8px; }
+.nlw-head .nlw-sub { white-space:nowrap; }
+.nlw-groups { display:flex; gap:14px; flex-wrap:wrap; }
+.nlw-group { display:flex; flex-direction:column; gap:1px; min-width:0; padding-left:10px; border-left:2px solid var(--border); }
+.nlw-group:first-child { padding-left:0; border-left:0; }
+.nlw-gbadge { font-size:0.6rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:var(--today-highlight); }
+/* Cancelled group in a split hour */
+.nlw-group.nlw-cancelled { opacity:0.65; }
+.nlw-group.nlw-cancelled .nlw-gbadge { color:var(--changed-color); }
+.nlw-group.nlw-cancelled .nlw-main { text-decoration:line-through; text-decoration-color:color-mix(in srgb,var(--changed-color) 70%,transparent); color:var(--text-dim); font-weight:600; }
+.nlw-group.nlw-cancelled .nlw-main::before { content:"⊘ "; color:var(--changed-color); text-decoration:none; font-weight:700; }
+.nlw-odpadlo { align-self:flex-start; font-size:0.66rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:var(--changed-color); background:color-mix(in srgb,var(--changed-color) 12%,transparent); padding:1px 6px; border-radius:4px; }
+@media (max-width:520px) {
+  .next-lesson-widget { gap:8px; }
+  .nlw-block .nlw-main { font-size:0.9rem; }
+  .nlw-groups { flex-direction:column; gap:8px; }
+  .nlw-group { padding-left:0; border-left:0; padding-top:7px; border-top:1px solid var(--border); }
+  .nlw-group:first-child { padding-top:0; border-top:0; }
 }
-.nlw-head .nlw-sub { white-space: nowrap; }
-.nlw-groups {
-    display: flex;
-    gap: 14px;
-    flex-wrap: wrap;
-}
-.nlw-group {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-    padding-left: 10px;
-    border-left: 2px solid var(--border);
-}
-.nlw-group:first-child {
-    padding-left: 0;
-    border-left: 0;
-}
-.nlw-gbadge {
-    font-size: 0.6rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--today-highlight);
-}
-
-/* On narrow screens tighten spacing */
-@media (max-width: 520px) {
-    .next-lesson-widget { gap: 8px; }
-    .nlw-block .nlw-main { font-size: 0.9rem; }
-    .nlw-groups { gap: 10px; }
-    .nlw-group { padding-left: 8px; }
-}
+@media (prefers-reduced-motion: reduce) { .nlw-dot { animation:none; } .nlw-progress-fill { transition:none; } }
 
 /* ── Loading skeleton ─────────────────────────────────────────────── */
 .timetable-skeleton {
@@ -159,6 +148,266 @@
     100% { background-position: 0 0; }
 }
 
+/* ── Layout-aware skeletons ───────────────────────────────────────────
+   The container keeps `.timetable-skeleton` and gains ONE layout modifier:
+   .skel-week | .skel-day | .skel-card-view | .skel-compact | .skel-agenda
+   JS emits the inner structure documented per-block below. Counts (rows /
+   cols) are computed by JS, so everything here is "any N" — no hardcoded
+   counts. `--skel-cols` / `--skel-rows` custom props let JS tune the grid.
+
+   Shared shimmer surface: any block can carry `.skel-fill` to get the same
+   animated gradient as `.skel-line` (used for grid cells, chips, blocks). */
+
+.skel-fill,
+.skel-cell,
+.skel-block,
+.skel-timechip,
+.skel-badge,
+.skel-dayhdr {
+    background-color: var(--border-light); /* fallback if color-mix unsupported */
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--text-dim) 14%, transparent) 25%,
+        color-mix(in srgb, var(--text-dim) 28%, transparent) 37%,
+        color-mix(in srgb, var(--text-dim) 14%, transparent) 63%);
+    background-size: 400% 100%;
+    animation: skel-shimmer 1.3s ease infinite;
+}
+
+/* When a layout modifier is present, drop the default auto-fill grid so each
+   layout can define its own flow. */
+.timetable-skeleton.skel-week,
+.timetable-skeleton.skel-day,
+.timetable-skeleton.skel-card-view,
+.timetable-skeleton.skel-compact,
+.timetable-skeleton.skel-agenda {
+    display: block;
+    grid-template-columns: none;
+    gap: 0;
+}
+
+/* ── 1. Week view — the "big field": days × hours grid ───────────────── */
+/* DOM:
+   .timetable-skeleton.skel-week  (style="--skel-cols:5;--skel-rows:N")
+     .skel-grid
+       .skel-grid-head        ← header row of day labels
+         .skel-corner               (top-left hour-column spacer)
+         .skel-dayhdr × cols
+       .skel-grid-body
+         .skel-rowline × rows
+           .skel-timecell           (hour number on the left)
+           .skel-cell × cols                                                */
+.skel-week {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--card-bg);
+    padding: 0;
+    overflow: hidden;
+}
+.skel-grid { display: flex; flex-direction: column; }
+.skel-grid-head,
+.skel-rowline {
+    display: grid;
+    grid-template-columns: 60px repeat(var(--skel-cols, 5), minmax(0, 1fr));
+    gap: 0;
+}
+.skel-grid-head { background: var(--header-bg); }
+.skel-corner { border-right: 2px solid var(--border); border-bottom: 2px solid var(--border); }
+.skel-dayhdr {
+    height: 16px;
+    margin: 18px 16px;
+    border-radius: 6px;
+    border-bottom: 0;
+}
+.skel-grid-head .skel-dayhdr { border-bottom: 2px solid transparent; }
+.skel-rowline { min-height: 88px; }
+.skel-timecell {
+    border-right: 2px solid var(--border);
+    border-top: 1px solid var(--border);
+    background: var(--header-bg);
+}
+.skel-timecell::after {
+    content: '';
+    display: block;
+    width: 22px; height: 12px;
+    margin: 36px auto;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--spsd-orange) 30%, transparent);
+}
+.skel-cell {
+    margin: 10px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+}
+/* Sparse, organic look: dim a deterministic scatter of cells so it reads as
+   a real timetable (free periods) rather than a solid block. */
+.skel-cell:nth-child(3n+1) { opacity: 0.85; }
+.skel-cell:nth-child(5n)   { opacity: 0.45; }
+.skel-cell:nth-child(7n)   { opacity: 0.6; }
+
+/* ── 2. Single day — vertical hour rows ──────────────────────────────── */
+/* DOM:
+   .timetable-skeleton.skel-day  (style="--skel-rows:N")
+     .skel-row × rows
+       .skel-timechip          ← time on the left
+       .skel-block               ← lesson block (fills remaining width)      */
+.skel-day { display: flex; flex-direction: column; gap: 10px; }
+.skel-row {
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+}
+.skel-timechip {
+    flex: 0 0 56px;
+    border-radius: 8px;
+    min-height: 64px;
+}
+.skel-block {
+    flex: 1;
+    border-radius: 12px;
+    min-height: 64px;
+}
+.skel-day .skel-row:nth-child(4n) .skel-block { opacity: 0.5; }
+
+/* ── 3. Card view — one big swipeable card + side peeks ──────────────── */
+/* DOM:
+   .timetable-skeleton.skel-card-view
+     .skel-peek.skel-peek-l        ← faint sliver of previous card
+     .skel-bigcard
+       .skel-card-head
+         .skel-line.w35                  (hour)
+         .skel-badge                     (time chip)
+       .skel-line.w70                    (subject)
+       .skel-line                        (detail)
+       .skel-line.w55                    (detail)
+     .skel-peek.skel-peek-r        ← faint sliver of next card
+     .skel-dots                    ← row of nav dots
+       .skel-dot × 3 (one .skel-dot-active)                                  */
+.skel-card-view { position: relative; padding: 20px 0; overflow: hidden; }
+.skel-bigcard {
+    margin: 0 8px;
+    padding: 24px 20px;
+    min-height: 280px;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    border-bottom: 4px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 4px 16px var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.skel-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+.skel-card-head .skel-line { margin-bottom: 0; }
+.skel-badge { width: 76px; height: 22px; border-radius: 8px; }
+.skel-bigcard .skel-line.w70 { height: 24px; }
+.skel-peek {
+    position: absolute;
+    top: 40px; bottom: 60px;
+    width: 8px;
+    border-radius: 8px;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    opacity: 0.5;
+}
+.skel-peek-l { left: -2px; }
+.skel-peek-r { right: -2px; }
+.skel-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 20px;
+}
+.skel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.skel-dot-active { width: 24px; border-radius: 4px; background: var(--text-dim); opacity: 0.6; }
+
+/* ── 4. Compact list — slim rows ─────────────────────────────────────── */
+/* DOM:
+   .timetable-skeleton.skel-compact  (style="--skel-rows:N")
+     .skel-crow × rows
+       .skel-cbadge            ← rounded number badge
+       .skel-cbody
+         .skel-line.w55              (subject)
+         .skel-line.w35              (details)                                */
+.skel-compact { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.skel-crow {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    min-height: 80px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-bottom: 3.5px solid var(--border);
+    border-radius: 12px;
+}
+.skel-cbadge {
+    flex: 0 0 44px;
+    height: 44px;
+    border-radius: 12px;
+}
+.skel-cbody { flex: 1; min-width: 0; }
+.skel-cbody .skel-line:last-child { margin-bottom: 0; }
+.skel-compact .skel-crow:nth-child(4n) { opacity: 0.55; }
+
+/* ── 5. Agenda — timeline rows: time left, lesson right ──────────────── */
+/* DOM:
+   .timetable-skeleton.skel-agenda  (style="--skel-rows:N")
+     .skel-arow × rows
+       .skel-atime             ← small time block on the rail
+       .skel-acard
+         .skel-line.w55              (subject)
+         .skel-line.w35              (details)                                */
+.skel-agenda { position: relative; padding: 8px 0 40px; }
+.skel-agenda::before {
+    content: '';
+    position: absolute;
+    left: 52px; top: 28px; bottom: 28px;
+    width: 1.5px;
+    background: var(--border);
+    opacity: 0.6;
+}
+.skel-arow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    padding: 6px 0;
+}
+.skel-atime {
+    flex: 0 0 44px;
+    height: 12px;
+    margin-top: 7px;
+    margin-right: 16px;
+    border-radius: 5px;
+}
+.skel-acard { flex: 1; min-width: 0; padding: 2px 4px 0 14px; }
+.skel-acard .skel-line:last-child { margin-bottom: 0; }
+.skel-agenda .skel-arow:nth-child(3n) { opacity: 0.55; }
+
+/* ── Responsive: week grid collapses on narrow screens ───────────────── */
+@media (max-width: 720px) {
+    /* Keep the week grid readable: shrink the hour column, tighten cells. */
+    .skel-grid-head,
+    .skel-rowline {
+        grid-template-columns: 40px repeat(var(--skel-cols, 5), minmax(0, 1fr));
+    }
+    .skel-dayhdr { margin: 14px 6px; }
+    .skel-cell { margin: 6px; }
+    .skel-rowline { min-height: 64px; }
+    .skel-timecell::after { margin: 26px auto; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-    .skel-line { animation: none; }
+    .skel-line,
+    .skel-fill,
+    .skel-cell,
+    .skel-block,
+    .skel-timechip,
+    .skel-badge,
+    .skel-dayhdr { animation: none; }
 }

@@ -12,6 +12,17 @@ let messaging = null;
 let fcmToken = null;
 let foregroundHandlerBound = false;
 
+// Web Push VAPID public key (FCM). Single source of truth for token requests.
+const VAPID_KEY = 'BA7vbWhWxiPOE6sZtC9k4FMb2wHt2jNOmt5mo1EGtYhHvkbGraSGmkvAgacQO5IBL1Eu1KM-wJGWyY0z_D7yYL0';
+
+/** True if any watched timetable has a lesson reminder type switched on. */
+function hasLessonRemindersEnabled(watchedTimetables) {
+    return (watchedTimetables || []).some(t => {
+        const r = (t.notificationTypes && t.notificationTypes.reminders) || {};
+        return r.next_lesson_room || r.next_lesson_teacher || r.next_lesson_subject;
+    });
+}
+
 /**
  * Handle a push message that arrives while the app is in the foreground.
  * FCM does NOT show a system notification in this case, so we surface it as an
@@ -175,9 +186,7 @@ export async function requestNotificationPermission() {
 
         // Get FCM token
         debug.log('🔄 Getting FCM token...');
-        fcmToken = await messaging.getToken({
-            vapidKey: 'BA7vbWhWxiPOE6sZtC9k4FMb2wHt2jNOmt5mo1EGtYhHvkbGraSGmkvAgacQO5IBL1Eu1KM-wJGWyY0z_D7yYL0'
-        });
+        fcmToken = await messaging.getToken({ vapidKey: VAPID_KEY });
 
         if (!fcmToken) {
             throw new Error('Failed to get FCM token');
@@ -326,6 +335,75 @@ export async function loadNotificationPreferences() {
     } catch (error) {
         debug.error('Failed to load preferences:', error);
         return null;
+    }
+}
+
+/**
+ * Refresh the FCM token and re-save it to the server WITHOUT prompting.
+ * Only runs when permission is already 'granted' (so it never shows a dialog).
+ * Used to recover users whose token was never saved or has since expired/been
+ * pruned, while they still have notification permission from a previous session.
+ * @returns {Promise<{ok: boolean, reason?: string}>}
+ */
+export async function ensureTokenRegistered() {
+    if (!isNotificationSupported()) return { ok: false, reason: 'unsupported' };
+    if (isIOS() && !isStandalone()) return { ok: false, reason: 'ios_not_standalone' };
+    if (Notification.permission !== 'granted') return { ok: false, reason: 'no_permission' };
+
+    try {
+        await registerServiceWorker();
+        if (!messaging) await initializeMessaging();
+
+        const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+        if (!token) return { ok: false, reason: 'no_token' };
+
+        fcmToken = token;
+        await saveTokenToServer(token);
+        updateState('notificationsEnabled', true);
+        debug.log('✅ FCM token re-registered (silent)');
+        return { ok: true };
+    } catch (error) {
+        debug.error('Silent token re-registration failed:', error);
+        return { ok: false, reason: 'error' };
+    }
+}
+
+/**
+ * Boot-time reconcile: lesson reminders can be enabled in preferences
+ * independently of having a valid FCM token, so a user can have reminders ON
+ * with no deliverable token (registration never finished, token expired, or was
+ * pruned). This re-syncs the token silently when possible and otherwise flags
+ * the mismatch so the notification modal can warn the user.
+ *
+ * Reads preferences from the server (also refreshes state.watchedTimetables).
+ * Safe to call on every app load; no-ops quickly when reminders aren't enabled.
+ */
+export async function reconcileLessonReminderToken() {
+    try {
+        const data = await loadNotificationPreferences();
+        if (!data) return;
+
+        const remindersOn = hasLessonRemindersEnabled(state.watchedTimetables);
+        if (!remindersOn) {
+            updateState('remindersNeedAttention', false);
+            return;
+        }
+
+        // Reminders are on. If the browser already has permission, silently make
+        // sure a fresh token is on the server (recovers tokenless users).
+        if (isNotificationSupported() && !(isIOS() && !isStandalone()) &&
+            Notification.permission === 'granted') {
+            const result = await ensureTokenRegistered();
+            updateState('remindersNeedAttention', !result.ok);
+            return;
+        }
+
+        // Reminders on but we can't deliver (no permission / unsupported / iOS
+        // not installed) → surface a warning the user can act on.
+        updateState('remindersNeedAttention', true);
+        debug.warn('⚠️ Lesson reminders enabled but notifications are not deliverable');
+    } catch (error) {
+        debug.error('reconcileLessonReminderToken failed:', error);
     }
 }
 

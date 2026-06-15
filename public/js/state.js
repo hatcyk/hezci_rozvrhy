@@ -9,6 +9,9 @@ export const state = {
     teacherAbbreviationMap: null,
     showWholeWeek: false, // DEPRECATED - use layoutMode instead
     notificationsEnabled: false,
+    // Lesson reminders are enabled in preferences but can't be delivered (no
+    // browser permission / no FCM token) — drives a warning in the notif modal.
+    remindersNeedAttention: false,
     watchedTimetables: [],
     favoriteTimetables: [],
     layoutMode: 'single-day',
