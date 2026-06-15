@@ -80,56 +80,127 @@ function dedupe(lessons) {
     return out;
 }
 
-/** Build a map hour -> array of today's valid lessons (all groups), sorted by group. */
+/**
+ * Build a map hour -> descriptor for today's lessons.
+ *
+ * Each descriptor is { survivors, cancelled, isSplit }:
+ *  - survivors: live lessons (not removed/absent, non-empty subject), sorted by
+ *    group and deduped.
+ *  - isSplit:   true if any RAW row in the hour carries a group label, i.e. the
+ *    hour is divided between groups (so we must label every group on screen).
+ *  - cancelled: { lesson, cancelled:true } entries for groups whose lesson was
+ *    removed/absent while a sibling group still has a live lesson, so the student
+ *    can tell the surviving block isn't theirs. Only kept when survivors exist.
+ *
+ * Fully-cancelled hours (no survivors) are omitted entirely, preserving the
+ * existing hide/skip behaviour.
+ */
 function todaysLessonsByHour() {
     const today = getTodayIndex();
     if (today < 0) return null; // weekend
 
-    const map = new Map();
+    // Bucket ALL rows for today by hour, without dropping removed/absent first.
+    const raw = new Map();
     (state.currentTimetableData || []).forEach(l => {
         if (l.day !== today) return;
-        if (l.type === 'removed' || l.type === 'absent') return;
-        if (!l.subject || !l.subject.trim()) return;
-        if (!map.has(l.hour)) map.set(l.hour, []);
-        map.get(l.hour).push(l);
+        if (!raw.has(l.hour)) raw.set(l.hour, []);
+        raw.get(l.hour).push(l);
     });
-    for (const arr of map.values()) arr.sort((a, b) => groupNum(a) - groupNum(b));
+
+    const map = new Map();
+    for (const [hour, rows] of raw) {
+        const isCancelled = l => l.type === 'removed' || l.type === 'absent';
+
+        let survivors = rows.filter(l => !isCancelled(l) && l.subject && l.subject.trim());
+        survivors.sort((a, b) => groupNum(a) - groupNum(b));
+        survivors = dedupe(survivors);
+        if (survivors.length === 0) continue; // fully cancelled / empty hour → skip
+
+        // Split only when the hour holds more than one distinct group, i.e. it's
+        // genuinely divided. A lone stray group tag on an otherwise whole-class
+        // hour is NOT a split (avoids a single badged column for a whole-class lesson).
+        const isSplit = new Set(rows.map(groupLabel).filter(Boolean)).size > 1;
+
+        // Cancelled sibling groups: removed/absent rows with a group label not
+        // already covered by a survivor. Only meaningful when survivors exist.
+        // Dedupe by group label so a group with several removed rows shows once.
+        const survivorLabels = new Set(survivors.map(groupLabel));
+        const seenCancelled = new Set();
+        const cancelled = [];
+        for (const l of rows) {
+            const g = groupLabel(l);
+            if (!isCancelled(l) || g === '' || survivorLabels.has(g) || seenCancelled.has(g)) continue;
+            seenCancelled.add(g);
+            cancelled.push({ lesson: l, cancelled: true });
+        }
+
+        map.set(hour, { survivors, cancelled, isSplit });
+    }
     return map;
 }
 
-/** Render one block ("Teď" / "Další"), splitting into groups when needed. */
-function blockHTML(label, lessons, countdownHtml, isNext) {
-    const items = dedupe(lessons);
-    const cls = `nlw-block${isNext ? ' nlw-next' : ''}`;
+/**
+ * Short group badge for a lesson: its real label, else derive "N.SK" from the
+ * group number when it's a plain numbered group (1–4). Never invents an ordinal
+ * for unnamed/special groups — returns '' so the badge is simply omitted.
+ */
+function groupBadge(l) {
+    const real = groupLabel(l);
+    if (real) return real;
+    const n = groupNum(l);
+    return n >= 1 && n <= 4 ? `${n}.SK` : '';
+}
 
-    if (items.length <= 1) {
-        const l = items[0];
+/** Render one group column (live or cancelled). */
+function groupHTML(l, cancelled) {
+    const subj = esc(abbreviateSubject(l.subject));
+    const badge = esc(groupBadge(l));
+    const badgeHtml = badge ? `<span class="nlw-gbadge">${badge}</span>` : '';
+    if (cancelled) {
+        const aria = badge ? `${badge}: odpadlo` : 'odpadlo';
+        return `<div class="nlw-group nlw-cancelled" aria-label="${aria}">
+            ${badgeHtml}
+            <span class="nlw-main">${subj}</span>
+            <span class="nlw-odpadlo">odpadlo</span>
+        </div>`;
+    }
+    const room = esc(l.room || '?');
+    return `<div class="nlw-group">
+        ${badgeHtml}
+        <span class="nlw-main">${subj}</span>
+        <span class="nlw-sub"><span class="nlw-room">${room}</span></span>
+    </div>`;
+}
+
+/** Render one block ("Teď" / "Další"), splitting into groups when needed. */
+function blockHTML(label, descriptor, countdownHtml, isNext, live) {
+    const { survivors, cancelled, isSplit } = descriptor;
+    const cls = `nlw-block${isNext ? ' nlw-next' : ''}`;
+    const dot = live ? '<span class="nlw-dot"></span>' : '';
+    const lbl = `<span class="nlw-lbl">${dot}${label}</span>`;
+
+    // Compact single-block only when the hour is NOT split and there's one lesson.
+    if (!isSplit && survivors.length <= 1) {
+        const l = survivors[0];
         const subj = esc(abbreviateSubject(l.subject));
         const room = esc(l.room || '?');
         return `<div class="${cls}">
-            <span class="nlw-lbl">${label}</span>
+            ${lbl}
             <span class="nlw-main">${subj}</span>
             <span class="nlw-sub"><span class="nlw-room">${room}</span> · ${countdownHtml}</span>
         </div>`;
     }
 
-    const groups = items.map(l => {
-        const subj = esc(abbreviateSubject(l.subject));
-        const room = esc(l.room || '?');
-        const g = esc(groupLabel(l));
-        return `<div class="nlw-group">
-            ${g ? `<span class="nlw-gbadge">${g}</span>` : ''}
-            <span class="nlw-main">${subj}</span>
-            <span class="nlw-sub"><span class="nlw-room">${room}</span></span>
-        </div>`;
-    }).join('');
+    // Group layout: each group carries its own badge (derived from its real group).
+    const liveGroups = survivors.map(l => groupHTML(l, false)).join('');
+    const cancelledGroups = cancelled.map(c => groupHTML(c.lesson, true)).join('');
 
     return `<div class="${cls} nlw-split">
         <div class="nlw-head">
-            <span class="nlw-lbl">${label}</span>
+            ${lbl}
             <span class="nlw-sub">${countdownHtml}</span>
         </div>
-        <div class="nlw-groups">${groups}</div>
+        <div class="nlw-groups">${liveGroups}${cancelledGroups}</div>
     </div>`;
 }
 
@@ -154,8 +225,8 @@ export function refreshNextLessonWidget() {
     for (const h of hours) {
         const s = startMin(h), e = endMin(h);
         if (s == null) continue;
-        if (now >= s && now <= e) current = { lessons: map.get(h), start: s, end: e };
-        if (now < s && !next) next = { lessons: map.get(h), start: s };
+        if (now >= s && now <= e) current = { descriptor: map.get(h), start: s, end: e };
+        if (now < s && !next) next = { descriptor: map.get(h), start: s };
     }
 
     // Nothing running and nothing left today → hide (school day over).
@@ -165,13 +236,13 @@ export function refreshNextLessonWidget() {
     if (current) {
         const left = Math.max(0, current.end - now);
         const cd = `končí <span class="nlw-cd">${inText(left)}</span>`;
-        html += blockHTML('Teď', current.lessons, cd, false);
+        html += blockHTML('Teď', current.descriptor, cd, false, true);
     }
     if (next) {
         const until = Math.max(0, next.start - now);
         const cd = `<span class="nlw-cd">${inText(until)}</span>`;
         html += (current ? '<div class="nlw-sep"></div>' : '')
-            + blockHTML(current ? 'Další' : 'Začátek', next.lessons, cd, true);
+            + blockHTML(current ? 'Další' : 'Začátek', next.descriptor, cd, true, false);
     }
 
     // Progress bar along the bottom: how much of the current lesson is already behind us.
@@ -184,8 +255,17 @@ export function refreshNextLessonWidget() {
     el.classList.remove('hidden');
 }
 
-/** Start the periodic refresh (every 30s). Safe to call once. */
+/** Start the periodic refresh (every 15s). Safe to call once. */
 export function initNextLessonWidget() {
     if (intervalId) return;
-    intervalId = setInterval(refreshNextLessonWidget, 30 * 1000);
+    intervalId = setInterval(refreshNextLessonWidget, 15 * 1000);
+
+    // Re-render when the tab returns to the foreground: mobile browsers suspend
+    // timers in the background, so finished lessons would otherwise linger.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refreshNextLessonWidget();
+    });
+    window.addEventListener('focus', refreshNextLessonWidget);
+    window.addEventListener('pageshow', refreshNextLessonWidget);
+    window.addEventListener('online', refreshNextLessonWidget);
 }
