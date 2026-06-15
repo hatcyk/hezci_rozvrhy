@@ -1,6 +1,6 @@
 import { dom } from './dom.js';
 import { state, updateState } from './state.js';
-import { days, daysShort, lessonTimes } from './constants.js';
+import { days, daysShort, lessonTimes, SKELETON_METRICS } from './constants.js';
 import {
     abbreviateSubject,
     abbreviateTeacherName,
@@ -17,21 +17,175 @@ import { getMondayOfWeek } from './utils.js';
 import { populateDropdown, getDropdownValue } from './dropdown.js';
 import { refreshNextLessonWidget } from './next-lesson.js';
 
-// Loading skeleton shown while a timetable is being fetched.
-function showSkeleton() {
-    const el = document.getElementById('timetableSkeleton');
-    if (!el) return;
-    if (!el.dataset.filled) {
-        el.innerHTML = Array.from({ length: 8 }).map(() =>
-            '<div class="skel-card"><div class="skel-line w35"></div><div class="skel-line w70"></div><div class="skel-line w55"></div></div>'
-        ).join('');
-        el.dataset.filled = '1';
+// Loading skeleton shown while a timetable is being fetched. The skeleton
+// mirrors the active layout (state.layoutMode) and is sized to fill the
+// viewport. Counts are computed in JS and passed to CSS via inline custom
+// props (--skel-rows / --skel-cols).
+
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+const repeat = (n, fn) => Array.from({ length: n }).map((_, i) => fn(i)).join('');
+
+// Ensure the skeleton container exists (some renderers wipe
+// .timetable-container.innerHTML, so re-create it lazily as the first child).
+function ensureSkeletonElement() {
+    let el = document.getElementById('timetableSkeleton');
+    if (el) return el;
+
+    el = document.createElement('div');
+    el.id = 'timetableSkeleton';
+    el.className = 'timetable-skeleton hidden';
+
+    const container = document.querySelector('.timetable-container');
+    if (container) {
+        container.insertBefore(el, container.firstChild);
+    } else {
+        const grid = document.getElementById('timetable');
+        if (grid && grid.parentNode) {
+            grid.parentNode.insertBefore(el, grid);
+        } else {
+            document.body.appendChild(el);
+        }
     }
+    return el;
+}
+
+// Figure out how many rows/cols fit into the available box.
+function computeSkeletonFit(el) {
+    const m = SKELETON_METRICS;
+    // The skeleton is display:none when measured, so its own box collapses to 0.
+    // Measure the (visible) container instead, so available height excludes the
+    // header/day-selector/widget chrome above it and we don't over-count rows.
+    const box = el.parentElement || el;
+    const rect = box.getBoundingClientRect();
+    const top = rect.height > 0 ? rect.top : (el.getBoundingClientRect().top || rect.top);
+    const availH = Math.max(rect.height, window.innerHeight - top);
+    const availW = box.clientWidth || el.clientWidth || window.innerWidth;
+
+    const rows = clamp(
+        Math.floor((availH + m.GAP) / (m.ROW_HEIGHT + m.GAP)),
+        m.MIN_ROWS,
+        m.MAX_HOURS
+    );
+    const gridCols = clamp(
+        Math.floor((availW - m.HOUR_COL_WIDTH) / m.COL_WIDTH),
+        1,
+        m.MAX_HOURS
+    );
+    const gridRows = m.MAX_DAYS; // always all weekdays
+
+    return { availH, availW, rows, gridRows, gridCols };
+}
+
+function buildWeekSkeleton(fit) {
+    const cols = fit.gridCols;
+    const head =
+        '<div class="skel-grid-head"><div class="skel-corner"></div>' +
+        repeat(cols, () => '<div class="skel-dayhdr"></div>') +
+        '</div>';
+    const body =
+        '<div class="skel-grid-body">' +
+        repeat(fit.gridRows, () =>
+            '<div class="skel-rowline"><div class="skel-timecell"></div>' +
+            repeat(cols, () => '<div class="skel-cell"></div>') +
+            '</div>'
+        ) +
+        '</div>';
+    return '<div class="skel-grid">' + head + body + '</div>';
+}
+
+function buildSingleDaySkeleton(fit) {
+    return repeat(fit.rows, () =>
+        '<div class="skel-row"><div class="skel-timechip"></div><div class="skel-block"></div></div>'
+    );
+}
+
+function buildCardSkeleton() {
+    return (
+        '<div class="skel-peek skel-peek-l"></div>' +
+        '<div class="skel-bigcard">' +
+            '<div class="skel-card-head"><div class="skel-line w35"></div><div class="skel-badge"></div></div>' +
+            '<div class="skel-line w70"></div>' +
+            '<div class="skel-line"></div>' +
+            '<div class="skel-line w55"></div>' +
+        '</div>' +
+        '<div class="skel-peek skel-peek-r"></div>' +
+        '<div class="skel-dots"><div class="skel-dot skel-dot-active"></div><div class="skel-dot"></div><div class="skel-dot"></div></div>'
+    );
+}
+
+function buildListSkeleton(fit) {
+    return repeat(fit.rows, () =>
+        '<div class="skel-crow"><div class="skel-cbadge"></div><div class="skel-cbody"><div class="skel-line w55"></div><div class="skel-line w35"></div></div></div>'
+    );
+}
+
+function buildAgendaSkeleton(fit) {
+    return repeat(fit.rows, () =>
+        '<div class="skel-arow"><div class="skel-atime"></div><div class="skel-acard"><div class="skel-line w55"></div><div class="skel-line w35"></div></div></div>'
+    );
+}
+
+const SKELETON_BUILDERS = {
+    'week-view': buildWeekSkeleton,
+    'single-day': buildSingleDaySkeleton,
+    'card-view': buildCardSkeleton,
+    'compact-list': buildListSkeleton,
+    'agenda': buildAgendaSkeleton
+};
+
+const SKELETON_MODIFIERS = {
+    'week-view': 'skel-week',
+    'single-day': 'skel-day',
+    'card-view': 'skel-card-view',
+    'compact-list': 'skel-compact',
+    'agenda': 'skel-agenda'
+};
+
+function showSkeleton() {
+    const el = ensureSkeletonElement();
+    const fit = computeSkeletonFit(el);
+    const mode = state.layoutMode;
+    const builder = SKELETON_BUILDERS[mode] || buildListSkeleton;
+    const modifier = SKELETON_MODIFIERS[mode] || 'skel-compact';
+
+    const key = `${mode}|${fit.rows}|${fit.gridCols}`;
+
+    if (el.dataset.skelKey === key && el.childElementCount > 0) {
+        revealSkeleton(el);
+        return;
+    }
+
+    el.className = `timetable-skeleton ${modifier}`;
+    el.style.setProperty('--skel-rows', String(fit.rows));
+    if (mode === 'week-view') {
+        el.style.setProperty('--skel-cols', String(fit.gridCols));
+    } else {
+        el.style.removeProperty('--skel-cols');
+    }
+    el.innerHTML = builder(fit);
+    el.dataset.skelKey = key;
+
+    revealSkeleton(el);
+}
+
+// Show the skeleton with loading semantics for assistive tech. A *visible*
+// indicator must not be aria-hidden, so we expose it as a polite status
+// region while shown; `.hidden` (display:none) keeps it out of the a11y tree
+// once loading finishes.
+function revealSkeleton(el) {
+    el.removeAttribute('aria-hidden');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-busy', 'true');
+    el.setAttribute('aria-label', 'Načítání rozvrhu');
     el.classList.remove('hidden');
 }
+
 function hideSkeleton() {
     const el = document.getElementById('timetableSkeleton');
-    if (el) el.classList.add('hidden');
+    if (el) {
+        el.setAttribute('aria-busy', 'false');
+        el.classList.add('hidden');
+    }
 }
 
 // Populate value selector

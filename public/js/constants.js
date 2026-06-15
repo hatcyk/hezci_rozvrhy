@@ -103,3 +103,17 @@ export const lessonTimes = [
 
 export const days = ['Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek'];
 export const daysShort = ['Po', 'Út', 'St', 'Čt', 'Pá'];
+
+// Pixel metrics used to compute how large a layout-aware loading skeleton
+// should be so it fills the viewport without overflowing.
+export const SKELETON_METRICS = {
+    ROW_HEIGHT: 64,
+    GRID_ROW_HEIGHT: 88,
+    COL_WIDTH: 180,
+    HOUR_COL_WIDTH: 60,
+    HEADER_HEIGHT: 56,
+    GAP: 10,
+    MIN_ROWS: 3,
+    MAX_HOURS: lessonTimes.length, // 13
+    MAX_DAYS: days.length // 5
+};
