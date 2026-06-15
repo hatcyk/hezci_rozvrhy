@@ -8,7 +8,7 @@ import { initCustomDropdown, setDropdownValue, openDropdown } from './dropdown.j
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek } from './utils.js';
 import { initSunData } from './suntime.js';
 import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from './firebase-client.js';
-import { registerServiceWorker, initializeMessaging, initNotificationButton, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
+import { registerServiceWorker, initializeMessaging, reconcileLessonReminderToken, initNotificationButton, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
 import { loadFavorites } from './favorites.js';
@@ -199,6 +199,11 @@ async function init() {
         registerServiceWorker().catch(err => console.error('Service Worker registration failed:', err));
         initializeMessaging().catch(err => console.error('Firebase Messaging initialization failed:', err));
 
+        // Re-sync the FCM token for users who have lesson reminders enabled but
+        // lost (or never saved) their token — and flag the case the modal warns
+        // about. Non-blocking; runs after messaging init has had a chance to set up.
+        reconcileLessonReminderToken().catch(err => console.error('Reminder token reconcile failed:', err));
+
         // Initialize sun data (async, doesn't block)
         initSunData().catch(err => console.error('Failed to load sun data:', err));
 
@@ -275,6 +280,9 @@ async function init() {
         }
         if (dom.notificationToggleDisable) {
             dom.notificationToggleDisable.addEventListener('click', disableNotificationsHandler);
+        }
+        if (dom.reminderWarningEnableBtn) {
+            dom.reminderWarningEnableBtn.addEventListener('click', enableNotifications);
         }
 
         // React to deep-link navigations sent by the SW after this page is loaded

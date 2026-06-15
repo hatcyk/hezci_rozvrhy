@@ -124,6 +124,31 @@ async function initializeModal() {
     updateMultiselectLabel();
     renderSelectedTimetablesPreferences();
     updateNotificationUIState();
+    updateReminderWarning();
+}
+
+/** True if any watched timetable has a lesson reminder type switched on. */
+function lessonRemindersEnabled() {
+    return (state.watchedTimetables || []).some(t => {
+        const r = (t.notificationTypes && t.notificationTypes.reminders) || {};
+        return r.next_lesson_room || r.next_lesson_teacher || r.next_lesson_subject;
+    });
+}
+
+/**
+ * Show a warning when lesson reminders are enabled but undeliverable — reminders
+ * ON while there's no working token (notifications off) or no browser permission.
+ */
+export function updateReminderWarning() {
+    const el = dom.reminderTokenWarning;
+    if (!el) return;
+
+    const permission = (typeof Notification !== 'undefined') ? Notification.permission : 'default';
+    const undeliverable = !state.notificationsEnabled || permission !== 'granted';
+    const show = lessonRemindersEnabled() && undeliverable;
+
+    el.style.display = show ? 'block' : 'none';
+    updateState('remindersNeedAttention', show);
 }
 
 /**
@@ -199,6 +224,7 @@ export async function enableNotifications() {
 
         // Update UI after successful enable
         updateNotificationUIState();
+        updateReminderWarning();
     } catch (error) {
         if (error.message === 'IOS_NOT_STANDALONE') {
             alert('Na iOS musíte nejdřív přidat web na plochu (Home Screen). Klikněte na tlačítko "Sdílet" a pak "Přidat na plochu".');
@@ -238,6 +264,7 @@ export async function disableNotificationsHandler() {
 
         // Update UI after successful disable
         updateNotificationUIState();
+        updateReminderWarning();
     } catch (error) {
         alert('Nepodařilo se vypnout notifikace: ' + error.message);
 

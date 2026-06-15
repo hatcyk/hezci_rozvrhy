@@ -25,6 +25,8 @@ export const dom = {
     notificationToggleDisable: null,
     notificationSection: null,
     iosWarning: null,
+    reminderTokenWarning: null,
+    reminderWarningEnableBtn: null,
     watchedTimetablesList: null,
     flatTimetableList: null,
     flatListSearch: null
@@ -57,6 +59,8 @@ export function initDOM() {
     dom.notificationToggleDisable = document.getElementById('notificationToggleDisable');
     dom.notificationSection = document.getElementById('notificationSection');
     dom.iosWarning = document.getElementById('iosWarning');
+    dom.reminderTokenWarning = document.getElementById('reminderTokenWarning');
+    dom.reminderWarningEnableBtn = document.getElementById('reminderWarningEnableBtn');
     dom.watchedTimetablesList = document.getElementById('watchedTimetablesList');
     dom.flatTimetableList = document.getElementById('flatTimetableList');
     dom.flatListSearch = document.getElementById('flatListSearch');
