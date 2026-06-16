@@ -118,7 +118,10 @@
     gap: 10px;
     padding: 4px 0;
 }
-.timetable-skeleton.hidden { display: none; }
+/* Must win over the per-layout `.timetable-skeleton.skel-* { display: … }`
+   modifiers below (equal specificity, but they come later in the file), so
+   hiding always works regardless of which layout class is set. */
+.timetable-skeleton.hidden { display: none !important; }
 
 .skel-card {
     background: var(--card-bg);
