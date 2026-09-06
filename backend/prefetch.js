@@ -513,11 +513,20 @@ async function prefetchAllData() {
         console.log('\n📦 Extracting groups for each class...');
         const classGroups = {}; // Map: classId -> Set<groupName>
 
-        for (const classEntity of definitions.classes) {
+        // Timetables fetched here are exactly the Class/Actual and Class/Next
+        // tasks processed below, so keep them and skip the second Bakaláři
+        // round-trip for those (~2 requests per class per run).
+        const prefetchedTimetables = new Map(); // docKey -> lessons
+
+        const extractGroupsForClass = async (classEntity) => {
             try {
                 // Fetch both Actual and Next schedules to get all possible groups
-                const actualLessons = await fetchTimetable('Class', classEntity.id, 'Actual');
-                const nextLessons = await fetchTimetable('Class', classEntity.id, 'Next');
+                const [actualLessons, nextLessons] = await Promise.all([
+                    fetchTimetable('Class', classEntity.id, 'Actual'),
+                    fetchTimetable('Class', classEntity.id, 'Next'),
+                ]);
+                prefetchedTimetables.set(`Class_${classEntity.id}_Actual`, actualLessons);
+                prefetchedTimetables.set(`Class_${classEntity.id}_Next`, nextLessons);
                 const allLessons = [...actualLessons, ...nextLessons];
 
                 const groupsSet = new Set();
@@ -538,6 +547,10 @@ async function prefetchAllData() {
             } catch (error) {
                 console.error(`   Failed to extract groups for ${classEntity.name}:`, error.message);
             }
+        };
+
+        for (let i = 0; i < definitions.classes.length; i += CONCURRENT_REQUESTS) {
+            await Promise.all(definitions.classes.slice(i, i + CONCURRENT_REQUESTS).map(extractGroupsForClass));
         }
 
         await db.collection('definitions').doc('current').set({
@@ -616,6 +629,32 @@ async function prefetchAllData() {
         }
 
         const totalExpectedRequests = tasks.length;
+
+        // Load every snapshot the loop will compare against in a few bulk
+        // getAll() calls instead of one get() per task (and a second one for
+        // the Permanent doc of each class). Same billed reads, far fewer
+        // round-trips, and each doc is read once.
+        const snapshotCache = new Map(); // docKey -> lessons[] | null
+        {
+            const wanted = new Set();
+            for (const task of tasks) {
+                wanted.add(`${task.type}_${task.entity.id}_${task.scheduleType}`);
+                if (task.scheduleType === 'Actual' && task.type === 'Class') {
+                    wanted.add(`${task.type}_${task.entity.id}_Permanent`);
+                }
+            }
+            const keys = Array.from(wanted);
+            const GET_ALL_CHUNK = 50;
+            for (let i = 0; i < keys.length; i += GET_ALL_CHUNK) {
+                const chunk = keys.slice(i, i + GET_ALL_CHUNK);
+                const docs = await db.getAll(...chunk.map((key) => db.collection('timetables').doc(key)));
+                docs.forEach((doc, idx) => {
+                    snapshotCache.set(chunk[idx], doc.exists ? (doc.data().data ?? null) : null);
+                });
+            }
+            console.log(`📦 Preloaded ${keys.length} existing snapshots from Firestore`);
+        }
+
         console.log(`\n📚 Processing ${totalExpectedRequests} timetables with ${CONCURRENT_REQUESTS} parallel requests...`);
         console.log(`⏱️  Estimated time: ~${Math.ceil(totalExpectedRequests / CONCURRENT_REQUESTS * 0.5 / 60)} minutes\n`);
 
@@ -626,28 +665,26 @@ async function prefetchAllData() {
                 const progress = `[${totalRequests}/${totalExpectedRequests}]`;
 
                 try {
-                    // Fetch timetable
-                    let timetableData = await fetchTimetable(task.type, task.entity.id, task.scheduleType);
-
                     const docKey = `${task.type}_${task.entity.id}_${task.scheduleType}`;
+
+                    // Fetch timetable (or reuse the copy from the group-extraction step)
+                    let timetableData = prefetchedTimetables.has(docKey)
+                        ? prefetchedTimetables.get(docKey)
+                        : await fetchTimetable(task.type, task.entity.id, task.scheduleType);
 
                     // For Actual schedules of Classes, add removed lessons from Permanent schedule
                     // This ensures removed group lessons are displayed with strikethrough.
                     // Also keep permanentData so change-detector can filter out "revert to normal" events.
                     let permanentData = null;
                     if (task.scheduleType === 'Actual' && task.type === 'Class') {
-                        const permanentDocKey = `${task.type}_${task.entity.id}_Permanent`;
-                        const permanentDoc = await db.collection('timetables').doc(permanentDocKey).get();
-
-                        if (permanentDoc.exists) {
-                            permanentData = permanentDoc.data().data;
+                        permanentData = snapshotCache.get(`${task.type}_${task.entity.id}_Permanent`) ?? null;
+                        if (permanentData) {
                             timetableData = addRemovedLessonsFromPermanent(timetableData, permanentData);
                         }
                     }
 
-                    // Get previous snapshot for change detection
-                    const previousDoc = await db.collection('timetables').doc(docKey).get();
-                    const previousData = previousDoc.exists ? previousDoc.data().data : null;
+                    // Previous snapshot for change detection (preloaded above)
+                    const previousData = snapshotCache.get(docKey) ?? null;
 
                     // Detect changes if previous snapshot exists
                     let hasChanges = false;
@@ -693,6 +730,9 @@ async function prefetchAllData() {
                             data: timetableData,
                             lastUpdate: new Date().toISOString(),
                         });
+                        // Keep the in-run cache current (a fresh Permanent snapshot is
+                        // then visible to later tasks of the same run).
+                        snapshotCache.set(docKey, timetableData);
                         successCount++;
                         console.log(`${progress} ✅ ${task.type}/${task.entity.name}/${task.scheduleType} (Updated)`);
                     } else {
