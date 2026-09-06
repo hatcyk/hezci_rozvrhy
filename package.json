@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "build": "node tools/build.js"
   },
   "dependencies": {
     "@vercel/analytics": "^1.6.1",
@@ -31,5 +32,8 @@
   "bugs": {
     "url": "https://github.com/hatcyk/bakalari/issues"
   },
-  "homepage": "https://github.com/hatcyk/bakalari#readme"
+  "homepage": "https://github.com/hatcyk/bakalari#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
 }

@@ -4,25 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Lepší Rozvrh</title>
-    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
     <link rel="manifest" href="manifest.webmanifest">
     <meta name="theme-color" content="#10111A">
     <link rel="apple-touch-icon" href="icon-180.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Rozvrhy">
-    <link rel="stylesheet" href="css/main.css">
-    <link rel="stylesheet" href="css/theme-warning.css">
-    <link rel="stylesheet" href="css/notifications.css">
-    <link rel="stylesheet" href="css/toast.css">
-    <link rel="stylesheet" href="css/timetable-extras.css">
-    <link rel="stylesheet" href="css/settings.css">
-    <link rel="stylesheet" href="css/layout-modal.css">
-    <link rel="stylesheet" href="css/layout-card-view.css">
-    <link rel="stylesheet" href="css/layout-compact-list.css">
-    <link rel="stylesheet" href="css/outage.css">
-    <link rel="stylesheet" href="css/footer.css">
-    <link rel="stylesheet" href="css/favorites.css">
+    <link rel="stylesheet" href="css/app.css?v=3761fe3a6c">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
@@ -440,10 +429,10 @@
     </footer>
 
     <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
 
     <!-- Firebase Configuration -->
     <script>
@@ -459,18 +448,19 @@
         };
     </script>
 
-    <!-- Vercel Speed Insights -->
-    <script type="module">
-        import { injectSpeedInsights } from 'https://cdn.jsdelivr.net/npm/@vercel/speed-insights@1/dist/index.mjs';
-        injectSpeedInsights();
+    <!-- Vercel Speed Insights + Web Analytics: loaded after the app, off the critical path -->
+    <script>
+        window.addEventListener('load', () => {
+            const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1500));
+            idle(() => {
+                import('https://cdn.jsdelivr.net/npm/@vercel/speed-insights@1/dist/index.mjs')
+                    .then((m) => m.injectSpeedInsights()).catch(() => {});
+                import('https://cdn.jsdelivr.net/npm/@vercel/analytics@1/dist/index.mjs')
+                    .then((m) => m.inject()).catch(() => {});
+            });
+        });
     </script>
 
-    <!-- Vercel Web Analytics -->
-    <script type="module">
-        import { inject } from 'https://cdn.jsdelivr.net/npm/@vercel/analytics@1/dist/index.mjs';
-        inject();
-    </script>
-
-    <script type="module" src="js/main.js"></script>
+    <script type="module" src="js/app.js?v=81a49777d0"></script>
 </body>
 </html>

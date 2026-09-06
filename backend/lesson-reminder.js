@@ -389,21 +389,6 @@ async function sendLessonReminders(options = {}) {
 
             for (const user of users) {
                 try {
-                    // Check if notification already sent (IDEMPOTENCY)
-                    const alreadySent = await hasNotificationBeenSent(
-                        user.userId,
-                        timeInfo.formattedDate,
-                        lessonWindow.hour
-                    );
-
-                    if (alreadySent) {
-                        console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - already sent, skipping`);
-                        totalSkipped++;
-                        continue;
-                    }
-
-                    console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - not sent yet`);
-
                     // Get user's lessons for this hour. Each entry keeps a reference to
                     // the timetable it came from so we record the correct source below
                     // (previously metadata always pointed at watchedTimetables[0]).
@@ -467,6 +452,23 @@ async function sendLessonReminders(options = {}) {
                         console.log(`   ⏭️  User ${user.userId} has no lesson in hour ${lessonWindow.hour}`);
                         continue;
                     }
+
+                    // Check if notification already sent (IDEMPOTENCY). Done after the
+                    // timetable lookup (served from the in-run cache) so users without a
+                    // lesson in this hour cost no Firestore read every minute.
+                    const alreadySent = await hasNotificationBeenSent(
+                        user.userId,
+                        timeInfo.formattedDate,
+                        lessonWindow.hour
+                    );
+
+                    if (alreadySent) {
+                        console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - already sent, skipping`);
+                        totalSkipped++;
+                        continue;
+                    }
+
+                    console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - not sent yet`);
 
                     // Send notification for first lesson (if multiple, they're usually the same subject)
                     const { lesson, source: lessonSource } = userLessons[0];
