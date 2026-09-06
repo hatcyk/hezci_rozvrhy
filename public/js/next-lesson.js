@@ -258,7 +258,12 @@ export function refreshNextLessonWidget() {
 /** Start the periodic refresh (every 15s). Safe to call once. */
 export function initNextLessonWidget() {
     if (intervalId) return;
-    intervalId = setInterval(refreshNextLessonWidget, 15 * 1000);
+    // Skip the re-render while the tab is hidden; the visibilitychange
+    // listener below catches up as soon as it becomes visible again.
+    intervalId = setInterval(() => {
+        if (document.visibilityState === 'hidden') return;
+        refreshNextLessonWidget();
+    }, 15 * 1000);
 
     // Re-render when the tab returns to the foreground: mobile browsers suspend
     // timers in the background, so finished lessons would otherwise linger.
