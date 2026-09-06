@@ -233,6 +233,7 @@ async function init() {
 
         // Periodically check Bakalari status (every 2 minutes)
         setInterval(async () => {
+            if (document.visibilityState === 'hidden') return; // no point polling a hidden tab
             const isUp = await checkBakalariStatus();
             if (!isUp && dom.outageBanner) {
                 if (dom.outageBanner.classList.contains('hidden')) {

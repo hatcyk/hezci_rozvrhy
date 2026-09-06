@@ -22,20 +22,20 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50kb' }));
 
-// Set proper MIME types
-app.use((req, res, next) => {
-    if (req.url.endsWith('.js')) {
-        res.type('application/javascript');
-    } else if (req.url.endsWith('.css')) {
-        res.type('text/css');
+// Serve static files (express.static sets the right Content-Type itself).
+// Long-lived caching only for the versioned bundles (?v=hash in the URL);
+// everything else stays revalidated so the SW / index.html pick up changes.
+app.use(express.static(path.join(__dirname, 'public'), {
+    setHeaders(res, filePath) {
+        if (/[\\/](?:app\.css|app\.js)$/.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        } else if (filePath.endsWith('firebase-messaging-sw.js')) {
+            res.setHeader('Cache-Control', 'no-cache');
+        }
     }
-    next();
-});
-
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+}));
 
 // Serve login page without .html extension
 app.get('/login', (req, res) => {

@@ -45,6 +45,9 @@ export async function manualRefresh() {
  * Auto-refresh the timetable every 10 minutes
  */
 function autoRefresh() {
+    // Nothing to refresh for a hidden tab; the check runs again once visible.
+    if (document.visibilityState === 'hidden') return;
+
     const now = Date.now();
     const timeSinceLastRefresh = now - lastRefreshTime;
     const tenMinutes = 10 * 60 * 1000; // 10 minutes in milliseconds
@@ -78,6 +81,10 @@ export function initRefresh() {
     // Set up auto-refresh every 10 minutes
     // Check every minute, but only refresh if 10 minutes have passed
     autoRefreshInterval = setInterval(autoRefresh, 60 * 1000); // Check every 1 minute
+    // Catch up immediately when the user comes back to a stale tab
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') autoRefresh();
+    });
     debug.log('✅ Auto-refresh initialized (checks every minute, refreshes every 10 minutes)');
 }
 
