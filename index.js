@@ -5,7 +5,7 @@ const path = require('path');
 const os = require('os');
 
 // Import routes
-const timetableRoutes = require('./routes/timetable');
+const groupsRoutes = require('./routes/groups');
 const authRoutes = require('./routes/auth');
 const fcmRoutes = require('./routes/fcm');
 const prefetchRoutes = require('./routes/prefetch');
@@ -43,7 +43,7 @@ app.get('/login', (req, res) => {
 });
 
 // Mount API routes
-app.use('/api', timetableRoutes);
+app.use('/api', groupsRoutes);
 app.use('/api', authRoutes);
 app.use('/api', statusRoutes);
 // Test/debug notification endpoints are unauthenticated and can send FCM messages
@@ -72,7 +72,7 @@ function getLocalIP() {
 }
 
 // Start server
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
 app.listen(PORT, HOST, () => {
