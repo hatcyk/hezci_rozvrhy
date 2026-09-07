@@ -88,6 +88,11 @@ test('parseTimetableHtml parses normal, substituted, removed and absent lessons'
     assert.equal(tue.group, 'TVk1');
 });
 
+test('parseTimetableHtml returns [] for a page without timetable markup', () => {
+    assert.deepEqual(parseTimetableHtml('<html><body><h1>Přihlášení</h1></body></html>'), []);
+    assert.deepEqual(parseTimetableHtml(''), []);
+});
+
 test('addRemovedLessonsFromPermanent marks lessons missing from actual as removed', () => {
     const permanent = [
         { day: 0, hour: 1, subject: 'Matematika', teacher: 'Nováková Jana', group: null, type: 'atom' },
