@@ -18,6 +18,7 @@ import { initOfflineDetection } from './offline.js';
 import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
 import { debug } from './debug.js';
 import { initNextLessonWidget } from './next-lesson.js';
+import { initLessonStatusUpdates } from './lesson-status.js';
 
 /**
  * Listen for deep-link messages from the service worker (fallback for browsers
@@ -270,6 +271,7 @@ async function init() {
         initFavoritesModal();
         initRefresh();
         initNextLessonWidget();
+        initLessonStatusUpdates();
 
         // Initialize notification modal listeners
         if (dom.notificationModalClose) {
