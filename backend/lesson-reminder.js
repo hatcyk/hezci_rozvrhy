@@ -14,6 +14,7 @@ const { sendNotificationToTokens, pruneInvalidTokens, ensureWatchIndexMigrated }
 const { getPragueTime, getPragueTimeInfo, isWeekend } = require('./timezone-manager');
 const { calculateNotificationWindows, findLessonsToNotify, formatMinutesToTime } = require('./schedule-calculator');
 const { hasNotificationBeenSent, recordNotificationSent } = require('./notification-tracker');
+const { matchesGroupFilters } = require('./bakalari-parser');
 
 // Lesson times (from /public/js/constants.js)
 const lessonTimes = [
@@ -240,31 +241,6 @@ function findLessonInSlot(lessons, hourSlot) {
 }
 
 /**
- * Standardize group name to normalized format
- * @param {String} groupName - Raw group name from Bakalari
- * @returns {String} Standardized name (e.g., "1.sk", "2.sk", "celá")
- */
-function standardizeGroupName(groupName) {
-    if (!groupName) return '';
-
-    const lower = groupName.toLowerCase().trim();
-
-    // "celá třída"
-    if (lower.includes('celá') || lower === 'cela') {
-        return 'celá';
-    }
-
-    // Extract number: "1. sk", "skupina 1", "1.skupina" → "1.sk"
-    const groupMatch = lower.match(/(\d+)[\.\s]*(?:skupina|sk)?|(?:skupina|sk)[\.\s]*(\d+)/);
-    if (groupMatch) {
-        const groupNum = groupMatch[1] || groupMatch[2];
-        return `${groupNum}.sk`;
-    }
-
-    return groupName;
-}
-
-/**
  * Get correct Czech plural form for minutes
  * @param {Number} minutes - Number of minutes
  * @returns {String} Correct Czech word (minuta/minuty/minut)
@@ -416,24 +392,11 @@ async function sendLessonReminders(options = {}) {
                             groupFilters = [];
                         }
 
-                        const groupFilteredLessons = validLessons.filter(lesson => {
-                            // Empty array or "all" - show all
-                            if (groupFilters.length === 0 || groupFilters.includes('all')) {
-                                return true;
-                            }
-
-                            // Lesson without group - show always (whole class)
-                            const hasNoGroup = !lesson.group ||
-                                (typeof lesson.group === 'string' && lesson.group.trim() === '');
-
-                            if (hasNoGroup) {
-                                return true;
-                            }
-
-                            // Compare standardized groups
-                            const standardizedLessonGroup = standardizeGroupName(lesson.group);
-                            return groupFilters.includes(standardizedLessonGroup);
-                        });
+                        // Whole-class lessons always pass; group lessons must match the
+                        // user's (normalized) group filters.
+                        const groupFilteredLessons = validLessons.filter(lesson =>
+                            matchesGroupFilters(lesson.group, groupFilters)
+                        );
 
                         // Filter out "Dívčí tělocvik" lessons
                         const filteredLessons = groupFilteredLessons.filter(lesson =>
