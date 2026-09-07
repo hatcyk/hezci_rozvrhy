@@ -213,27 +213,6 @@ export function populateValueSelect() {
     populateDropdown(items);
 }
 
-// Initialize week view toggle button
-export function initWeekViewToggle() {
-    if (!dom.weekViewToggle) return;
-
-    dom.weekViewToggle.addEventListener('click', async () => {
-        // ✓ Měnit layoutMode, ne showWholeWeek (deprecated)
-        const newMode = state.layoutMode === 'single-day' ? 'week-view' : 'single-day';
-
-        // Update button appearance
-        if (newMode === 'week-view') {
-            dom.weekViewToggle.classList.add('active');
-        } else {
-            dom.weekViewToggle.classList.remove('active');
-        }
-
-        // Switch layout (volá applyLayout interně)
-        const { switchLayout } = await import('./layout-manager.js');
-        await switchLayout(newMode);
-    });
-}
-
 // Create day selector for mobile
 export function createDaySelector() {
     if (!dom.daySelector) return;

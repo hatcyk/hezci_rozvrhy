@@ -52,36 +52,6 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
 }
 
 /**
- * Send notification to a single FCM token
- * @param {String} token - FCM device token
- * @param {Object} notification - Notification payload
- * @returns {Promise<String>} Message ID
- */
-async function sendNotificationToToken(token, notification) {
-    try {
-        const messaging = getMessaging();
-
-        const message = {
-            data: {
-                title: notification.title,
-                body: notification.body,
-                icon: notification.icon || '/icon-192.png',
-                ...(notification.data || {})
-            },
-            token: token
-        };
-
-        const response = await messaging.send(message);
-        console.log(`✅ Notification sent to token ${token.substring(0, 20)}...`);
-        return response;
-
-    } catch (error) {
-        console.error(`❌ Failed to send notification to token ${token.substring(0, 20)}...:`, error.message);
-        throw error;
-    }
-}
-
-/**
  * Send notification to multiple FCM tokens
  * @param {Array<String>} tokens - Array of FCM device tokens
  * @param {Object} notification - Notification payload
@@ -513,7 +483,6 @@ async function cleanupOldChanges(daysToKeep = 2) {
 }
 
 module.exports = {
-    sendNotificationToToken,
     sendNotificationToTokens,
     getUsersWatchingTimetable,
     processPendingChanges,

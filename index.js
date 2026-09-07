@@ -11,7 +11,6 @@ const fcmRoutes = require('./routes/fcm');
 const prefetchRoutes = require('./routes/prefetch');
 const debugRoutes = require('./routes/debug');
 const statusRoutes = require('./routes/status');
-const testNotificationsRoutes = require('./routes/test-notifications');
 const cronRoutes = require('./routes/cron');
 const favoritesRoutes = require('./routes/favorites');
 
@@ -37,21 +36,10 @@ app.use(express.static(path.join(__dirname, 'public'), {
     }
 }));
 
-// Serve login page without .html extension
-app.get('/login', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
 // Mount API routes
 app.use('/api', groupsRoutes);
 app.use('/api', authRoutes);
 app.use('/api', statusRoutes);
-// Test/debug notification endpoints are unauthenticated and can send FCM messages
-// and expose device tokens — only mount them when DEBUG is explicitly enabled.
-if (DEBUG) {
-    app.use('/api', testNotificationsRoutes);
-    console.log('🔧 Test notification endpoints mounted at /api/test-ntf (DEBUG mode)');
-}
 app.use('/api/fcm', fcmRoutes);
 app.use('/api/prefetch', prefetchRoutes);
 app.use('/api/debug', debugRoutes);
