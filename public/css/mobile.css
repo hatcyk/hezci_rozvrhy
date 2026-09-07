@@ -146,22 +146,6 @@
         padding: 12px 36px 12px 16px;
     }
 
-    .week-navigation {
-        flex-direction: column;
-        gap: 12px;
-        padding: 12px 16px;
-    }
-
-    .week-nav-btn {
-        width: 100%;
-        justify-content: center;
-        padding: 12px 16px;
-    }
-
-    .week-info {
-        order: -1;
-    }
-
     .day-selector {
         display: flex !important; /* Override the desktop display:none */
         opacity: 1;

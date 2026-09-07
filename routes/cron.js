@@ -147,9 +147,7 @@ router.get('/process-notifications', verifyCronRequest, async (req, res) => {
 
 /**
  * Cleanup cron endpoint - prunes old dedup/notification records.
- * The node-cron daily cleanup in backend/cron.js never runs on serverless (no
- * long-lived process), so this endpoint is the real cleanup path, driven by a
- * scheduled GitHub Actions workflow.
+ * Driven by the scheduled GitHub Actions cleanup workflow.
  */
 router.get('/cleanup', verifyCronRequest, async (req, res) => {
     try {

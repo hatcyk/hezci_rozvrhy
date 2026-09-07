@@ -114,7 +114,6 @@ async function createCustomToken(uid, claims = {}) {
 module.exports = {
     initializeFirebaseAdmin,
     getFirestore,
-    getFirebaseApp,
     getMessaging,
     createCustomToken,
 };

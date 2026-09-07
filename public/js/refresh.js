@@ -88,13 +88,3 @@ export function initRefresh() {
     debug.log('✅ Auto-refresh initialized (checks every minute, refreshes every 10 minutes)');
 }
 
-/**
- * Clean up refresh intervals (for cleanup/testing)
- */
-export function cleanupRefresh() {
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
-        autoRefreshInterval = null;
-        debug.log('🧹 Auto-refresh interval cleaned up');
-    }
-}

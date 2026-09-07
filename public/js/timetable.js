@@ -6,14 +6,12 @@ import {
     abbreviateTeacherName,
     standardizeGroupName,
     getTodayIndex,
-    getCurrentHour,
-    getUpcomingHour,
-    isPastLesson,
-    parseGroupName
+    parseGroupName,
+    getLessonTimeClass,
+    getMondayOfWeek
 } from './utils.js';
 import { showLessonModal } from './modal.js';
 import { fetchTimetable } from './api.js';
-import { getMondayOfWeek } from './utils.js';
 import { populateDropdown, getDropdownValue } from './dropdown.js';
 import { refreshNextLessonWidget } from './next-lesson.js';
 
@@ -213,27 +211,6 @@ export function populateValueSelect() {
     populateDropdown(items);
 }
 
-// Initialize week view toggle button
-export function initWeekViewToggle() {
-    if (!dom.weekViewToggle) return;
-
-    dom.weekViewToggle.addEventListener('click', async () => {
-        // ✓ Měnit layoutMode, ne showWholeWeek (deprecated)
-        const newMode = state.layoutMode === 'single-day' ? 'week-view' : 'single-day';
-
-        // Update button appearance
-        if (newMode === 'week-view') {
-            dom.weekViewToggle.classList.add('active');
-        } else {
-            dom.weekViewToggle.classList.remove('active');
-        }
-
-        // Switch layout (volá applyLayout interně)
-        const { switchLayout } = await import('./layout-manager.js');
-        await switchLayout(newMode);
-    });
-}
-
 // Create day selector for mobile
 export function createDaySelector() {
     if (!dom.daySelector) return;
@@ -306,8 +283,6 @@ export function renderTimetable(data) {
     if (!dom.timetableGrid) return;
 
     const todayIndex = getTodayIndex();
-    const currentHour = getCurrentHour();
-    const upcomingHour = getUpcomingHour();
 
     // Zjistíme všechny hodiny, které se vyskytují v rozvrhu
     const allHours = [...new Set(data.map(d => d.hour))].sort((a, b) => a - b);
@@ -503,19 +478,15 @@ export function renderTimetable(data) {
                     if (lesson.type === 'removed') cardClass += ' removed';
                     if (lesson.type === 'absent') cardClass += ' absent';
 
-                    // Zvýraznění aktuální hodiny (pouze v aktuálním rozvrhu a ne pro zrušené hodiny)
-                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual' && dayIndex === todayIndex && hour === currentHour) {
-                        cardClass += ' current-time';
-                    }
-
-                    // Zvýraznění nadcházející hodiny (pouze v aktuálním rozvrhu a ne pro zrušené hodiny)
-                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual' && dayIndex === todayIndex && hour === upcomingHour && hour !== currentHour) {
-                        cardClass += ' upcoming';
-                    }
-
-                    // Označení proběhlých hodin (pouze v aktuálním rozvrhu a ne pro zrušené hodiny)
-                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual' && isPastLesson(dayIndex, hour)) {
-                        cardClass += ' past';
+                    // Časové zvýraznění (aktuální / nadcházející / proběhlá) – jen v aktuálním
+                    // rozvrhu a ne pro zrušené hodiny. Data-atributy umožňují lesson-status.js
+                    // třídy průběžně přepínat bez překreslení rozvrhu.
+                    if (!isRemovedOrAbsent && state.selectedScheduleType === 'actual') {
+                        const timeClass = getLessonTimeClass(dayIndex, hour);
+                        if (timeClass) cardClass += ` ${timeClass}`;
+                        card.dataset.day = dayIndex;
+                        card.dataset.hour = hour;
+                        card.dataset.timeStatus = '';
                     }
 
                     card.className = cardClass;

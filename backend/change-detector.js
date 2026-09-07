@@ -247,30 +247,6 @@ function detectTimetableChanges(oldData, newData, metadata, permanentData = null
 }
 
 /**
- * Group changes by timetable for efficient notification batching
- * @param {Array} changes - List of all detected changes
- * @returns {Map} Changes grouped by timetable key
- */
-function groupChangesByTimetable(changes) {
-    const grouped = new Map();
-
-    changes.forEach(change => {
-        const key = `${change.timetable.type}_${change.timetable.id}_${change.timetable.scheduleType}`;
-
-        if (!grouped.has(key)) {
-            grouped.set(key, {
-                timetable: change.timetable,
-                changes: []
-            });
-        }
-
-        grouped.get(key).changes.push(change);
-    });
-
-    return grouped;
-}
-
-/**
  * Create human-readable summary of changes for notification
  * @param {Array} changes - List of changes for a timetable
  * @returns {String} Summary text with day and specific details
@@ -390,7 +366,6 @@ function createDetailedChangeSummary(changes) {
 
 module.exports = {
     detectTimetableChanges,
-    groupChangesByTimetable,
     createChangeSummary,
     createDetailedChangeSummary,
 };

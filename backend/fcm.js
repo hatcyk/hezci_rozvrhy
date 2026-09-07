@@ -6,6 +6,7 @@
 const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('./firebase-admin-init');
 const { createChangeSummary, createDetailedChangeSummary } = require('./change-detector');
+const { matchesGroupFilters } = require('./bakalari-parser');
 
 // FCM error codes that mean a token is permanently dead and should be pruned.
 const DEAD_TOKEN_ERRORS = new Set([
@@ -47,36 +48,6 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
     } catch (error) {
         console.error(`[TOKENS] Failed to prune invalid tokens for ${userId}:`, error.message);
         return 0;
-    }
-}
-
-/**
- * Send notification to a single FCM token
- * @param {String} token - FCM device token
- * @param {Object} notification - Notification payload
- * @returns {Promise<String>} Message ID
- */
-async function sendNotificationToToken(token, notification) {
-    try {
-        const messaging = getMessaging();
-
-        const message = {
-            data: {
-                title: notification.title,
-                body: notification.body,
-                icon: notification.icon || '/icon-192.png',
-                ...(notification.data || {})
-            },
-            token: token
-        };
-
-        const response = await messaging.send(message);
-        console.log(`✅ Notification sent to token ${token.substring(0, 20)}...`);
-        return response;
-
-    } catch (error) {
-        console.error(`❌ Failed to send notification to token ${token.substring(0, 20)}...:`, error.message);
-        throw error;
     }
 }
 
@@ -293,38 +264,6 @@ function filterChangesByPreferences(changes, notificationTypes) {
 }
 
 /**
- * Standardize group name to normalized format
- * @param {String} groupName - Raw group name from Bakalari
- * @returns {String} Standardized name (e.g., "1.sk", "2.sk", "TVDi", "TVk1")
- */
-function standardizeGroupName(groupName) {
-    if (!groupName) return '';
-
-    const lower = groupName.toLowerCase().trim();
-
-    // "celá třída" - return empty (handled by filterChangesByGroup)
-    if (lower.includes('celá') || lower === 'cela') {
-        return '';
-    }
-
-    // Special groups (TV, etc.) - keep as-is
-    // These start with letters followed by optional digits (TVk1, TVDi, TVCh, etc.)
-    // Don't convert these to "1.sk" format
-    if (/^[a-záčďéěíňóřšťúůýž]{2,}/i.test(lower)) {
-        return groupName; // Return original (preserve case)
-    }
-
-    // Extrahuj číslo: "1. sk", "skupina 1", "1.skupina" → "1.sk"
-    const groupMatch = lower.match(/^(\d+)[\.\s]*(?:skupina|sk)?$|^(?:skupina|sk)[\.\s]*(\d+)$/);
-    if (groupMatch) {
-        const groupNum = groupMatch[1] || groupMatch[2];
-        return `${groupNum}.sk`;
-    }
-
-    return groupName;
-}
-
-/**
  * Filter changes by group preferences (supports multiple groups)
  * @param {Array} changes - Array of changes
  * @param {Array} groupFilters - User's group filters ([] = all groups | ["1.sk", "2.sk"] = specific groups)
@@ -341,21 +280,9 @@ function filterChangesByGroup(changes, groupFilters) {
             return true;
         }
 
-        // Hodina bez skupiny - zobraz vždy (je pro celou třídu)
-        // Robustní kontrola pro různé případy: null, undefined, prázdný string
-        const hasNoGroup = !change.lesson.group ||
-                          (typeof change.lesson.group === 'string' && change.lesson.group.trim() === '');
-
-        if (hasNoGroup) {
-            console.log(`[FILTER CHANGE] ✅ PASS (no group - whole class): ${change.lesson.subject || change.type}`);
-            return true;
-        }
-
-        // Porovnej standardizované skupiny
-        const standardizedLessonGroup = standardizeGroupName(change.lesson.group);
-        const passes = groupFilters.includes(standardizedLessonGroup);
-
-        console.log(`[FILTER CHANGE] ${passes ? '✅ PASS' : '❌ FAIL'} (group match): ${change.lesson.subject || change.type}, group: "${change.lesson.group}" → "${standardizedLessonGroup}"`);
+        // Hodina bez skupiny / celá třída projde vždy, jinak porovnání normalizovaných skupin
+        const passes = matchesGroupFilters(change.lesson.group, groupFilters);
+        console.log(`[FILTER CHANGE] ${passes ? '✅ PASS' : '❌ FAIL'}: ${change.lesson.subject || change.type}, group: "${change.lesson.group || ''}"`);
         return passes;
     });
 }
@@ -556,7 +483,6 @@ async function cleanupOldChanges(daysToKeep = 2) {
 }
 
 module.exports = {
-    sendNotificationToToken,
     sendNotificationToTokens,
     getUsersWatchingTimetable,
     processPendingChanges,
