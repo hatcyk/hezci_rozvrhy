@@ -1,24 +1,16 @@
 /**
- * Cron Job Scheduler (node-cron)
+ * Prefetch runner + status tracking
  *
- * NOTE: These node-cron jobs only run when there is a long-lived Node process,
- * i.e. local/self-hosted runs (`npm start`). On Vercel serverless there is no
- * persistent process, so these schedules never fire — the real production
- * scheduler is the set of GitHub Actions workflows in .github/workflows/
- * (prefetch, process-notifications, lesson-reminders, cleanup), which call the
- * matching /api/cron/* endpoints. Keep both in sync when changing cadence.
+ * Scheduling lives in .github/workflows/ (prefetch, process-notifications,
+ * lesson-reminders, cleanup); this module only runs a prefetch on demand
+ * (/api/cron/prefetch, /api/prefetch/trigger) and persists its status for
+ * /api/status.
  */
 
-const cron = require('node-cron');
 const { prefetchAllData } = require('./prefetch');
 const { initializeFirebaseAdmin, getFirestore } = require('./firebase-admin-init');
-const { sendLessonReminders } = require('./lesson-reminder');
-const { processPendingChanges, cleanupOldChanges } = require('./fcm');
-const { cleanupOldNotifications } = require('./notification-tracker');
+const { processPendingChanges } = require('./fcm');
 
-let cronJob = null;
-let lessonReminderCron = null;
-let cleanupCron = null;
 let isRunning = false;
 
 // Track last prefetch status (in-memory fallback)
@@ -31,9 +23,6 @@ let lastPrefetchStatus = {
     totalRequests: 0,
     error: 'No prefetch has run yet - status unknown'
 };
-
-// Track previous health status for change detection
-let previousHealthStatus = null;
 
 /**
  * Save prefetch status to Firestore (for serverless persistence)
@@ -120,9 +109,6 @@ async function runPrefetch() {
         // Save status to Firestore (for serverless persistence)
         await savePrefetchStatus(lastPrefetchStatus);
 
-        // Detect API status change and send notifications
-        await detectAndNotifyStatusChange(isHealthy);
-
         // Process pending changes and send notifications
         console.log('📨 Processing pending change notifications...');
         await processPendingChanges();
@@ -145,9 +131,6 @@ async function runPrefetch() {
         // Save status to Firestore (for serverless persistence)
         await savePrefetchStatus(lastPrefetchStatus);
 
-        // Detect API status change and send notifications
-        await detectAndNotifyStatusChange(false);
-
     } finally {
         isRunning = false;
         const endTime = new Date();
@@ -156,121 +139,10 @@ async function runPrefetch() {
 }
 
 /**
- * Detect API status change and send notifications if needed
- */
-async function detectAndNotifyStatusChange(currentHealth) {
-    // Skip if this is the first run (previousHealthStatus not set yet)
-    if (previousHealthStatus === null) {
-        previousHealthStatus = currentHealth;
-        console.log(`🔄 Initial API health status: ${currentHealth ? 'healthy' : 'unhealthy'}`);
-        return;
-    }
-
-    // Check if status changed
-    if (previousHealthStatus !== currentHealth) {
-        console.log(`\n🔔 API status changed: ${previousHealthStatus ? 'healthy' : 'unhealthy'} → ${currentHealth ? 'healthy' : 'unhealthy'}`);
-
-        // Notifications removed - user will see alert in UI
-        if (!currentHealth) {
-            // API went down
-            console.log('⚠️  API is down (notifications disabled)');
-        } else {
-            // API restored
-            console.log('✅ API restored (notifications disabled)');
-        }
-
-        // Update previous status
-        previousHealthStatus = currentHealth;
-    }
-}
-
-/**
- * Start cron job scheduler
- * Runs every 10 minutes (e.g., 14:00, 14:10, 14:20, ...)
- */
-function startCronJob() {
-    if (cronJob) {
-        console.log('⚠️  Cron job already running');
-        return;
-    }
-
-    // Initialize Firebase first
-    try {
-        initializeFirebaseAdmin();
-    } catch (error) {
-        console.error('Failed to initialize Firebase, cron job not started');
-        return;
-    }
-
-    // Run immediately on startup (unless disabled for dev)
-    const skipInitialPrefetch = process.env.SKIP_INITIAL_PREFETCH === 'true';
-
-    if (skipInitialPrefetch) {
-        console.log('⏭️  Skipping initial prefetch (SKIP_INITIAL_PREFETCH=true)');
-        console.log('   To run prefetch manually: POST /api/prefetch/trigger\n');
-    } else {
-        console.log('🚀 Running initial prefetch on startup...');
-        runPrefetch().catch(err => console.error('Initial prefetch failed:', err));
-    }
-
-    // Schedule cron: Every 10 minutes
-    // Cron format: minute hour day month weekday
-    // '*/10 * * * *' = every 10 minutes
-    cronJob = cron.schedule('*/10 * * * *', () => {
-        console.log('⏰ 10-minute prefetch triggered');
-        runPrefetch().catch(err => console.error('Scheduled prefetch failed:', err));
-    });
-
-    // Schedule lesson reminder cron (local/self-hosted only; in production the
-    // lesson-reminders GitHub Actions workflow drives /api/cron/lesson-reminders)
-    lessonReminderCron = cron.schedule('* * * * *', () => {
-        sendLessonReminders().catch(err => console.error('Lesson reminder failed:', err));
-    });
-
-    // Schedule cleanup cron: Daily at midnight (00:00)
-    cleanupCron = cron.schedule('0 0 * * *', () => {
-        console.log('🧹 Daily cleanup triggered');
-        cleanupOldNotifications(7).catch(err => console.error('Cleanup notifications failed:', err));
-        cleanupOldChanges(2).catch(err => console.error('Cleanup changes failed:', err));
-    });
-
-    console.log('✅ Cron jobs scheduled:');
-    console.log('   - Prefetch: Running every 10 minutes');
-    console.log('   - Lesson reminders: Running every minute');
-    console.log('   - Cleanup: Running daily at midnight (old notification records & processed changes)\n');
-}
-
-/**
- * Stop cron jobs
- */
-function stopCronJob() {
-    if (cronJob) {
-        cronJob.stop();
-        cronJob = null;
-        console.log('🛑 Prefetch cron job stopped');
-    }
-    if (lessonReminderCron) {
-        lessonReminderCron.stop();
-        lessonReminderCron = null;
-        console.log('🛑 Lesson reminder cron job stopped');
-    }
-    if (cleanupCron) {
-        cleanupCron.stop();
-        cleanupCron = null;
-        console.log('🛑 Cleanup cron job stopped');
-    }
-}
-
-/**
- * Get cron job status
+ * Runner status (for /api/prefetch/status)
  */
 function getCronStatus() {
-    return {
-        running: cronJob !== null,
-        lessonReminderRunning: lessonReminderCron !== null,
-        cleanupRunning: cleanupCron !== null,
-        prefetchInProgress: isRunning,
-    };
+    return { prefetchInProgress: isRunning };
 }
 
 /**
@@ -301,8 +173,7 @@ async function getLastPrefetchStatus() {
 async function triggerManualPrefetch() {
     console.log('🔧 Manual prefetch triggered');
 
-    // Initialize Firebase Admin if not already initialized
-    // This is crucial for Vercel serverless functions where startCronJob() doesn't run
+    // Initialize Firebase Admin if not already initialized (serverless-safe)
     try {
         initializeFirebaseAdmin();
     } catch (error) {
@@ -314,8 +185,6 @@ async function triggerManualPrefetch() {
 }
 
 module.exports = {
-    startCronJob,
-    stopCronJob,
     getCronStatus,
     getLastPrefetchStatus,
     triggerManualPrefetch,

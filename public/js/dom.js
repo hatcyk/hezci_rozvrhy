@@ -2,7 +2,6 @@
 export const dom = {
     typeButtons: null,
     scheduleTypeButtons: null,
-    valueSelect: null,
     valueDropdown: null,
     valueDropdownTrigger: null,
     valueDropdownLabel: null,
@@ -17,7 +16,6 @@ export const dom = {
     refreshBtn: null,
     lessonModal: null,
     modalClose: null,
-    weekViewToggle: null,
     notificationBell: null,
     notificationModal: null,
     notificationModalClose: null,
@@ -36,7 +34,6 @@ export const dom = {
 export function initDOM() {
     dom.typeButtons = document.querySelectorAll('.type-btn');
     dom.scheduleTypeButtons = document.querySelectorAll('.schedule-type-btn');
-    dom.valueSelect = document.getElementById('valueSelect'); // Keep for backward compatibility
     dom.valueDropdown = document.getElementById('valueDropdown');
     dom.valueDropdownTrigger = document.getElementById('valueDropdownTrigger');
     dom.valueDropdownLabel = document.getElementById('valueDropdownLabel');
@@ -51,7 +48,6 @@ export function initDOM() {
     dom.refreshBtn = document.getElementById('refreshBtn');
     dom.lessonModal = document.getElementById('lessonModal');
     dom.modalClose = document.getElementById('modalClose');
-    dom.weekViewToggle = document.getElementById('weekViewToggle');
     dom.notificationBell = document.getElementById('notificationBell');
     dom.notificationModal = document.getElementById('notificationModal');
     dom.notificationModalClose = document.getElementById('notificationModalClose');

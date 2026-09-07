@@ -135,21 +135,6 @@ function populateInlineLayoutOptions() {
 }
 
 /**
- * Show layout selection modal (kept for external callers)
- */
-export function showLayoutModal() {
-    populateInlineLayoutOptions();
-    openBottomSheet('layoutModal');
-}
-
-/**
- * Close layout modal
- */
-export function closeLayoutModal() {
-    closeBottomSheet('layoutModal');
-}
-
-/**
  * Update layout description in settings modal
  */
 export function updateLayoutDescription(layoutId) {
