@@ -172,8 +172,8 @@ export function abbreviateTeacherName(fullName, abbreviationMap = null) {
 }
 
 // Utility funkce pro získání dnešního dne (0-4 = Po-Pá)
-export function getTodayIndex() {
-    const day = new Date().getDay(); // 0=Neděle, 1=Po, ..., 5=Pá
+export function getTodayIndex(now = new Date()) {
+    const day = now.getDay(); // 0=Neděle, 1=Po, ..., 5=Pá
     return day === 0 || day === 6 ? -1 : day - 1; // Vrátí -1 pro víkend
 }
 
@@ -198,8 +198,7 @@ export function shouldAutoSwitchToNextWeek() {
 }
 
 // Utility funkce pro získání aktuální hodiny (0-12)
-export function getCurrentHour() {
-    const now = new Date();
+export function getCurrentHour(now = new Date()) {
     const hour = now.getHours();
     const minute = now.getMinutes();
 
@@ -215,11 +214,10 @@ export function getCurrentHour() {
 }
 
 // Utility funkce pro získání nadcházející hodiny (následující hodina po aktuální nebo první hodina dne)
-export function getUpcomingHour() {
-    const now = new Date();
+export function getUpcomingHour(now = new Date()) {
     const hour = now.getHours();
     const minute = now.getMinutes();
-    const currentHour = getCurrentHour();
+    const currentHour = getCurrentHour(now);
 
     // Pokud právě probíhá hodina, najdeme následující
     if (currentHour !== -1) {
@@ -245,8 +243,8 @@ export function getUpcomingHour() {
 }
 
 // Utility funkce pro zjištění, zda hodina už proběhla
-export function isPastLesson(dayIndex, hour) {
-    const todayIndex = getTodayIndex();
+export function isPastLesson(dayIndex, hour, now = new Date()) {
+    const todayIndex = getTodayIndex(now);
 
     // Pokud je víkend (todayIndex = -1), žádná hodina není proběhlá
     if (todayIndex === -1) return false;
@@ -261,13 +259,41 @@ export function isPastLesson(dayIndex, hour) {
     const lessonInfo = lessonTimes.find(l => l.hour === hour);
     if (!lessonInfo) return false;
 
-    const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     const [endH, endM] = lessonInfo.end;
 
     // Pokud je aktuální čas po konci hodiny, hodina proběhla
     return (currentHour > endH) || (currentHour === endH && currentMinute > endM);
+}
+
+/**
+ * CSS classes for each time status, per layout variant. The variant is stored
+ * on the element as data-time-status so lesson-status.js can update it later.
+ */
+export const TIME_STATUS_CLASSES = {
+    '': { current: 'current-time', upcoming: 'upcoming', past: 'past' },
+    agenda: { current: 'agenda-current', upcoming: 'agenda-upcoming', past: 'agenda-past' },
+};
+
+/**
+ * Time status of a slot: 'current' | 'upcoming' | 'past' | ''.
+ * Callers decide whether a slot tracks time at all (only the actual week,
+ * never removed/absent lessons).
+ */
+export function getLessonTimeStatus(dayIndex, hour, now = new Date()) {
+    const todayIndex = getTodayIndex(now);
+    if (dayIndex === todayIndex) {
+        if (hour === getCurrentHour(now)) return 'current';
+        if (hour === getUpcomingHour(now)) return 'upcoming';
+    }
+    return isPastLesson(dayIndex, hour, now) ? 'past' : '';
+}
+
+/** CSS class for the slot's current time status ('' when none). */
+export function getLessonTimeClass(dayIndex, hour, now = new Date(), variant = '') {
+    const status = getLessonTimeStatus(dayIndex, hour, now);
+    return status ? TIME_STATUS_CLASSES[variant][status] : '';
 }
 
 // Parse group name to extract class and group number
