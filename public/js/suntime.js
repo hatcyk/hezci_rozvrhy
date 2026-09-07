@@ -66,7 +66,3 @@ export function isNightTime() {
     return isNight;
 }
 
-// Get sun data
-export function getSunData() {
-    return sunData;
-}

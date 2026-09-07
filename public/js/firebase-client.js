@@ -89,13 +89,6 @@ export function getFirestore() {
 }
 
 /**
- * Check if user is authenticated
- */
-export function isFirebaseAuthenticated() {
-    return isAuthenticated;
-}
-
-/**
  * Fetch definitions from Firebase
  */
 export async function fetchDefinitionsFromFirebase() {

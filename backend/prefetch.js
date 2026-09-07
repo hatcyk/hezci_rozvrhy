@@ -571,6 +571,4 @@ async function prefetchAllData() {
 
 module.exports = {
     prefetchAllData,
-    fetchDefinitions,
-    fetchTimetable,
 };

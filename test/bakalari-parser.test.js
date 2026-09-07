@@ -5,7 +5,6 @@ const path = require('path');
 
 const {
     standardizeGroupName,
-    isWholeClassGroup,
     abbreviateTeacherName,
     parseTimetableHtml,
     addRemovedLessonsFromPermanent,
@@ -35,14 +34,6 @@ test('standardizeGroupName normalizes numbered groups and keeps special ones', (
     }
     assert.equal(standardizeGroupName(null), '');
     assert.equal(standardizeGroupName(undefined), '');
-});
-
-test('isWholeClassGroup', () => {
-    assert.equal(isWholeClassGroup(null), true);
-    assert.equal(isWholeClassGroup(''), true);
-    assert.equal(isWholeClassGroup('celá třída'), true);
-    assert.equal(isWholeClassGroup('1. sk'), false);
-    assert.equal(isWholeClassGroup('TVk1'), false);
 });
 
 test('abbreviateTeacherName handles both name orders and titles', () => {

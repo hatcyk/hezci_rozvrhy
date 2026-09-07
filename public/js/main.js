@@ -2,7 +2,7 @@ import { initDOM, dom } from './dom.js';
 import { state, updateState } from './state.js';
 import { initTheme, initThemeToggle } from './theme.js';
 import { initModalListeners } from './modal.js';
-import { loadTimetable, populateValueSelect, initWeekViewToggle } from './timetable.js';
+import { loadTimetable, populateValueSelect } from './timetable.js';
 import { fetchDefinitions, checkBakalariStatus } from './api.js';
 import { initCustomDropdown, setDropdownValue, openDropdown } from './dropdown.js';
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek } from './utils.js';
@@ -265,7 +265,6 @@ async function init() {
         // Initialize event listeners
         initTypeButtons();
         initScheduleTypeButtons();
-        initWeekViewToggle();
         initNotificationButton();
         initSettings();
         initFavoritesModal();

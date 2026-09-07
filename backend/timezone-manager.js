@@ -50,17 +50,6 @@ function getPragueTimeInfo(mockTime = null) {
 }
 
 /**
- * Format Prague time for display
- * @param {Date} [mockTime] - Optional mock time for testing (in UTC)
- * @param {String} [formatString] - Custom format string (defaults to 'HH:mm:ss')
- * @returns {String} Formatted time string
- */
-function formatPragueTime(mockTime = null, formatString = 'HH:mm:ss') {
-    const pragueTime = getPragueTime(mockTime);
-    return format(pragueTime, formatString, { timeZone: PRAGUE_TIMEZONE });
-}
-
-/**
  * Check if given time is weekend
  * @param {Date} [mockTime] - Optional mock time for testing (in UTC)
  * @returns {Boolean} True if weekend
@@ -70,34 +59,8 @@ function isWeekend(mockTime = null) {
     return timeInfo.dayIndex === -1;
 }
 
-/**
- * Get day name in Czech
- * @param {Date} [mockTime] - Optional mock time for testing (in UTC)
- * @returns {String} Day name (e.g., "Pondělí", "Úterý", etc.)
- */
-function getDayName(mockTime = null) {
-    const days = ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'];
-    const timeInfo = getPragueTimeInfo(mockTime);
-    return days[timeInfo.dayOfWeek];
-}
-
-/**
- * Get day name short in Czech
- * @param {Date} [mockTime] - Optional mock time for testing (in UTC)
- * @returns {String} Short day name (e.g., "Po", "Út", etc.)
- */
-function getDayNameShort(mockTime = null) {
-    const daysShort = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
-    const timeInfo = getPragueTimeInfo(mockTime);
-    return daysShort[timeInfo.dayOfWeek];
-}
-
 module.exports = {
     getPragueTime,
     getPragueTimeInfo,
-    formatPragueTime,
     isWeekend,
-    getDayName,
-    getDayNameShort,
-    PRAGUE_TIMEZONE
 };

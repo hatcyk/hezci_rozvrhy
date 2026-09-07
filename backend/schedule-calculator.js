@@ -138,8 +138,6 @@ function getScheduleStatus(currentTimeInMinutes, lessonTimes, customConfig = nul
 }
 
 module.exports = {
-    getNotificationConfig,
-    calculateLessonWindow,
     calculateNotificationWindows,
     findLessonsToNotify,
     formatMinutesToTime,

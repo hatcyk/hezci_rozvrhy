@@ -54,14 +54,6 @@ function matchesGroupFilters(groupName, groupFilters) {
 }
 
 /**
- * True when a lesson applies to the whole class (no group or "celá třída").
- * @param {String|null} groupName
- */
-function isWholeClassGroup(groupName) {
-    return standardizeGroupName(groupName) === '';
-}
-
-/**
  * Abbreviate a teacher name to "R. Kozakovič" from either
  * "Kozakovič Radko" (Bakaláři order) or "Radko Kozakovič".
  * @param {String} fullName
@@ -213,7 +205,6 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
 
 module.exports = {
     standardizeGroupName,
-    isWholeClassGroup,
     matchesGroupFilters,
     abbreviateTeacherName,
     parseTimetableHtml,

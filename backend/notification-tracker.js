@@ -119,38 +119,6 @@ async function cleanupOldNotifications(daysToKeep = 7) {
 }
 
 /**
- * Get notification history for a user (for debugging)
- * @param {String} userId - User ID
- * @param {Number} [limit=10] - Maximum number of records to return
- * @returns {Promise<Array>} Array of notification records
- */
-async function getNotificationHistory(userId, limit = 10) {
-    try {
-        const db = getFirestore();
-
-        const snapshot = await db.collection(COLLECTION_NAME)
-            .where('userId', '==', userId)
-            .orderBy('sentAt', 'desc')
-            .limit(limit)
-            .get();
-
-        const history = [];
-        snapshot.forEach(doc => {
-            history.push({
-                id: doc.id,
-                ...doc.data()
-            });
-        });
-
-        return history;
-
-    } catch (error) {
-        console.error(`Failed to get notification history for user ${userId}:`, error.message);
-        return [];
-    }
-}
-
-/**
  * Clear all notification records for a specific date (for testing/debugging)
  * @param {String} date - Date string (YYYY-MM-DD)
  * @returns {Promise<Number>} Number of records deleted
@@ -187,7 +155,5 @@ module.exports = {
     hasNotificationBeenSent,
     recordNotificationSent,
     cleanupOldNotifications,
-    getNotificationHistory,
     clearNotificationsForDate,
-    COLLECTION_NAME
 };

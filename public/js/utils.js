@@ -298,27 +298,6 @@ export function getMondayOfWeek(offset = 0) {
     return monday;
 }
 
-// Get Friday of a given week offset
-export function getFridayOfWeek(offset = 0) {
-    const monday = getMondayOfWeek(offset);
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
-
-    return friday;
-}
-
-// Format date as "DD.MM."
-export function formatDate(date) {
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    return `${day}.${month}.`;
-}
-
-export function showError(msg, errorDiv) {
-    errorDiv.textContent = msg;
-    errorDiv.classList.remove('hidden');
-}
-
 // SVG ikony z Lucide pro různé typy změn
 export function getChangeIcon(changeType) {
     const icons = {
