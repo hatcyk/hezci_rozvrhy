@@ -9,7 +9,75 @@ const {
     parseTimetableHtml,
     addRemovedLessonsFromPermanent,
     matchesGroupFilters,
+    normalizeGroup,
 } = require('../backend/bakalari-parser');
+
+test('standardizeGroupName understands 2026 Bakaláři group codes', () => {
+    assert.equal(standardizeGroupName('sk1 - 1. skupina'), '1.sk');
+    assert.equal(standardizeGroupName('sk2'), '2.sk');
+    assert.equal(standardizeGroupName('ak1 - 1. skupina AK'), '1.ak');
+    assert.equal(standardizeGroupName('tvk1 - Tělesná výchova - kluci'), 'TVk1');
+    assert.equal(standardizeGroupName('celá - celá třída'), '');
+    assert.equal(standardizeGroupName('xtvd - TV dívky all'), 'xtvd');
+    assert.equal(standardizeGroupName('sem - volitelné semináře'), 'sem');
+    // already-normalized values are stable
+    assert.equal(standardizeGroupName('1.ak'), '1.ak');
+    assert.equal(standardizeGroupName('TVk1'), 'TVk1');
+});
+
+test('normalizeGroup maps class and teacher/room group references', () => {
+    assert.equal(normalizeGroup('sk1', 'sk1 - 1. skupina'), '1.sk');
+    assert.equal(normalizeGroup('tvk2', 'tvk2 - Tělesná výchova - kluci 2'), 'TVk2');
+    assert.equal(normalizeGroup('', ''), null, 'whole class on a class page');
+    assert.equal(normalizeGroup(null, null), null);
+    assert.equal(normalizeGroup('2.A sk1', '2.A sk1 - 1. skupina'), '2.A 1.sk');
+    assert.equal(normalizeGroup('2.D', '2.D celá - celá třída'), '2.D celá');
+    assert.equal(normalizeGroup(null, '3.A celá - celá třída'), '3.A celá', 'tooltip fallback');
+    assert.equal(normalizeGroup('4.A tvk1', null), '4.A TVk1');
+});
+
+test('parseTimetableHtml parses the 2026 embedded-JSON page', () => {
+    const html = fs.readFileSync(path.join(__dirname, 'fixtures', 'timetable-embedded.html'), 'utf8');
+    const lessons = parseTimetableHtml(html);
+
+    // 21 atoms in the fixture (po + út) + 1 hour-level absence (čt); day-off (st) contributes nothing
+    assert.equal(lessons.length, 22);
+    assert.deepEqual([...new Set(lessons.map(l => l.day))].sort(), [0, 1, 3]);
+
+    // hour numbers come from the raster, not from Hour.Index (which is offset by 2)
+    const mon = lessons.filter(l => l.day === 0 && l.type !== 'removed').sort((a, b) => a.hour - b.hour);
+    assert.deepEqual(mon.map(l => l.hour), [0, 1, 2, 2, 3, 4, 5, 6]);
+    const first = mon[0];
+    assert.equal(first.dayName, 'po');
+    assert.equal(first.subject, 'Dopravní telematika');
+    assert.equal(first.teacher, 'Ing. Bc. Jan Tesař MBA');
+    assert.equal(first.room, 'A104', 'short room code from the atom, not the tooltip description');
+    assert.equal(first.group, null, 'whole-class lesson has no group');
+    assert.equal(first.type, 'atom');
+
+    // split hour keeps both groups in canonical form
+    const split = mon.filter(l => l.hour === 2).map(l => l.group).sort();
+    assert.deepEqual(split, ['1.sk', '2.sk']);
+
+    // substitution / move carries changeInfo
+    const changed = lessons.find(l => l.changed && l.type === 'atom');
+    assert.ok(changed && changed.changeInfo.raw.length > 0);
+
+    // removed atoms: subject + abbreviated teacher parsed from removedinfo, no group
+    const removed = lessons.filter(l => l.type === 'removed');
+    assert.ok(removed.length >= 2);
+    assert.equal(removed[0].subject, 'MOD');
+    assert.equal(removed[0].teacher, 'V. Bártlová');
+    assert.equal(removed[0].group, null);
+    assert.equal(removed[0].changed, true);
+
+    // special TV group and hour-level absence
+    assert.ok(lessons.some(l => l.group === 'xtvd' && l.day === 1));
+    const absent = lessons.find(l => l.type === 'absent');
+    assert.equal(absent.day, 3);
+    assert.equal(absent.hour, 1);
+    assert.equal(absent.subject, 'Exkurze');
+});
 
 test('matchesGroupFilters normalizes both sides and always passes whole-class lessons', () => {
     assert.equal(matchesGroupFilters('1. sk', []), true, 'no filters = everything');
