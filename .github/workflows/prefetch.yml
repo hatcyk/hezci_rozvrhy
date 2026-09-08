@@ -15,6 +15,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Scheduled runs use the workflow file from main, but the prefetch
+          # code (Bakaláři parser) is maintained on dev - run that.
+          ref: dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
