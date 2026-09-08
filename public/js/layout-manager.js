@@ -34,7 +34,7 @@ export function initLayoutSystem() {
         'single-day': {},
         'week-view': {},
         'card-view': { cardIndex: 0 },
-        'compact-list': { scrollPosition: 0 },
+        'compact-list': {},
         'agenda': {}
     };
 
