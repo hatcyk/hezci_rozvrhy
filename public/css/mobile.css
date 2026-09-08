@@ -16,8 +16,13 @@
         flex-direction: column;
     }
 
+    /* Children fill the width (auto side margins would shrink a flex item to
+       its content - the header has margin: 0 auto for desktop centering). */
     .app-container > * {
         flex: 0 0 auto;
+        align-self: stretch;
+        margin-left: 0;
+        margin-right: 0;
     }
 
     .app-container > .timetable-container {
