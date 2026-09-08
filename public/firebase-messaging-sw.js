@@ -106,7 +106,7 @@ self.addEventListener('notificationclick', (event) => {
  * App-shell caching (offline support)
  * Bump SHELL_CACHE version whenever the precache list changes.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-a1c92420ac-7c08deaec9';
+const SHELL_CACHE = 'bakalari-shell-4e96bdafe9-7c08deaec9';
 
 // Cross-origin scripts the app needs to boot. Cached as opaque responses
 // (status 0) so that offline loads still have the Firebase SDK available.
@@ -128,7 +128,7 @@ const PRECACHE_URLS = [
     '/spsd_logo_white.png',
     '/spsd_long_dark.png',
     '/spsd_long_white.png',
-    '/css/app.css?v=a1c92420ac',
+    '/css/app.css?v=4e96bdafe9',
     '/js/app.js?v=7c08deaec9',
 ];
 
@@ -199,12 +199,32 @@ self.addEventListener('fetch', (event) => {
     // Don't intercept backend API calls (auth, status) — these must be live.
     if (url.pathname.startsWith('/api/')) return;
 
-    // Stale-while-revalidate: respond from cache, update cache in background.
-    // For navigations (e.g. deep links like /?type=...&id=...) ignore the query
-    // string so the cached app shell is still served offline.
+    // Navigations (the app shell): network-first so a fresh deploy is picked up
+    // on the very next load; the cached shell is only used when offline. The
+    // query string (deep links like /?type=...&id=...) is ignored for the
+    // cache lookup so the shell is still served offline.
+    if (request.mode === 'navigate') {
+        event.respondWith(
+            caches.open(SHELL_CACHE).then(async (cache) => {
+                try {
+                    const response = await fetch(request);
+                    if (response && response.status === 200 && response.type === 'basic') {
+                        cache.put(request, response.clone()).catch(() => { /* ignore quota errors */ });
+                    }
+                    return response;
+                } catch (err) {
+                    const cached = await cache.match(request, { ignoreSearch: true });
+                    return cached || Response.error();
+                }
+            })
+        );
+        return;
+    }
+
+    // Everything else (versioned bundles, icons): stale-while-revalidate.
     event.respondWith(
         caches.open(SHELL_CACHE).then(async (cache) => {
-            const cached = await cache.match(request, { ignoreSearch: request.mode === 'navigate' });
+            const cached = await cache.match(request);
             const network = fetch(request).then((response) => {
                 if (response && response.status === 200 && response.type === 'basic') {
                     cache.put(request, response.clone()).catch(() => { /* ignore quota errors */ });
