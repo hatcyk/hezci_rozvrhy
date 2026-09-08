@@ -4,7 +4,10 @@
 
 /* Card View Mode */
 .timetable-container.card-view-mode {
-    overflow: hidden;
+    /* Horizontal overflow is the carousel (cards slide by transform); vertical
+       scrolls only when the card does not fit the remaining height. */
+    overflow-x: hidden;
+    overflow-y: auto;
     position: relative;
     min-height: 400px;
     padding: 20px 0;
@@ -14,7 +17,9 @@
 .card-view-wrapper {
     display: flex;
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    touch-action: none;
+    /* Horizontal swipes are handled in JS (card carousel); vertical panning is
+       left to the browser so a card taller than the screen stays reachable. */
+    touch-action: pan-y;
 }
 
 .lesson-card-full {
