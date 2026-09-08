@@ -934,18 +934,9 @@ export function renderCompactListLayout() {
         }
     });
 
-    // Restore scroll position
-    const savedScrollPosition = state.layoutPreferences['compact-list'].scrollPosition || 0;
-    container.scrollTop = savedScrollPosition;
-
-    // Save scroll position on scroll
-    let scrollTimeout;
-    container.addEventListener('scroll', () => {
-        clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => {
-            updateLayoutPreference('compact-list', { scrollPosition: container.scrollTop });
-        }, 100);
-    });
+    // Always start at the top: a remembered scroll offset from another day,
+    // timetable or session used to hide the first lessons of the day.
+    container.scrollTop = 0;
 
     // Add day swipe navigation
     initDaySwipeNavigation('horizontal');
