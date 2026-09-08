@@ -25,8 +25,17 @@
         margin-right: 0;
     }
 
+    /* Size to the content, shrink (and scroll) only when the content is taller
+       than the space left below the header, day tabs and widget. flex-grow
+       would stretch the card's background over the empty rest of the screen. */
     .app-container > .timetable-container {
-        flex: 1 1 auto;
+        flex: 0 1 auto;
+        min-height: 0;
+    }
+
+    /* Card view asks for a fixed minimum height; on a short screen (landscape)
+       that would push its bottom past the locked page. Let it shrink instead. */
+    .app-container > .timetable-container.card-view-mode {
         min-height: 0;
     }
 

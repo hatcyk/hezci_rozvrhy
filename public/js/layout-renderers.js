@@ -70,15 +70,25 @@ function initDaySwipeNavigation(direction = 'horizontal') {
     let startX = 0;
     let startY = 0;
     let isDragging = false;
+    let swipeEnabled = true;
+
+    // A swipe may only change the day when the content cannot scroll in that
+    // direction - otherwise the gesture belongs to the scroll container (a
+    // single-day table taller than the screen in landscape, for example) and
+    // hijacking it would make part of the timetable unreachable.
+    const axisIsScrollable = () => (direction === 'vertical'
+        ? container.scrollHeight > container.clientHeight + 1
+        : container.scrollWidth > container.clientWidth + 1);
 
     container.addEventListener('touchstart', (e) => {
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
         isDragging = true;
+        swipeEnabled = !axisIsScrollable();
     }, { passive: true, signal });
 
     container.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
+        if (!isDragging || !swipeEnabled) return;
 
         const currentX = e.touches[0].clientX;
         const currentY = e.touches[0].clientY;
@@ -96,6 +106,7 @@ function initDaySwipeNavigation(direction = 'horizontal') {
     container.addEventListener('touchend', async (e) => {
         if (!isDragging) return;
         isDragging = false;
+        if (!swipeEnabled) return;
 
         const endX = e.changedTouches[0].clientX;
         const endY = e.changedTouches[0].clientY;
