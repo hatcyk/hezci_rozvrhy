@@ -227,25 +227,44 @@ async function fetchDefinitions() {
 /**
  * Fetch single timetable from Bakalari API
  */
+async function fetchTimetableHtml(type, id, scheduleType, date = null) {
+    // Get fresh login cookie (cached during prefetch run)
+    const cookie = await loginToBakalari();
+
+    let url = `${BAKALARI_BASE_URL}/Timetable/Public/${scheduleType}/${type}/${id}`;
+    if (date) {
+        url += `?date=${date}`;
+    }
+
+    const response = await axios.get(url, {
+        ...axiosConfig,
+        headers: {
+            ...axiosConfig.headers,
+            Cookie: cookie
+        },
+    });
+    return response.data;
+}
+
+// Logged once per run so a markup change / unpublished timetable is visible in the log
+let emptyPageDiagnosticLogged = false;
+
 async function fetchTimetable(type, id, scheduleType, date = null) {
     try {
-        // Get fresh login cookie (cached during prefetch run)
-        const cookie = await loginToBakalari();
+        const html = await fetchTimetableHtml(type, id, scheduleType, date);
+        const lessons = parseTimetableHtml(html);
 
-        let url = `${BAKALARI_BASE_URL}/Timetable/Public/${scheduleType}/${type}/${id}`;
-        if (date) {
-            url += `?date=${date}`;
+        if (lessons.length === 0 && !emptyPageDiagnosticLogged) {
+            emptyPageDiagnosticLogged = true;
+            const $ = cheerio.load(html);
+            const text = $('body').text().replace(/\s+/g, ' ').trim();
+            console.warn(`⚠️  0 lessons parsed for ${type}/${id}/${scheduleType}: ` +
+                `${String(html).length} bytes, .bk-timetable-row=${$('.bk-timetable-row').length}, ` +
+                `.day-item-hover=${$('.day-item-hover').length}, [data-detail]=${$('[data-detail]').length}, ` +
+                `title="${$('title').text().trim()}", text="${text.slice(0, 160)}"`);
         }
 
-        const response = await axios.get(url, {
-            ...axiosConfig,
-            headers: {
-                ...axiosConfig.headers,
-                Cookie: cookie
-            },
-        });
-
-        return parseTimetableHtml(response.data);
+        return lessons;
     } catch (error) {
         console.error(`Failed to fetch timetable ${type}/${id}/${scheduleType}:`, error.message);
         throw error;
@@ -334,6 +353,25 @@ async function prefetchAllData() {
             await Promise.all(definitions.classes.slice(i, i + CONCURRENT_REQUESTS).map(extractGroupsForClass));
         }
 
+        // Guard: if not a single lesson was parsed for any class (actual or next
+        // week), Bakaláři either has no timetable published or changed its markup.
+        // Writing that would wipe the cache (and, in September, the permanent
+        // schedules) with empty snapshots, so keep what we have and report it.
+        const lessonsSeen = Array.from(prefetchedTimetables.values()).reduce((sum, lessons) => sum + lessons.length, 0);
+        if (definitions.classes.length > 0 && lessonsSeen === 0) {
+            console.log('⚠️  WARNING: 0 lessons parsed across all class timetables');
+            console.log('⚠️  Keeping existing timetables and definitions in Firebase\n');
+            return {
+                success: false,
+                totalRequests: prefetchedTimetables.size,
+                successCount: 0,
+                errorCount: 0,
+                duration: Date.now() - startTime,
+                definitionsCount: 0,
+                error: 'No lessons parsed from Bakaláři - timetable not published or page markup changed'
+            };
+        }
+
         await db.collection('definitions').doc('current').set({
             ...definitions,
             classGroups: classGroups,
@@ -367,11 +405,13 @@ async function prefetchAllData() {
         if (!isSeptember) {
             const permanentDocs = await db.collection('timetables')
                 .where('scheduleType', '==', 'Permanent')
-                .select() // Only fetch document IDs, not the full data
+                .select('lessonCount') // Only the count, not the full data
                 .get();
 
+            // Only a permanent schedule that actually has lessons counts as cached;
+            // empty or legacy (pre-lessonCount) docs are fetched again.
             permanentDocs.forEach(doc => {
-                existingPermanentIds.add(doc.id);
+                if ((doc.data().lessonCount || 0) > 0) existingPermanentIds.add(doc.id);
             });
 
             console.log(`📦 Found ${existingPermanentIds.size} existing permanent schedules in cache`);
@@ -509,6 +549,7 @@ async function prefetchAllData() {
                             name: task.entity.name,
                             scheduleType: task.scheduleType,
                             data: timetableData,
+                            lessonCount: timetableData.length,
                             lastUpdate: new Date().toISOString(),
                         });
                         // Keep the in-run cache current (a fresh Permanent snapshot is
@@ -571,4 +612,6 @@ async function prefetchAllData() {
 
 module.exports = {
     prefetchAllData,
+    loginToBakalari,
+    fetchTimetableHtml,
 };

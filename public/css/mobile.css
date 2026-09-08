@@ -180,11 +180,12 @@
         }
     }
 
+    /* One scroll region on mobile: the container grows with its content and
+       the page scrolls. A capped, separately scrolling container hid the first
+       lessons of the day whenever it was left scrolled down. */
     .timetable-container {
         overflow-x: auto;
-        overflow-y: auto;
         -webkit-overflow-scrolling: touch;
-        max-height: calc(100vh - 350px);
     }
 
     .timetable-row {

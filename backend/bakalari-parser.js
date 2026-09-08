@@ -21,11 +21,19 @@ const DAY_NAMES = ['po', 'út', 'st', 'čt', 'pá'];
 function standardizeGroupName(groupName) {
     if (!groupName) return '';
 
-    const lower = String(groupName).toLowerCase().trim();
+    // "sk1 - 1. skupina" (2026 Bakaláři format): keep the code, drop the description
+    const code = String(groupName).split(' - ')[0].trim();
+    const lower = code.toLowerCase();
 
     // Whole class – callers treat '' the same as "no group"
     if (lower.includes('celá') || lower === 'cela') {
         return '';
+    }
+
+    // Bakaláři group codes: sk1 → 1.sk, ak2 → 2.ak, tvk1 → TVk1
+    const codeMatch = lower.match(/^(sk|ak|tvk)(\d+)$/);
+    if (codeMatch) {
+        return codeMatch[1] === 'tvk' ? `TVk${codeMatch[2]}` : `${codeMatch[2]}.${codeMatch[1]}`;
     }
 
     // Numbered groups: "1. sk", "1.sk", "skupina 1", "sk 2", "2.skupina"
@@ -34,8 +42,8 @@ function standardizeGroupName(groupName) {
         return `${groupMatch[1] || groupMatch[2]}.sk`;
     }
 
-    // Anything else (TVk1, TVDi, TVCh, ...) is kept verbatim
-    return groupName;
+    // Anything else (TVk1, TVDi, xtvd, sem, ...) is kept verbatim (without a description)
+    return code;
 }
 
 /**
@@ -138,11 +146,127 @@ function parseLessonDetail(detailRaw, dayIndex, dayName, hour) {
 }
 
 /**
+ * Normalize a Bakaláři group reference to the app's canonical form.
+ *   class pages:   "sk1 - 1. skupina" → "1.sk", "tvk1 - …" → "TVk1", "" → null
+ *   teacher/room:  "2.A sk1 - 1. skupina" → "2.A 1.sk", "2.D celá - celá třída" / "2.D" → "2.D celá"
+ * @param {String|null} groupsNames - Atom.GroupsNames ("sk1", "2.A sk1", "2.D")
+ * @param {String|null} tooltipGroup - TooltipDetails.group (fallback)
+ * @returns {String|null}
+ */
+function normalizeGroup(groupsNames, tooltipGroup) {
+    const raw = String(groupsNames || tooltipGroup || '').split(' - ')[0].trim();
+    if (!raw) return null;
+
+    const parts = raw.split(/\s+/);
+    const classMatch = parts[0].match(/^\d+\.[A-Za-z]+$/);
+    const className = classMatch ? parts[0] : null;
+    const code = (className ? parts.slice(1).join(' ') : raw).trim();
+    const normalized = code ? (standardizeGroupName(code) || 'celá') : 'celá';
+
+    if (className) return `${className} ${normalized}`;
+    return normalized === 'celá' ? null : normalized;
+}
+
+/**
+ * Extract the JSON object assigned to `const timetableData = {...}` in the
+ * page's inline script (Bakaláři timetable since 2026-08). Returns null when
+ * the marker is missing.
+ */
+function extractEmbeddedTimetableData(html) {
+    const marker = 'const timetableData = ';
+    const start = String(html).indexOf(marker);
+    if (start < 0) return null;
+
+    let i = start + marker.length;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    const from = i;
+    for (; i < html.length; i++) {
+        const c = html[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (c === '\\') escaped = true;
+            else if (c === '"') inString = false;
+        } else if (c === '"') {
+            inString = true;
+        } else if (c === '{') {
+            depth++;
+        } else if (c === '}') {
+            depth--;
+            if (depth === 0) {
+                try {
+                    return JSON.parse(html.slice(from, i + 1));
+                } catch {
+                    return null;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/** "7:10" / "07:10:00" → minutes since midnight */
+function toMinutes(time) {
+    const m = String(time || '').match(/^(\d{1,2}):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+/**
+ * Parse the embedded timetable model (Days → Hours → Atoms) into lessons.
+ * The hour number comes from the raster (`Hours[].Caption` matched by begin
+ * time); an hour or atom whose time is not in the raster is skipped.
+ */
+function parseEmbeddedTimetable(data) {
+    const hourByStart = new Map();
+    for (const h of data.Hours || []) {
+        const mins = toMinutes(h.BeginTime);
+        if (mins != null && /^\d+$/.test(String(h.Caption))) hourByStart.set(mins, Number(h.Caption));
+    }
+
+    const lessons = [];
+    (data.Days || []).forEach((day, position) => {
+        if (day.DayOff) return;
+        const dayName = String(day.DayAbbrev || '').trim();
+        const byName = DAY_NAMES.indexOf(dayName.toLowerCase());
+        const dayIndex = byName >= 0 ? byName : position;
+
+        for (const slot of day.Hours || []) {
+            const hour = hourByStart.get(toMinutes(slot.Begin));
+            if (hour === undefined) continue;
+
+            const atoms = slot.Atoms && slot.Atoms.length ? slot.Atoms : (slot.TooltipDetails ? [slot] : []);
+            for (const atom of atoms) {
+                if (!atom.TooltipDetails) continue;
+                const lesson = parseLessonDetail(atom.TooltipDetails, dayIndex, dayName, hour);
+                if (!lesson) continue;
+                let detail = {};
+                try { detail = JSON.parse(atom.TooltipDetails); } catch { /* handled above */ }
+                lesson.room = atom.Room || (lesson.room ? String(lesson.room).split(' - ')[0].trim() : null) || null;
+                lesson.group = normalizeGroup(atom.GroupsNames, detail.group);
+                if (!lesson.teacher && atom.TeacherFullname) lesson.teacher = atom.TeacherFullname;
+                lessons.push(lesson);
+            }
+        }
+    });
+    return lessons;
+}
+
+/**
  * Parse a Bakaláři public timetable HTML page into a flat list of lessons.
+ * Supports the current page (data embedded as `const timetableData = {...}`)
+ * and the pre-2026 server-rendered markup (`.day-item-hover[data-detail]`).
  * @param {String} html - Response body of /Timetable/Public/{schedule}/{type}/{id}
  * @returns {Array<Object>}
  */
 function parseTimetableHtml(html) {
+    const embedded = extractEmbeddedTimetableData(html);
+    if (embedded) return parseEmbeddedTimetable(embedded);
+    return parseLegacyTimetableHtml(html);
+}
+
+/** Pre-2026 markup: one .bk-timetable-cell per hour, lessons in data-detail. */
+function parseLegacyTimetableHtml(html) {
     const $ = cheerio.load(html);
     const lessons = [];
 
@@ -205,6 +329,7 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
 
 module.exports = {
     standardizeGroupName,
+    normalizeGroup,
     matchesGroupFilters,
     abbreviateTeacherName,
     parseTimetableHtml,
