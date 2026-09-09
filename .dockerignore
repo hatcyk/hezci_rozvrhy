@@ -1,0 +1,10 @@
+node_modules
+.git
+.github
+debug_output
+.env
+firebase-service-account.json
+**/firebase-service-account.json
+*.md
+!DOKUMENTACE.md
+.DS_Store
