@@ -8,4 +8,3 @@ firebase-service-account.json
 **/firebase-service-account.json
 .firebase/
 dev_curls.md
-/scripts
