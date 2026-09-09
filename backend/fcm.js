@@ -240,6 +240,20 @@ async function getUsersWatchingTimetable(timetable) {
  * @param {Object} notificationTypes - User's notification type preferences
  * @returns {Array} Filtered changes
  */
+// Detector change types that no switch of its own covers. 'type_change' is a
+// lesson turning into cancelled/absent, which is what the "Odpadlé hodiny"
+// switch means to the user - without this mapping those (the most important
+// notifications there are) matched no preference and were silently dropped.
+const PREFERENCE_KEY_BY_CHANGE_TYPE = {
+    type_change: 'lesson_removed',
+};
+
+const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
+
+function preferenceKeyForChange(changeType) {
+    return PREFERENCE_KEY_BY_CHANGE_TYPE[changeType] || changeType;
+}
+
 function filterChangesByPreferences(changes, notificationTypes) {
     if (!notificationTypes || !notificationTypes.changes) {
         // No preferences set, send all change notifications (default behavior)
@@ -249,14 +263,12 @@ function filterChangesByPreferences(changes, notificationTypes) {
     const userPrefs = notificationTypes.changes;
 
     return changes.filter(change => {
-        // Check if user wants this type of notification
-        const typeKey = change.type;
+        const typeKey = preferenceKeyForChange(change.type);
         const isEnabled = userPrefs[typeKey];
 
-        // If preference is not set, default to true for important changes
+        // Preference never stored (older user doc): fall back to the important ones.
         if (isEnabled === undefined) {
-            // Default: send important notifications (removed, substitution, room_change)
-            return ['lesson_removed', 'substitution', 'room_change'].includes(typeKey);
+            return DEFAULT_ENABLED_CHANGES.includes(typeKey);
         }
 
         return isEnabled;
@@ -483,6 +495,8 @@ async function cleanupOldChanges(daysToKeep = 2) {
 }
 
 module.exports = {
+    filterChangesByPreferences,
+    preferenceKeyForChange,
     sendNotificationToTokens,
     getUsersWatchingTimetable,
     processPendingChanges,

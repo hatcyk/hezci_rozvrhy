@@ -238,32 +238,45 @@ async function saveTokenToServer(token) {
 }
 
 /**
- * Disable notifications
+ * Turn notifications off.
+ *
+ * The server is always told, even when this browser session never loaded its own
+ * FCM token (fcmToken is only set after enabling or a silent re-registration).
+ * Skipping that call used to leave the token stored, so the next preference load
+ * reported notifications as ON again and they came back by themselves.
  */
 export async function disableNotifications() {
+    const userId = localStorage.getItem('userId');
+
+    // Stop this device from receiving pushes at all. Best effort: the token is
+    // not always available and deleteToken can fail offline.
     try {
-        const userId = localStorage.getItem('userId');
-
-        if (!userId || !fcmToken) {
-            updateState('notificationsEnabled', false);
-            return;
+        if (!messaging) await initializeMessaging();
+        if (messaging && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            await messaging.deleteToken();
         }
-
-        // Remove token from server
-        await fetch('/api/fcm/unsubscribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId, token: fcmToken })
-        });
-
-        fcmToken = null;
-        updateState('notificationsEnabled', false);
-
-        debug.log('✅ Notifications disabled');
-
     } catch (error) {
-        debug.error('Failed to disable notifications:', error);
+        debug.warn('Could not delete the FCM token on this device:', error);
     }
+
+    fcmToken = null;
+    updateState('notificationsEnabled', false);
+
+    if (!userId) return;
+
+    // No token in the body → the server clears every token of this user and
+    // records that notifications are off.
+    const response = await fetch('/api/fcm/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+    });
+
+    if (!response.ok) {
+        throw new Error(`Server refused to disable notifications (${response.status})`);
+    }
+
+    debug.log('✅ Notifications disabled');
 }
 
 /**
@@ -323,12 +336,13 @@ export async function loadNotificationPreferences() {
             debug.log('✅ Migration complete');
         }
 
-        // Update state
+        // Update state. The switch follows the user's stored choice, not merely
+        // whether a token happens to be on file.
+        const enabled = data.notificationsEnabled ?? data.hasTokens ?? false;
         updateState('watchedTimetables', watchedTimetables);
-        updateState('notificationsEnabled', data.hasTokens || false);
-        // Global preferences removed - no longer needed
+        updateState('notificationsEnabled', enabled);
 
-        debug.log(`✅ Loaded preferences - Watched: ${data.watchedTimetables?.length || 0}, Notifications: ${data.hasTokens ? 'ON' : 'OFF'}`);
+        debug.log(`✅ Loaded preferences - Watched: ${watchedTimetables.length}, Notifications: ${enabled ? 'ON' : 'OFF'}`);
 
         return data;
 
@@ -346,6 +360,8 @@ export async function loadNotificationPreferences() {
  * @returns {Promise<{ok: boolean, reason?: string}>}
  */
 export async function ensureTokenRegistered() {
+    // Never resurrect a subscription the user switched off.
+    if (state.notificationsEnabled === false) return { ok: false, reason: 'disabled_by_user' };
     if (!isNotificationSupported()) return { ok: false, reason: 'unsupported' };
     if (isIOS() && !isStandalone()) return { ok: false, reason: 'ios_not_standalone' };
     if (Notification.permission !== 'granted') return { ok: false, reason: 'no_permission' };
@@ -382,6 +398,13 @@ export async function reconcileLessonReminderToken() {
     try {
         const data = await loadNotificationPreferences();
         if (!data) return;
+
+        // The user switched notifications off; leave them off. Reminders staying
+        // enabled in preferences is fine - the modal warns they cannot arrive.
+        if (!state.notificationsEnabled) {
+            updateState('remindersNeedAttention', hasLessonRemindersEnabled(state.watchedTimetables));
+            return;
+        }
 
         const remindersOn = hasLessonRemindersEnabled(state.watchedTimetables);
         if (!remindersOn) {

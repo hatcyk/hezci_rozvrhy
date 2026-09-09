@@ -278,6 +278,11 @@ function createChangeSummary(changes) {
 
             if (change.type === 'lesson_removed') {
                 changeText = `${timePrefix}: ${change.lesson.subject} odpadla`;
+            } else if (change.type === 'type_change') {
+                // A lesson in the slot turned into cancelled / absent.
+                changeText = change.change?.newValue === 'absent'
+                    ? `${timePrefix}: ${change.lesson.subject} - absence`
+                    : `${timePrefix}: ${change.lesson.subject} odpadla`;
             } else if (change.type === 'substitution') {
                 const newTeacher = change.change?.newValue || change.lesson.teacher;
                 changeText = `${timePrefix}: ${change.lesson.subject} - supluje ${newTeacher}`;
@@ -336,7 +341,11 @@ function createDetailedChangeSummary(changes) {
         const changeTexts = dayChanges.map(change => {
             const timePrefix = `  ${change.hour}.h`;
 
-            if (change.type === 'lesson_removed') {
+            if (change.type === 'type_change') {
+                return change.change?.newValue === 'absent'
+                    ? `${timePrefix}: ${change.lesson.subject} - absence`
+                    : `${timePrefix}: ${change.lesson.subject} odpadla`;
+            } else if (change.type === 'lesson_removed') {
                 return `${timePrefix}: ${change.lesson.subject} odpadla`;
             } else if (change.type === 'substitution') {
                 const oldTeacher = change.change?.oldValue || '';
