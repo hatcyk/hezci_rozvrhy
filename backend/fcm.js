@@ -240,6 +240,20 @@ async function getUsersWatchingTimetable(timetable) {
  * @param {Object} notificationTypes - User's notification type preferences
  * @returns {Array} Filtered changes
  */
+// Detector change types that no switch of its own covers. 'type_change' is a
+// lesson turning into cancelled/absent, which is what the "Odpadlé hodiny"
+// switch means to the user - without this mapping those (the most important
+// notifications there are) matched no preference and were silently dropped.
+const PREFERENCE_KEY_BY_CHANGE_TYPE = {
+    type_change: 'lesson_removed',
+};
+
+const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
+
+function preferenceKeyForChange(changeType) {
+    return PREFERENCE_KEY_BY_CHANGE_TYPE[changeType] || changeType;
+}
+
 function filterChangesByPreferences(changes, notificationTypes) {
     if (!notificationTypes || !notificationTypes.changes) {
         // No preferences set, send all change notifications (default behavior)
@@ -249,14 +263,12 @@ function filterChangesByPreferences(changes, notificationTypes) {
     const userPrefs = notificationTypes.changes;
 
     return changes.filter(change => {
-        // Check if user wants this type of notification
-        const typeKey = change.type;
+        const typeKey = preferenceKeyForChange(change.type);
         const isEnabled = userPrefs[typeKey];
 
-        // If preference is not set, default to true for important changes
+        // Preference never stored (older user doc): fall back to the important ones.
         if (isEnabled === undefined) {
-            // Default: send important notifications (removed, substitution, room_change)
-            return ['lesson_removed', 'substitution', 'room_change'].includes(typeKey);
+            return DEFAULT_ENABLED_CHANGES.includes(typeKey);
         }
 
         return isEnabled;
@@ -436,27 +448,31 @@ async function cleanupOldChanges(daysToKeep = 2) {
 
         console.log(`\n🧹 [CLEANUP CHANGES] Starting cleanup of changes older than ${daysToKeep} days (before ${cutoffISO})`);
 
-        // Query old processed changes (sent: true AND older than cutoff)
+        // Old changes, filtered on a single field so Firestore's automatic
+        // single-field index is enough. Combining sent == true with a range on
+        // sentAt needs a composite index that was never created, so this whole
+        // cleanup failed every night and the collection kept growing.
         const snapshot = await db.collection('changes')
-            .where('sent', '==', true)
             .where('sentAt', '<', cutoffISO)
             .get();
 
-        if (snapshot.empty) {
+        const staleDocs = snapshot.docs.filter(doc => doc.data().sent === true);
+
+        if (staleDocs.length === 0) {
             console.log(`   No old changes to clean up`);
             return { deleted: 0, errors: 0 };
         }
 
-        console.log(`   Found ${snapshot.size} old changes to delete`);
+        console.log(`   Found ${staleDocs.length} old changes to delete`);
 
         // Delete in batches (Firestore batch limit is 500)
         const batchSize = 500;
         let totalDeleted = 0;
         let totalErrors = 0;
 
-        for (let i = 0; i < snapshot.docs.length; i += batchSize) {
+        for (let i = 0; i < staleDocs.length; i += batchSize) {
             const batch = db.batch();
-            const batchDocs = snapshot.docs.slice(i, i + batchSize);
+            const batchDocs = staleDocs.slice(i, i + batchSize);
 
             batchDocs.forEach(doc => {
                 batch.delete(doc.ref);
@@ -483,6 +499,8 @@ async function cleanupOldChanges(daysToKeep = 2) {
 }
 
 module.exports = {
+    filterChangesByPreferences,
+    preferenceKeyForChange,
     sendNotificationToTokens,
     getUsersWatchingTimetable,
     processPendingChanges,

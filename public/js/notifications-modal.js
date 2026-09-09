@@ -157,16 +157,17 @@ export function updateReminderWarning() {
 export function updateNotificationUIState() {
     const flatList = document.getElementById('flatTimetableList');
 
+    // The watched-timetable list stays usable in both states: picking a
+    // different class is the most common reason to open this sheet, and it used
+    // to require switching notifications off first.
+    if (flatList) flatList.classList.remove('disabled');
+
     if (state.notificationsEnabled) {
-        // Notifications are ON - show disable button, disable list
         if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'none';
         if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'block';
-        if (flatList) flatList.classList.add('disabled');
     } else {
-        // Notifications are OFF - show enable button, enable list
         if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'block';
         if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'none';
-        if (flatList) flatList.classList.remove('disabled');
 
         // Update enable button state based on selection
         updateEnableButtonState();
@@ -214,30 +215,17 @@ export async function enableNotifications() {
 
     try {
         await requestNotificationPermission();
-
-        // Wait 2 seconds before allowing next action
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Restore button state before updating UI (button will be hidden by updateNotificationUIState)
-        button.disabled = false;
-        button.textContent = originalText;
-
-        // Update UI after successful enable
-        updateNotificationUIState();
-        updateReminderWarning();
     } catch (error) {
         if (error.message === 'IOS_NOT_STANDALONE') {
             alert('Na iOS musíte nejdřív přidat web na plochu (Home Screen). Klikněte na tlačítko "Sdílet" a pak "Přidat na plochu".');
         } else {
             alert('Nepodařilo se zapnout notifikace: ' + error.message);
         }
-
-        // Wait 2 seconds before allowing next action (even on error)
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Re-enable button on error
+    } finally {
         button.disabled = false;
         button.textContent = originalText;
+        updateNotificationUIState();
+        updateReminderWarning();
     }
 }
 
@@ -258,22 +246,16 @@ export async function disableNotificationsHandler() {
 
     try {
         await disableNotifications();
-
-        // Wait 2 seconds before allowing next action
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Update UI after successful disable
-        updateNotificationUIState();
-        updateReminderWarning();
     } catch (error) {
+        // The switch is only reported as off when the server confirmed it;
+        // otherwise re-read the real state so the UI cannot lie.
         alert('Nepodařilo se vypnout notifikace: ' + error.message);
-
-        // Wait 2 seconds before allowing next action (even on error)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await loadNotificationPreferences();
     } finally {
-        // Re-enable button
         button.disabled = false;
         button.textContent = originalText;
+        updateNotificationUIState();
+        updateReminderWarning();
     }
 }
 

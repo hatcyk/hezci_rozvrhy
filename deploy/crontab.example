@@ -1,0 +1,27 @@
+# Lepší Rozvrh — scheduled jobs on a self-hosted server.
+#
+# On Vercel these ran as GitHub Actions workflows calling /api/cron/*. A server
+# inside the school network is usually not reachable from GitHub, so the jobs
+# run locally instead. Nothing is exposed and no CRON_SECRET is needed.
+#
+# Install with:  crontab -e   (as the user that owns the deployment)
+# Docker:        prefix each command with
+#                docker compose -f /srv/lepsi-rozvrh/docker-compose.yml exec -T app
+#
+# Adjust APP_DIR to where the project lives.
+
+APP_DIR=/srv/lepsi-rozvrh
+TZ=Europe/Prague
+MAILTO=""
+
+# Download timetables from Bakaláři and detect changes — every 15 minutes.
+*/15 * * * *  cd $APP_DIR && /usr/bin/node scripts/run-prefetch.js >> /var/log/lepsi-rozvrh/prefetch.log 2>&1
+
+# Send push notifications for the changes found above — every 5 minutes.
+*/5 * * * *   cd $APP_DIR && /usr/bin/node scripts/process-notifications.js >> /var/log/lepsi-rozvrh/notifications.log 2>&1
+
+# "Next lesson" reminders — every minute on school days, 7:00-16:00 only.
+* 7-15 * * 1-5  cd $APP_DIR && /usr/bin/node scripts/send-lesson-reminders.js >> /var/log/lepsi-rozvrh/reminders.log 2>&1
+
+# Prune delivered-reminder records and processed changes — nightly.
+17 2 * * *    cd $APP_DIR && /usr/bin/node scripts/cleanup.js >> /var/log/lepsi-rozvrh/cleanup.log 2>&1

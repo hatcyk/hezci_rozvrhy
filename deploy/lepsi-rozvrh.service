@@ -1,0 +1,33 @@
+# Lepší Rozvrh — systemd unit for a plain Node deployment (no Docker).
+#
+#   sudo cp deploy/lepsi-rozvrh.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now lepsi-rozvrh
+#
+# Scheduled jobs are separate; see deploy/crontab.example.
+
+[Unit]
+Description=Lepsi Rozvrh (timetable web app)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rozvrh
+Group=rozvrh
+WorkingDirectory=/srv/lepsi-rozvrh
+EnvironmentFile=/srv/lepsi-rozvrh/.env
+Environment=NODE_ENV=production
+Environment=TZ=Europe/Prague
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=5
+
+# The app only needs to read its own directory and reach the network.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/lepsi-rozvrh
+
+[Install]
+WantedBy=multi-user.target
