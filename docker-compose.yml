@@ -1,0 +1,27 @@
+# Lepší Rozvrh — self-hosted deployment.
+#
+#   cp .env.example .env      # fill in the credentials
+#   docker compose up -d --build
+#
+# The web app and the four scheduled jobs run in one container; scheduling is
+# done by the host (see deploy/crontab.example) so a job can never overlap with
+# a redeploy. See DEPLOYMENT.md.
+
+services:
+  app:
+    build: .
+    image: lepsi-rozvrh
+    container_name: lepsi-rozvrh
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Prague
+      NODE_ENV: production
+    ports:
+      # Bind to localhost only: nginx (or another reverse proxy) terminates TLS
+      # and forwards here. Change to "3000:3000" to expose it directly.
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Service account file, if you use FIREBASE_SERVICE_ACCOUNT_PATH instead of
+      # pasting the JSON into FIREBASE_SERVICE_ACCOUNT.
+      - ./firebase-service-account.json:/app/firebase-service-account.json:ro
