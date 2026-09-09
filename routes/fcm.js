@@ -27,6 +27,7 @@ router.post('/subscribe', async (req, res) => {
 
             await userRef.update({
                 tokens: [token],
+                notificationsEnabled: true,
                 lastUpdated: new Date().toISOString()
             });
 
@@ -41,6 +42,7 @@ router.post('/subscribe', async (req, res) => {
         } else {
             await userRef.set({
                 tokens: [token],
+                notificationsEnabled: true,
                 preferences: {
                     watchedTimetables: []
                 },
@@ -60,33 +62,38 @@ router.post('/subscribe', async (req, res) => {
     }
 });
 
-// Unsubscribe user device
+// Turn notifications off for a user.
+// `token` is optional: without it every token of the user is removed, which is
+// what the app needs when the browser session never loaded its own token.
+// notificationsEnabled records the choice, so nothing re-enables it silently.
 router.post('/unsubscribe', async (req, res) => {
     try {
         const { userId, token } = req.body;
 
-        if (!userId || !token) {
-            return res.status(400).json({ error: 'userId and token are required' });
+        if (!userId) {
+            return res.status(400).json({ error: 'userId is required' });
         }
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
         const userDoc = await userRef.get();
 
-        if (userDoc.exists) {
-            const userData = userDoc.data();
-            const tokens = userData.tokens || [];
-            const filteredTokens = tokens.filter(t => t !== token);
-
-            await userRef.update({
-                tokens: filteredTokens,
-                lastUpdated: new Date().toISOString()
-            });
-
-            res.json({ success: true, message: 'Token removed successfully' });
-        } else {
-            res.status(404).json({ error: 'User not found' });
+        if (!userDoc.exists) {
+            // Nothing stored for this user - the requested state already holds.
+            return res.json({ success: true, message: 'No subscription to remove' });
         }
+
+        const tokens = userDoc.data().tokens || [];
+        const remainingTokens = token ? tokens.filter(t => t !== token) : [];
+
+        await userRef.update({
+            tokens: remainingTokens,
+            notificationsEnabled: false,
+            lastUpdated: new Date().toISOString()
+        });
+
+        console.log(`🔕 Notifications disabled for user ${userId} (tokens ${tokens.length} → ${remainingTokens.length})`);
+        res.json({ success: true, message: 'Notifications disabled', tokens: remainingTokens.length });
 
     } catch (error) {
         console.error('FCM unsubscribe error:', error);
@@ -201,9 +208,14 @@ router.get('/preferences/:userId', async (req, res) => {
             const prefs = userData.preferences || {};
             const notifTypes = prefs.notificationTypes || {};
 
+            const hasTokens = (userData.tokens || []).length > 0;
+
             res.json({
                 watchedTimetables: prefs.watchedTimetables || [],
-                hasTokens: (userData.tokens || []).length > 0,
+                hasTokens,
+                // Explicit user choice; older docs predate the flag, so fall back
+                // to "enabled if a token is stored".
+                notificationsEnabled: userData.notificationsEnabled ?? hasTokens,
                 notificationTypes: {
                     systemStatus: notifTypes.systemStatus ?? false
                 }
@@ -212,6 +224,7 @@ router.get('/preferences/:userId', async (req, res) => {
             res.json({
                 watchedTimetables: [],
                 hasTokens: false,
+                notificationsEnabled: false,
                 notificationTypes: {
                     systemStatus: false
                 }
