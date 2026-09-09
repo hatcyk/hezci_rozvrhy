@@ -218,6 +218,10 @@ export async function enableNotifications() {
     } catch (error) {
         if (error.message === 'IOS_NOT_STANDALONE') {
             alert('Na iOS musíte nejdřív přidat web na plochu (Home Screen). Klikněte na tlačítko "Sdílet" a pak "Přidat na plochu".');
+        } else if (error.message === 'PERMISSION_BLOCKED') {
+            alert('Prohlížeč má notifikace pro tuto stránku zablokované. Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
+        } else if (error.message === 'PERMISSION_DISMISSED') {
+            alert('Notifikace nebyly povoleny. Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
         } else {
             alert('Nepodařilo se zapnout notifikace: ' + error.message);
         }
