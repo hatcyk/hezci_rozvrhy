@@ -161,22 +161,30 @@ export async function requestNotificationPermission() {
             throw new Error('IOS_NOT_STANDALONE');
         }
 
-        // IMPORTANT: Register and wait for Service Worker FIRST
-        debug.log('🔄 Registering Service Worker...');
-        await registerServiceWorker();
-
-        // Wait a bit to ensure Service Worker is fully active
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        // Request permission
+        // Ask for permission FIRST, before anything is awaited.
+        //
+        // Browsers only show the prompt while the click that started this still
+        // counts as user activation, and every await spends it. Registering the
+        // service worker here first meant Firefox-based browsers (Zen included)
+        // never prompted at all and resolved straight to 'default', which this
+        // function then reported as a denial - people saw "permission denied"
+        // without ever being asked.
         debug.log('🔔 Requesting notification permission...');
         const permission = await Notification.requestPermission();
 
         if (permission !== 'granted') {
-            throw new Error('Notification permission denied');
+            // 'denied' = blocked for this site, only the user can undo it in the
+            // browser; 'default' = the prompt was dismissed, retrying works.
+            throw new Error(permission === 'denied' ? 'PERMISSION_BLOCKED' : 'PERMISSION_DISMISSED');
         }
 
         debug.log('✅ Notification permission granted');
+
+        // Now the slow part: FCM needs its service worker registered and active
+        // before a token can be issued.
+        debug.log('🔄 Registering Service Worker...');
+        await registerServiceWorker();
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         // Initialize Firebase Messaging
         if (!messaging) {

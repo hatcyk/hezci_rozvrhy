@@ -79,11 +79,18 @@ const check = (name, ok, detail = '') => { (ok ? pass++ : fail++); console.log(`
   const settle = async () => { const seen = prefLoads;
     await waitFor(async () => prefLoads > seen, 15000); await sleep(800); };
 
-  const waitApp = async () => { for (let i = 0; i < 60; i++) { await sleep(500);
-    if (await ev(`!!document.querySelector('.lesson-card, .compact-lesson-item, .agenda-row, .lesson-card-full')`)) break; } await sleep(1500); };
+  const goto = async () => {
+    const seen = prefLoads;
+    await send('Page.navigate', { url: BASE + '/' });
+    for (let i = 0; i < 60; i++) {
+      await sleep(500);
+      if (await ev(`!!document.querySelector('.lesson-card, .compact-lesson-item, .agenda-row, .lesson-card-full')`)) break;
+    }
+    await waitFor(async () => prefLoads > seen, 30000);
+    await sleep(800);
+  };
 
-  await send('Page.navigate', { url: BASE + '/' });
-  await waitApp();
+  await goto();
   console.log(`permission = ${await ev('Notification.permission')}`);
   check('bell shows ON after load (token exists on server)', await waitFor(bellOn));
 
@@ -112,21 +119,41 @@ const check = (name, ok, detail = '') => { (ok ? pass++ : fail++); console.log(`
   check('stays OFF after reopening the modal', (await bellOn()) === false);
 
   // and after a reload (boot-time reconcile runs here)
-  await send('Page.navigate', { url: BASE + '/' });
-  await waitApp();
-  await settle();
-  await sleep(2500);
+  await goto();
+  await sleep(2000);
   const afterReload = await prefs();
   check('stays OFF after a page reload', (await bellOn()) === false);
   check('server still has no token after reload', afterReload.hasTokens === false, `hasTokens=${afterReload.hasTokens}`);
+
+  // --- the permission prompt must be asked for before anything is awaited ---
+  // Browsers only prompt while the click still counts as user activation, so
+  // registering the service worker first meant Firefox never asked at all.
+  await ev(`(() => {
+    window.__order = [];
+    window.__alerts = [];
+    window.alert = (m) => window.__alerts.push(String(m));       // alert() would block CDP
+    Notification.requestPermission = () => { window.__order.push('permission'); return Promise.resolve('default'); };
+    const sw = navigator.serviceWorker;
+    const reg = sw.register.bind(sw), get = sw.getRegistration.bind(sw);
+    sw.register = (...a) => { window.__order.push('sw'); return reg(...a); };
+    sw.getRegistration = (...a) => { window.__order.push('sw'); return get(...a); };
+    return 'stubbed';
+  })()`);
+  await ev(`document.getElementById('notificationBell').click(); 'x'`);
+  await settle();
+  await ev(`document.getElementById('notificationToggleEnable').click(); 'x'`);
+  await sleep(3000);
+  const order = await ev(`JSON.stringify(window.__order)`);
+  const alerts = await ev(`JSON.stringify(window.__alerts)`);
+  check('permission is requested before the service worker is touched', JSON.parse(order)[0] === 'permission', `order=${order}`);
+  check('a dismissed prompt is reported as dismissed, not as denied', /znovu/.test(alerts), `alert=${alerts}`);
 
   // --- switching the watched class while notifications are ON ---
   await api('/api/fcm/subscribe', { userId: USER, token: TOKEN + '_2' });
   const reEnabled = await prefs();
   check('re-subscribing turns notifications back on server-side', reEnabled.notificationsEnabled === true, `notificationsEnabled=${reEnabled.notificationsEnabled}`);
 
-  await send('Page.navigate', { url: BASE + '/' });
-  await waitApp();
+  await goto();
   check('bell is ON again after re-enabling', await waitFor(bellOn));
 
   await ev(`document.getElementById('notificationBell').click(); 'x'`);
