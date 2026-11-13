@@ -12,7 +12,7 @@
 
 import { state } from './state.js';
 import { lessonTimes } from './constants.js';
-import { getTodayIndex, abbreviateSubject, standardizeGroupName } from './utils.js';
+import { getTodayIndex, abbreviateSubject, standardizeGroupName, esc } from './utils.js';
 
 let intervalId = null;
 
@@ -47,11 +47,6 @@ function pluralMin(n) {
 }
 function inText(n) {
     return n <= 0 ? 'teď' : `za ${n} ${pluralMin(n)}`;
-}
-
-function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 /** Group number for sorting (whole-class first, then 1, 2, …). */

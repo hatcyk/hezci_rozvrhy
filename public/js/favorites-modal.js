@@ -7,6 +7,7 @@ import { state, updateState } from './state.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
 import { setDropdownValue, refreshDropdownHeartIndicator, setFavoritesAccessBtnUpdater } from './dropdown.js';
 import { HEART_FILLED_SVG } from './favorites.js';
+import { esc, setPressed } from './utils.js';
 
 const TYPE_LABELS = {
     Class: 'Třída',
@@ -19,6 +20,7 @@ export function updateFavoritesAccessBtn() {
     if (!btn) return;
     const hasFavs = state.favoriteTimetables.length > 0;
     btn.classList.toggle('has-favorites', hasFavs);
+    btn.setAttribute('aria-label', hasFavs ? `Oblíbené rozvrhy (${state.favoriteTimetables.length})` : 'Oblíbené rozvrhy');
     if (hasFavs) {
         btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="favorites-modal-heart-icon"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
     } else {
@@ -46,10 +48,10 @@ function populateFavoritesSheet() {
     }
 
     list.innerHTML = favs.map(fav => `
-        <button class="favorites-sheet-item" data-type="${fav.type}" data-id="${fav.id}">
+        <button type="button" class="favorites-sheet-item" data-type="${esc(fav.type)}" data-id="${esc(fav.id)}">
             ${HEART_FILLED_SVG}
-            <span>${getLabelForFavorite(fav)}</span>
-            <span class="favorites-sheet-type-badge">${TYPE_LABELS[fav.type] || fav.type}</span>
+            <span>${esc(getLabelForFavorite(fav))}</span>
+            <span class="favorites-sheet-type-badge">${esc(TYPE_LABELS[fav.type] || fav.type)}</span>
         </button>
     `).join('');
 
@@ -61,9 +63,7 @@ function populateFavoritesSheet() {
 
             if (state.selectedType !== type) {
                 updateState('selectedType', type);
-                document.querySelectorAll('.type-btn').forEach(btn => {
-                    btn.classList.toggle('active', btn.dataset.type === type);
-                });
+                setPressed(document.querySelectorAll('.type-btn'), btn => btn.dataset.type === type);
                 const { populateValueSelect } = await import('./timetable.js');
                 populateValueSelect();
             }
