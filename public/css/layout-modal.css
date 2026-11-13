@@ -18,7 +18,7 @@
 }
 
 .layout-option:hover {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
 }
 
 .layout-option.active {

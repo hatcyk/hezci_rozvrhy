@@ -38,6 +38,13 @@
     opacity: 0.8;
 }
 
+/* Rows are role="button": visible keyboard focus */
+.agenda-row:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 8px;
+}
+
 /* ---- Time column ---- */
 .agenda-time {
     width: 44px;
@@ -107,7 +114,7 @@
 
 .agenda-room {
     background: var(--border-light);
-    color: var(--text-dim);
+    color: var(--chip-text);
     padding: 2px 6px;
     border-radius: 4px;
     font-weight: 600;
@@ -126,31 +133,29 @@
 }
 
 .agenda-badge.changed {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
+    background: var(--status-changed-tint);
+    color: var(--status-changed);
 }
 
 .agenda-badge.removed {
-    background: rgba(220, 38, 38, 0.12);
-    color: #dc2626;
+    background: var(--status-removed-tint);
+    color: var(--status-removed);
 }
 
-/* ---- State: past ---- */
+/* ---- State: past ----
+   Dimmed colour instead of opacity 0.4 (text stays >= 4.5:1) */
 .agenda-row.agenda-past {
     filter: saturate(0.4);
 }
 
-.agenda-row.agenda-past .agenda-card {
-    opacity: 0.4;
-}
-
-.agenda-row.agenda-past .agenda-time {
-    opacity: 0.4;
+.agenda-row.agenda-past .agenda-subject {
+    color: var(--text-dim);
+    font-weight: 500;
 }
 
 /* ---- State: current ---- */
 .agenda-row.agenda-current .agenda-time {
-    color: var(--spsd-orange, #f97316);
+    color: var(--status-active);
     font-weight: 700;
 }
 
@@ -164,18 +169,21 @@
 }
 
 .agenda-row.agenda-current .agenda-subject {
-    color: var(--spsd-orange, #f97316);
+    color: var(--status-active);
     font-weight: 700;
 }
 
-/* ---- State: upcoming ---- */
+/* ---- State: upcoming ----
+   Solid colour (the 65 % transparent orange was 2.2-2.9:1); told apart from
+   the current lesson by weight and the smaller hollow dot. */
 .agenda-row.agenda-upcoming .agenda-time {
-    color: rgba(235, 93, 67, 0.65);
+    color: var(--status-active);
     font-weight: 600;
 }
 
 .agenda-row.agenda-upcoming .agenda-time::after {
-    background: rgba(235, 93, 67, 0.5);
+    background: var(--card-bg);
+    border: 2px solid var(--spsd-orange);
     width: 9px;
     height: 9px;
     right: -12.5px;
@@ -183,32 +191,29 @@
 }
 
 .agenda-row.agenda-upcoming .agenda-subject {
-    color: rgba(235, 93, 67, 0.65);
+    color: var(--status-active);
+    font-weight: 500;
 }
 
-/* ---- State: removed ---- */
-.agenda-row.agenda-removed .agenda-card {
-    opacity: 0.5;
-}
-
+/* ---- State: removed ---- (strike-through + "Zrušeno" badge, no opacity) */
 .agenda-row.agenda-removed .agenda-subject {
     text-decoration: line-through;
-    text-decoration-color: rgba(239, 68, 68, 0.7);
-    text-decoration-thickness: 2.5px;
+    text-decoration-color: var(--status-removed);
+    text-decoration-thickness: 2px;
     color: var(--text-dim);
 }
 
 .agenda-row.agenda-removed .agenda-time::after {
-    background: #ef4444;
+    background: var(--status-removed);
 }
 
 /* ---- State: changed ---- */
 .agenda-row.agenda-changed .agenda-subject {
-    color: #f59e0b;
+    color: var(--status-changed);
 }
 
 .agenda-row.agenda-changed .agenda-time::after {
-    background: #f59e0b;
+    background: var(--status-changed);
 }
 
 /* ---- Empty hour row ---- */

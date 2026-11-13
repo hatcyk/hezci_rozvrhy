@@ -117,8 +117,9 @@ h1 svg {
 
 .schedule-type-btn.active,
 .type-btn.active {
+    /* text colour >= 4.5:1 in both themes (brand orange is 3.4:1 on white) */
     background: transparent;
-    color: var(--spsd-orange);
+    color: var(--status-active);
     border-bottom-color: var(--spsd-orange);
 }
 
@@ -228,7 +229,7 @@ h1 svg {
 .custom-dropdown-option.selected {
     background: var(--accent-light);
     font-weight: 600;
-    color: var(--spsd-orange);
+    color: var(--status-active);
 }
 
 .custom-dropdown-option:last-child {
@@ -317,4 +318,9 @@ h1 svg {
 /* ---- Mobile: smaller logo ---- */
 @media (max-width: 1079px) {
     .logo { height: 30px; }
+}
+
+.custom-dropdown-search:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
 }

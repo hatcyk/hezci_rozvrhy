@@ -7,6 +7,9 @@ import { state } from './state.js';
 import { switchLayout } from './layout-manager.js';
 import { getAvailableLayouts, getLayoutById } from './layout-registry.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+import { showNotificationModal } from './notifications-modal.js';
+import { toggleTheme } from './theme.js';
+import { esc } from './utils.js';
 
 /**
  * Show settings modal
@@ -48,11 +51,9 @@ export function initSettings() {
     if (settingsNotifications) {
         settingsNotifications.addEventListener('click', () => {
             // Keep settings open - notification modal opens on top
-            // so back button in notification modal will reveal settings again
-            const notificationBell = document.getElementById('notificationBell');
-            if (notificationBell) {
-                notificationBell.click();
-            }
+            // so back button in notification modal will reveal settings again.
+            // Called directly: the header bell is inert while this dialog is modal.
+            showNotificationModal();
         });
     }
 
@@ -66,11 +67,7 @@ export function initSettings() {
     if (settingsTheme) {
         settingsTheme.addEventListener('click', () => {
             closeSettingsModal();
-            // Trigger theme toggle
-            const themeToggle = document.getElementById('themeToggle');
-            if (themeToggle) {
-                themeToggle.click();
-            }
+            toggleTheme();
         });
     }
 
@@ -92,6 +89,10 @@ function toggleLayoutPanel() {
     }
     panel.classList.toggle('expanded');
     if (arrow) arrow.classList.toggle('rotated', !isOpen);
+    // Collapsed panel is only squeezed to 0 height: keep it out of Tab order
+    panel.inert = isOpen;
+    const toggle = document.getElementById('settingsLayout');
+    if (toggle) toggle.setAttribute('aria-expanded', String(!isOpen));
 }
 
 /**
@@ -108,9 +109,9 @@ function populateInlineLayoutOptions() {
     layouts.forEach(layout => {
         const isActive = layout.id === currentLayout;
         cardsHtml += `
-            <button class="layout-option-card${isActive ? ' active' : ''}" data-layout-id="${layout.id}">
-                <div class="layout-option-card-icon">${layout.icon}</div>
-                <div class="layout-option-card-name">${layout.name}</div>
+            <button type="button" class="layout-option-card${isActive ? ' active' : ''}" data-layout-id="${esc(layout.id)}" aria-pressed="${isActive}">
+                <span class="layout-option-card-icon" aria-hidden="true">${layout.icon}</span>
+                <span class="layout-option-card-name">${esc(layout.name)}</span>
             </button>
         `;
     });
@@ -123,7 +124,9 @@ function populateInlineLayoutOptions() {
             await switchLayout(layoutId);
 
             container.querySelectorAll('.layout-option-card').forEach(c => {
-                c.classList.toggle('active', c.dataset.layoutId === layoutId);
+                const on = c.dataset.layoutId === layoutId;
+                c.classList.toggle('active', on);
+                c.setAttribute('aria-pressed', String(on));
             });
 
             updateLayoutDescription(layoutId);

@@ -5,7 +5,6 @@ export const state = {
     selectedDayIndex: null,
     selectedType: 'Class',
     selectedScheduleType: 'actual',
-    weekOffset: 0,
     teacherAbbreviationMap: null,
     showWholeWeek: false, // DEPRECATED - use layoutMode instead
     notificationsEnabled: false,
@@ -15,6 +14,9 @@ export const state = {
     watchedTimetables: [],
     favoriteTimetables: [],
     layoutMode: 'single-day',
+    // "Jen změny" toolbar toggle: list the week's changes instead of the layout
+    // (session only - a returning user should see the normal timetable)
+    onlyChanges: false,
     layoutPreferences: {
         'single-day': {},
         'week-view': {},

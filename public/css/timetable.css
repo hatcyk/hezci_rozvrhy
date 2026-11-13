@@ -62,7 +62,7 @@
 }
 
 .timetable-header-cell.today {
-    color: var(--today-highlight);
+    color: var(--status-active);
     border-bottom: 3px solid var(--today-highlight);
     background: var(--accent-light);
     font-weight: 800;
@@ -81,7 +81,7 @@
 .today-badge {
     display: inline-block;
     padding: 3px 8px;
-    background: var(--today-highlight);
+    background: var(--status-active-strong); /* white text 5.2:1 (brand orange was 3.4:1) */
     color: white;
     font-size: 0.7rem;
     border-radius: 6px;
@@ -100,7 +100,7 @@
     text-align: center;
     font-weight: 700;
     font-size: 0.9rem;
-    color: var(--spsd-orange);
+    color: var(--status-active);
     padding: 12px 8px;
     border-right: 2px solid var(--border);
     border-top: 1px solid var(--border);
@@ -251,8 +251,13 @@
 
 .day-selector button.active {
     background: transparent;
-    color: var(--spsd-orange);
+    color: var(--status-active);
     border-bottom-color: var(--spsd-orange);
+}
+
+.day-selector button:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: -3px;
 }
 
 /* Today dot indicator */

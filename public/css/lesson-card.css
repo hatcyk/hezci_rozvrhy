@@ -27,30 +27,48 @@
     background: rgba(235, 93, 67, 0.04);
 }
 
-/* ---- Status: past ---- */
+/* ---- Status: past ----
+   Was opacity 0.4, which pushed text to 1.7-3.5:1. Dimmed text colour keeps
+   it readable (>= 4.5:1) while still looking "done". */
 .lesson-card.past {
-    opacity: 0.4;
     filter: saturate(0.4);
     border-bottom: 1px solid var(--border);
+    box-shadow: none;
+}
+
+.lesson-card.past .lesson-subject {
+    color: var(--chip-text); /* also readable on the changed / removed tint */
+    font-weight: 600;
 }
 
 /* ---- Status: changed ---- */
 .lesson-card.changed {
-    border-bottom-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.05);
+    border-bottom-color: var(--status-changed);
+    background: var(--status-changed-tint);
 }
 
-/* Changed dot indicator top-right */
-.lesson-card.changed::after {
-    content: '';
+/* Shape icon (not just colour) for changed / cancelled lessons, top-right */
+.lesson-status-icon {
     position: absolute;
-    top: 7px;
-    right: 7px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #f59e0b;
-    box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+    top: 6px;
+    right: 6px;
+    display: inline-flex;
+    line-height: 0;
+    z-index: 1;
+}
+
+.lesson-status-icon.is-changed {
+    color: var(--status-changed);
+}
+
+.lesson-status-icon.is-removed {
+    color: var(--status-removed);
+}
+
+/* Keyboard focus on a lesson card (cards are role="button") */
+.lesson-card:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
 }
 
 /* Changed + current: current-time border wins, keep changed dot */
@@ -65,28 +83,29 @@
     background: rgba(235, 93, 67, 0.04);
 }
 
-/* Changed + past: muted changed border */
+/* Changed + past: changed border stays visible (>= 3:1) */
 .lesson-card.changed.past {
-    border-bottom-color: rgba(245, 158, 11, 0.35);
+    border-bottom: 3px solid var(--status-changed);
 }
 
-/* ---- Status: removed ---- */
+/* ---- Status: removed ----
+   No opacity (text fell to 1.9-3:1); strike-through + icon carry the state. */
 .lesson-card.removed {
-    border-bottom-color: #ef4444;
-    opacity: 0.5;
+    border-bottom-color: var(--status-removed);
+    background: var(--status-removed-tint);
 }
 
 .lesson-card.removed .lesson-subject {
+    color: var(--text-dim);
     text-decoration: line-through;
-    text-decoration-color: rgba(239, 68, 68, 0.7);
-    text-decoration-thickness: 2.5px;
+    text-decoration-color: var(--status-removed);
+    text-decoration-thickness: 2px;
 }
 
 /* ---- Status: absent ---- */
 .lesson-card.absent {
     border-bottom-color: #a855f7;
-    background: rgba(168, 85, 247, 0.04);
-    opacity: 0.55;
+    background: rgba(168, 85, 247, 0.06);
 }
 
 .lesson-card.absent .lesson-subject {
@@ -137,7 +156,7 @@
     top: 6px;
     right: 6px;
     font-size: 0.7rem;
-    color: var(--text-dim);
+    color: var(--chip-text);
     padding: 2px 6px;
     background: var(--border-light);
     border-radius: 5px;
@@ -149,12 +168,29 @@
     white-space: nowrap;
 }
 
-/* Offset group badge when there's a change dot */
-.lesson-card.changed .lesson-group {
-    top: 22px;
+/* Offset group badge below the status icon */
+.lesson-card.changed .lesson-group,
+.lesson-card.removed .lesson-group,
+.lesson-card.absent .lesson-group {
+    top: 24px;
 }
 
-/* Gray out group badge for removed lessons */
-.lesson-card.removed .lesson-group {
-    opacity: 0.5;
+/* Tinted cards (current / next / changed / removed) lower the contrast of the
+   dim detail text below 4.5:1 in the light theme - use the stronger dim. */
+.lesson-card.current-time .lesson-details,
+.lesson-card.upcoming .lesson-details,
+.lesson-card.changed .lesson-details,
+.lesson-card.removed .lesson-details,
+.lesson-card.absent .lesson-details,
+.lesson-card.removed .lesson-subject,
+.lesson-card.absent .lesson-subject {
+    color: var(--chip-text);
+}
+
+.lesson-card.current-time .lesson-detail-icon,
+.lesson-card.upcoming .lesson-detail-icon,
+.lesson-card.changed .lesson-detail-icon,
+.lesson-card.removed .lesson-detail-icon,
+.lesson-card.absent .lesson-detail-icon {
+    stroke: var(--chip-text);
 }

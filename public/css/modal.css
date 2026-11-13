@@ -148,8 +148,9 @@
 }
 
 .modal-link {
-    color: var(--spsd-orange);
-    text-decoration: none;
+    color: var(--status-active); /* brand orange was 3.4:1 on white */
+    text-decoration: underline; /* a link must not be told apart by colour alone (1.4.1) */
+    text-underline-offset: 2px;
     font-weight: 700;
     transition: color 0.2s ease;
     position: relative;
@@ -193,7 +194,7 @@
 
 .modal-changes-container:hover {
     background: var(--accent-medium);
-    border-color: var(--accent);
+    border-color: var(--accent-border);
 }
 
 /* Icon container - bude mít dynamickou barvu */
@@ -226,7 +227,9 @@
 .modal-changes-header {
     font-size: 0.85rem;
     font-weight: 700;
-    color: var(--change-header-color, #3b82f6);
+    /* The type colours (#6b7280, #f97316, #14b8a6 …) are 2.5–4.2:1 as text on
+       the light / dark card; the type stays coloured in the icon next to it. */
+    color: var(--text-main);
     text-transform: uppercase;
     letter-spacing: 0.8px;
 }
@@ -247,7 +250,8 @@
 
 .modal-changes-content .change-label {
     font-weight: 600;
-    color: var(--text-dim);
+    /* --text-dim on the tinted change box was 4.12:1 in the light theme (axe, e2e) */
+    color: var(--chip-text);
     font-size: 0.9rem;
     transition: color var(--theme-transition);
 }

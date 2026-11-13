@@ -1,18 +1,30 @@
-.theme-warning-overlay {
+/* Now a native modal <dialog> (theme.js): reset the UA box and cover the
+   viewport; display is only set while [open] so the closed state stays hidden */
+dialog.theme-warning-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: none;
+    color: var(--text-main);
     background: rgba(0, 0, 0, 0.8);
     backdrop-filter: blur(8px);
+    padding: 20px;
+    opacity: 0;
+    overscroll-behavior: contain;
+}
+
+dialog.theme-warning-overlay[open] {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 10000;
-    padding: 20px;
-    opacity: 0;
-    pointer-events: none;
+}
+
+dialog.theme-warning-overlay::backdrop {
+    background: transparent;
 }
 
 .theme-warning-overlay.visible {
@@ -118,9 +130,9 @@
 }
 
 .theme-warning-confirm {
-    background: var(--spsd-orange);
+    background: var(--status-active-strong); /* white text 5.2:1 */
     color: white;
-    border-color: var(--spsd-orange);
+    border-color: var(--status-active-strong);
 }
 
 .theme-warning-confirm:hover {
