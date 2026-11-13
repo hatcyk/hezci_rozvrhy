@@ -148,7 +148,7 @@ přes Admin SDK), složený index `runs (job ↑, startedAt ↓)` v
 
 | Endpoint | Ochrana | Účel |
 |---|---|---|
-| `POST /api/auth` `{ userId? }` | – | přidělí `anon-<uuid>` a custom token; starý `anonymous-<ms>` jednorázově převede (`migratedFrom`) |
+| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. |
 | `GET /api/status[?strict=1]` | – | stáří dat (3.3) |
 | `GET /api/groups/:classId` | – | skupiny třídy |
 | `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50) |
@@ -165,8 +165,10 @@ Těla se validují v `routes/validation.js`.
 
 ## 6. Frontend (`public/`)
 
-- **Start** (`js/main.js`): přihlášení (`firebase-client.js`, `/api/auth` →
-  `signInWithCustomToken`) ještě před prvním čtením Firestore; pak současně
+- **Start** (`js/main.js`): přihlášení (`firebase-client.js`) ještě před prvním
+  čtením Firestore. Klient počká, až Firebase obnoví uloženou relaci; patří-li
+  k uloženému `userId`, server se vůbec neptá. Jinak `/api/auth` (s ID tokenem
+  relace, pokud ji má) → `signInWithCustomToken`; pak současně
   definice, `/api/status` a oblíbené; nakonec pohled z adresy (`/?view=…`),
   deeplink z notifikace (`/?type=&id=&schedule=&day=&hl=change`) nebo uložený
   rozvrh. V pátek od 14:00 a o víkendu se sám přepne na příští týden.

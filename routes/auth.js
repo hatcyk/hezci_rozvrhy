@@ -1,18 +1,23 @@
 /**
  * Authentication Routes (contract S1)
  *
- * POST /api/auth { userId? } → { token, userId [, migratedFrom] }
- * - no / unknown-format userId → a fresh `anon-<uuid>`
- * - `anon-<uuid>`              → a token for that identity
- * - legacy `anonymous-<ms>`    → one-time move of users/{legacy} to a new ID
+ * POST /api/auth { userId? } [Authorization: Bearer <Firebase ID token>]
+ *   → { token, userId [, migratedFrom] }
+ * - `anon-<uuid>` + ID token of that uid      → a new custom token for it
+ * - `anonymous-<ms>` + ID token of that uid   → one-time move of users/{legacy}
+ *   to a new ID (1.x clients signed in with a custom token for the legacy uid,
+ *   so the owner's browser still holds that Firebase session)
+ * - anything else: no ID, unknown format, or an ID the caller cannot prove
+ *                                             → a fresh, empty `anon-<uuid>`
  *
- * Before this the endpoint signed a token for ANY uid in the body, so knowing
- * (or guessing) someone's ID was enough to act as them.
+ * The userId is an identifier, not a credential: knowing or guessing someone's
+ * ID (the legacy ones are millisecond timestamps) gets you nothing. Before 2.0
+ * the endpoint signed a token for ANY uid in the body.
  */
 
 const express = require('express');
-const { createCustomToken, getFirestore } = require('../backend/firebase-admin-init');
-const { isValidUserId, isLegacyUserId, newUserId } = require('../backend/auth-middleware');
+const { createCustomToken, getFirestore, verifyIdToken } = require('../backend/firebase-admin-init');
+const { isValidUserId, isLegacyUserId, newUserId, bearerToken } = require('../backend/auth-middleware');
 
 const router = express.Router();
 
@@ -39,16 +44,34 @@ async function migrateLegacyUser(db, legacyId, newId) {
     });
 }
 
+/**
+ * The uid of the caller's Firebase session, or null when the request carries
+ * no valid ID token. An invalid or expired token is not an error here: the
+ * caller just cannot prove any identity and gets a new one.
+ */
+async function provenUid(req) {
+    const idToken = bearerToken(req);
+    if (!idToken) return null;
+    try {
+        const decoded = await verifyIdToken(idToken);
+        return decoded && typeof decoded.uid === 'string' ? decoded.uid : null;
+    } catch {
+        return null;
+    }
+}
+
 router.post('/auth', async (req, res) => {
     try {
         const requested = req.body && typeof req.body.userId === 'string' ? req.body.userId : null;
+        const knownFormat = isValidUserId(requested) || isLegacyUserId(requested);
+        const owned = knownFormat && (await provenUid(req)) === requested;
 
         let userId;
         let migratedFrom;
 
-        if (isValidUserId(requested)) {
+        if (owned && isValidUserId(requested)) {
             userId = requested;
-        } else if (isLegacyUserId(requested)) {
+        } else if (owned) {
             userId = newUserId();
             const moved = await migrateLegacyUser(getFirestore(), requested, userId);
             migratedFrom = requested;

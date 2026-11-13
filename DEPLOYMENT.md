@@ -63,10 +63,14 @@ Data ve Firestore zůstanou kompatibilní (nová pole starý kód ignoruje).
 Nic se nespouští ručně. Při prvním otevření nové verze klient pošle uložené
 `localStorage.userId`:
 
-- starý formát `anonymous-<ms>` → server v jedné transakci zkopíruje
-  `users/{starý}` do `users/anon-<uuid>` (s `migratedFrom`, `migratedAt`), starý
-  smaže a vrátí nové ID, které si klient uloží;
-- bez ID nebo s neplatným ID vznikne nové `anon-<uuid>`.
+- starý formát `anonymous-<ms>` + ID token relace, kterou k němu založila verze
+  1.x (stejné SDK 9.22.0, relace v prohlížeči zůstává) → server v jedné
+  transakci zkopíruje `users/{starý}` do `users/anon-<uuid>` (s `migratedFrom`,
+  `migratedAt`), starý smaže a vrátí nové ID, které si klient uloží;
+- bez ID, s neplatným ID nebo s ID, ke kterému volající nemá relaci, vznikne
+  nové prázdné `anon-<uuid>`. Kdo starý identifikátor jen zná nebo uhodne,
+  nezíská nic. Starý dokument přitom zůstane i s tokeny zařízení (to se stane
+  jen prohlížeči, který přišel o přihlášení Firebase, ale ne o `userId`).
 
 Uživatelé, kteří aplikaci neotevřou, zůstávají pod starým ID a upozornění
 dostávají dál (odesílání tokeny nemění). Index sledovaných rozvrhů
@@ -74,8 +78,8 @@ dostávají dál (odesílání tokeny nemění). Index sledovaných rozvrhů
 `watchIndexV2` při prvním běhu notifikací.
 
 Kontrola: Firestore → `users`, filtr `migratedFrom` existuje; v `/admin`
-statistiky uživatelů. Zvaž po několika měsících migraci starých ID ukončit
-(starý formát je odhadnutelný).
+statistiky uživatelů. Dokumenty `users/anonymous-*`, které se ani po několika
+měsících nepřevedly, můžeš smazat (jejich uživatelé aplikaci neotevírají).
 
 ### 1.4 Pravidla a indexy Firestore
 

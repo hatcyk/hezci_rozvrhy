@@ -63,9 +63,18 @@ test('/api/auth bez userId vytvoří nové anon-<uuid> a vrátí na něj token',
     assert.equal(body.migratedFrom, undefined);
 });
 
-test('/api/auth s platným anon-<uuid> vrátí token pro stejnou identitu', async () => {
-    const body = await (await postJson('/api/auth', { userId: A })).json();
+test('/api/auth s anon-<uuid> a ID tokenem téže identity vrátí token pro ni', async () => {
+    const body = await (await postJson('/api/auth', { userId: A }, bearer(A))).json();
     assert.deepEqual(body, { token: `custom:${A}`, userId: A });
+});
+
+test('/api/auth: samotná znalost cizího anon-<uuid> nestačí, volající dostane novou prázdnou identitu', async () => {
+    for (const headers of [{}, bearer(B), { authorization: 'Bearer forged' }, { authorization: 'Basic x' }]) {
+        const body = await (await postJson('/api/auth', { userId: A }, headers)).json();
+        assert.notEqual(body.userId, A);
+        assert.equal(isValidUserId(body.userId), true);
+        assert.equal(body.token, `custom:${body.userId}`);
+    }
 });
 
 test('/api/auth už nepodepíše libovolné uid z těla (dřív šlo vyrobit token třeba pro „admin“)', async () => {
@@ -76,8 +85,18 @@ test('/api/auth už nepodepíše libovolné uid z těla (dřív šlo vyrobit tok
     }
 });
 
-test('/api/auth převede starý anonymous-<ms>: dokument se přesune pod nové ID', async () => {
-    const r = await postJson('/api/auth', { userId: LEGACY });
+test('/api/auth: uhodnutý starý anonymous-<ms> bez přihlášení jeho majitele nic nepřevede', async () => {
+    for (const headers of [{}, bearer(A), { authorization: 'Bearer forged' }]) {
+        const body = await (await postJson('/api/auth', { userId: LEGACY }, headers)).json();
+        assert.equal(body.migratedFrom, undefined);
+        assert.equal(isValidUserId(body.userId), true);
+        assert.equal(db._get(`users/${body.userId}`), undefined, 'nová identita je prázdná');
+    }
+    assert.deepEqual(db._get(`users/${LEGACY}`).tokens, ['fcm-1'], 'starý dokument zůstal netknutý');
+});
+
+test('/api/auth převede starý anonymous-<ms> s ID tokenem jeho relace: dokument se přesune pod nové ID', async () => {
+    const r = await postJson('/api/auth', { userId: LEGACY }, bearer(LEGACY));
     const body = await r.json();
     assert.equal(r.status, 200);
     assert.equal(body.migratedFrom, LEGACY);
@@ -90,8 +109,8 @@ test('/api/auth převede starý anonymous-<ms>: dokument se přesune pod nové I
     assert.equal(moved.preferences.watchedTimetables[0].id, 'ZL');
     assert.equal(moved.migratedFrom, LEGACY);
 
-    // Second call with the same legacy ID: nothing left to move, a fresh ID.
-    const again = await (await postJson('/api/auth', { userId: LEGACY })).json();
+    // Second call with the same legacy session: nothing left to move, a fresh ID.
+    const again = await (await postJson('/api/auth', { userId: LEGACY }, bearer(LEGACY))).json();
     assert.notEqual(again.userId, body.userId);
     assert.equal(db._get(`users/${again.userId}`), undefined);
 });

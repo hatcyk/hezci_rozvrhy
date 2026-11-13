@@ -56,34 +56,86 @@ export async function initializeFirebase(config) {
     }
 }
 
+// Same format check as the server (backend/auth-middleware.js).
+const USER_ID_RE = /^anon-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const AUTH_STATE_TIMEOUT_MS = 5000;
+
+/**
+ * Wait until Firebase has restored the session saved in the browser:
+ * auth().currentUser is null until then, even for a signed-in user.
+ */
+function authStateReady(auth) {
+    if (typeof auth.authStateReady === 'function') return auth.authStateReady();
+    if (typeof auth.onAuthStateChanged !== 'function') return Promise.resolve();
+    return new Promise((resolve) => {
+        let unsubscribe = null;
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            if (unsubscribe) unsubscribe();
+            resolve();
+        };
+        const timer = setTimeout(done, AUTH_STATE_TIMEOUT_MS);
+        unsubscribe = auth.onAuthStateChanged(done, done);
+        if (settled) unsubscribe();
+    });
+}
+
 /**
  * Authenticate with backend and Firebase (contract S1).
  *
  * The server decides the identity: it returns a new `anon-<uuid>` for first
  * visits and migrates the old guessable `anonymous-<ms>` IDs, so the returned
- * userId - not the one we sent - is what gets stored.
+ * userId - not the one we sent - is what gets stored. The stored ID alone is
+ * not enough: the server re-issues it (or migrates a legacy one) only with
+ * the ID token of the Firebase session that belongs to it.
  * Concurrent callers (boot + a 401 retry) share one sign-in.
  * @param {{ force?: boolean }} [opts] - force a new sign-in (after a 401)
  */
 export function authenticateWithFirebase({ force = false } = {}) {
     if (isAuthenticated && !force) return Promise.resolve(true);
     if (!authPromise) {
-        authPromise = signIn().finally(() => { authPromise = null; });
+        authPromise = signIn(force).finally(() => { authPromise = null; });
     }
     return authPromise;
 }
 
-async function signIn() {
+async function signIn(force = false) {
     try {
         const sdk = requireSdk();
+        const auth = sdk.auth();
+        await authStateReady(auth);
+
+        const storedId = localStorage.getItem('userId') || undefined;
+        const user = auth.currentUser;
+        const ownsStoredId = !!(user && storedId && user.uid === storedId);
+
+        // The SDK keeps the session by itself: a restored session for the
+        // stored anon-<uuid> needs no new custom token.
+        if (ownsStoredId && !force && USER_ID_RE.test(storedId)) {
+            isAuthenticated = true;
+            return true;
+        }
+
+        // Prove that the stored ID is ours with the session's ID token.
+        let idToken = null;
+        if (ownsStoredId) {
+            try {
+                idToken = await user.getIdToken(force);
+            } catch {
+                idToken = null; // refresh failed: the server hands out a new ID
+            }
+        }
+        const headers = { 'Content-Type': 'application/json' };
+        if (idToken) headers.Authorization = `Bearer ${idToken}`;
 
         // Get custom token from backend
         const response = await fetch('/api/auth', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                userId: localStorage.getItem('userId') || undefined,
-            }),
+            headers,
+            body: JSON.stringify({ userId: storedId }),
         });
 
         if (!response.ok) {
@@ -98,7 +150,7 @@ async function signIn() {
         if (migratedFrom) console.log(`🔁 User ID migrated from ${migratedFrom}`);
 
         // Sign in with custom token
-        await sdk.auth().signInWithCustomToken(token);
+        await auth.signInWithCustomToken(token);
 
         isAuthenticated = true;
         console.log('✅ Authenticated with Firebase');

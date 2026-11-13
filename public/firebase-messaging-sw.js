@@ -196,7 +196,7 @@ self.addEventListener('notificationclick', (event) => {
  * App-shell caching (offline support)
  * Bump SHELL_CACHE version whenever the precache list changes.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-c7e3004056-ca0926878d';
+const SHELL_CACHE = 'bakalari-shell-c7e3004056-c6e1c36069';
 
 // Cross-origin scripts the app needs to boot. Cached as opaque responses
 // (status 0) so that offline loads still have the Firebase SDK available.
@@ -221,7 +221,7 @@ const PRECACHE_URLS = [
     '/spsd_long_dark.png',
     '/spsd_long_white.png',
     '/css/app.css?v=c7e3004056',
-    '/js/app.js?v=ca0926878d',
+    '/js/app.js?v=c6e1c36069',
 ];
 
 self.addEventListener('install', (event) => {

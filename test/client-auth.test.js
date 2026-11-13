@@ -58,12 +58,15 @@ test('first visit: no stored ID → server issues anon-<uuid>, client stores it'
 
 test('legacy anonymous-<ms> ID is replaced by the migrated ID from /api/auth', async () => {
     const { authenticateWithFirebase } = await import('../public/js/firebase-client.js');
-    localStorage.setItem('userId', 'anonymous-1730000000000');
+    const LEGACY = 'anonymous-1730000000000';
+    localStorage.setItem('userId', LEGACY);
+    currentUser = { uid: LEGACY, getIdToken: async () => `id-${LEGACY}` }; // session left by version 1.x
     const MIGRATED = 'anon-11111111-2222-4333-8444-555555555555';
     routes = { '/api/auth': (c) => [200, { token: `custom-${MIGRATED}`, userId: MIGRATED, migratedFrom: c.body.userId }] };
     calls.length = 0;
     await authenticateWithFirebase({ force: true });
-    assert.equal(calls[0].body.userId, 'anonymous-1730000000000', 'old ID is sent once for migration');
+    assert.equal(calls[0].body.userId, LEGACY, 'old ID is sent once for migration');
+    assert.equal(calls[0].auth, `Bearer id-${LEGACY}`, 'and proven with the ID token of its 1.x session');
     assert.equal(localStorage.getItem('userId'), MIGRATED);
 });
 
@@ -90,6 +93,7 @@ test('apiFetch: 401 → sign in again once, retry with a freshly minted token', 
     const res = await apiFetch((u) => ['/api/fcm/update-preferences', { method: 'POST', body: JSON.stringify({ userId: u, watchedTimetables: [] }) }]);
     assert.equal(res.status, 200);
     assert.deepEqual(calls.map(c => c.url), ['/api/fcm/update-preferences', '/api/auth', '/api/fcm/update-preferences']);
+    assert.match(calls[1].auth, /^Bearer id-anon-.*-fresh-/, 're-sign-in proves the identity with a refreshed ID token');
     assert.equal(signIns, before + 1);
     assert.match(calls[2].auth, /-fresh-/, 'retry forces a token refresh');
     assert.equal(calls[2].body.userId, uid);
@@ -138,5 +142,64 @@ test('missing Firebase SDK → readable Czech message instead of SDK internals',
         await assert.rejects(fc.initializeFirebase({}), { message: fc.FIREBASE_UNAVAILABLE_MESSAGE });
     } finally {
         globalThis.firebase = fakeFirebase;
+    }
+});
+
+// ---- sign-in with a session restored by the SDK (fresh module instances) ----
+const STORED = 'anon-22222222-3333-4444-8555-666666666666';
+
+test('restored session for the stored anon ID: waits for it and makes no /api/auth call', async () => {
+    const saved = globalThis.firebase;
+    localStorage.setItem('userId', STORED);
+    let restored = null;
+    let listeners = 0;
+    globalThis.firebase = {
+        ...saved,
+        auth: () => ({
+            get currentUser() { return restored; },
+            onAuthStateChanged(cb) {
+                listeners++;
+                setTimeout(() => { restored = { uid: STORED, getIdToken: async () => `id-${STORED}` }; cb(restored); }, 10);
+                return () => {};
+            },
+            async signInWithCustomToken() { throw new Error('must not sign in again'); },
+        }),
+    };
+    try {
+        const fc = await import('../public/js/firebase-client.js?restored-session');
+        calls.length = 0;
+        assert.equal(await fc.authenticateWithFirebase(), true);
+        assert.equal(listeners, 1, 'waited for Firebase to restore the session');
+        assert.equal(calls.length, 0);
+    } finally {
+        globalThis.firebase = saved;
+    }
+});
+
+test('stored ID without its own session: no foreign ID token is sent, the server issues a new identity', async () => {
+    const saved = globalThis.firebase;
+    const OTHER = 'anon-77777777-8888-4999-8aaa-bbbbbbbbbbbb';
+    try {
+        for (const session of [null, { uid: OTHER, getIdToken: async () => `id-${OTHER}` }]) {
+            let user = session;
+            globalThis.firebase = {
+                ...saved,
+                auth: () => ({
+                    get currentUser() { return user; },
+                    async signInWithCustomToken(token) { user = { uid: token.replace(/^custom-/, ''), getIdToken: async () => 'x' }; },
+                }),
+            };
+            localStorage.setItem('userId', STORED);
+            const fc = await import(`../public/js/firebase-client.js?no-session-${session ? 'foreign' : 'none'}`);
+            routes = { '/api/auth': () => [200, { token: `custom-${NEW_ID}`, userId: NEW_ID }] };
+            calls.length = 0;
+            await fc.authenticateWithFirebase();
+            assert.equal(calls[0].url, '/api/auth');
+            assert.equal(calls[0].auth, null);
+            assert.equal(calls[0].body.userId, STORED);
+            assert.equal(localStorage.getItem('userId'), NEW_ID);
+        }
+    } finally {
+        globalThis.firebase = saved;
     }
 });

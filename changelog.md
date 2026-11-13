@@ -46,7 +46,7 @@ přibyly proměnné prostředí a pravidla Firestore.
 - iPadOS se nerozpoznal jako iOS; dvojí přepnutí volby notifikace při klepnutí na popisek.
 
 ### Bezpečnost
-- `POST /api/auth` dříve podepsal token pro libovolné uid (převzetí cizího účtu); nyní jen pro nový formát a s ověřením ID tokenu na každém volání (`requireUser`, 401/403), validace těl požadavků.
+- `POST /api/auth` dříve podepsal token pro libovolné uid (převzetí cizího účtu); nyní jen pro nový formát a s ověřením ID tokenu na každém volání (`requireUser`, 401/403), validace těl požadavků. Existující ID znovu vydá a starý `anonymous-<ms>` převede jen s ID tokenem téže identity; jinak vydá nové prázdné ID.
 - Odstraněny neověřené `/api/prefetch/trigger` a `/status`; `/api/fcm/process-changes` za `CRON_SECRET`; tajemství se porovnávají v konstantním čase; bez `CRON_SECRET`/`ADMIN_SECRET` v produkci 503.
 - CORS jen pro povolené původy (`CORS_ORIGINS`, dříve `*`).
 - Bezpečnostní hlavičky na Expressu i CDN: `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options: DENY`, CSP v režimu Report-Only s hashi inline skriptů a hlášením na `/api/csp-report`; administrace s vynucenou CSP.
