@@ -9,6 +9,25 @@
 let firebaseApp = null;
 let firestore = null;
 let isAuthenticated = false;
+let authPromise = null;
+
+/**
+ * Shown instead of SDK internals ("Firestore not initialized...") when the
+ * Firebase scripts did not load - blocked by an ad blocker, a captive portal
+ * or a dead connection before the service worker cached them.
+ */
+export const FIREBASE_UNAVAILABLE_MESSAGE =
+    'Nepodařilo se připojit k databázi rozvrhů. Zkontrolujte připojení k internetu, případně vypněte blokování obsahu pro tuto stránku, a obnovte ji.';
+
+/** True when the Firebase compat SDK scripts from index.html are loaded. */
+export function isFirebaseSdkLoaded() {
+    return typeof firebase !== 'undefined' && !!firebase && typeof firebase.initializeApp === 'function';
+}
+
+function requireSdk() {
+    if (!isFirebaseSdkLoaded()) throw new Error(FIREBASE_UNAVAILABLE_MESSAGE);
+    return firebase;
+}
 
 /**
  * Initialize Firebase Client SDK
@@ -22,10 +41,11 @@ export async function initializeFirebase(config) {
         }
 
         // Initialize Firebase App
-        firebaseApp = firebase.initializeApp(config);
+        const sdk = requireSdk();
+        firebaseApp = sdk.initializeApp(config);
 
         // Initialize Firestore
-        firestore = firebase.firestore();
+        firestore = sdk.firestore();
 
         console.log('✅ Firebase Client initialized');
 
@@ -37,14 +57,25 @@ export async function initializeFirebase(config) {
 }
 
 /**
- * Authenticate with backend and Firebase
+ * Authenticate with backend and Firebase (contract S1).
+ *
+ * The server decides the identity: it returns a new `anon-<uuid>` for first
+ * visits and migrates the old guessable `anonymous-<ms>` IDs, so the returned
+ * userId - not the one we sent - is what gets stored.
+ * Concurrent callers (boot + a 401 retry) share one sign-in.
+ * @param {{ force?: boolean }} [opts] - force a new sign-in (after a 401)
  */
-export async function authenticateWithFirebase() {
+export function authenticateWithFirebase({ force = false } = {}) {
+    if (isAuthenticated && !force) return Promise.resolve(true);
+    if (!authPromise) {
+        authPromise = signIn().finally(() => { authPromise = null; });
+    }
+    return authPromise;
+}
+
+async function signIn() {
     try {
-        if (isAuthenticated) {
-            console.log('Already authenticated');
-            return true;
-        }
+        const sdk = requireSdk();
 
         // Get custom token from backend
         const response = await fetch('/api/auth', {
@@ -59,22 +90,57 @@ export async function authenticateWithFirebase() {
             throw new Error('Failed to get auth token from backend');
         }
 
-        const { token, userId } = await response.json();
+        const { token, userId, migratedFrom } = await response.json();
+        if (!token || !userId) throw new Error('Auth response is missing token or userId');
 
-        // Save userId for future requests
+        // Save the server-issued userId (it changes once when an old ID is migrated)
         localStorage.setItem('userId', userId);
+        if (migratedFrom) console.log(`🔁 User ID migrated from ${migratedFrom}`);
 
         // Sign in with custom token
-        await firebase.auth().signInWithCustomToken(token);
+        await sdk.auth().signInWithCustomToken(token);
 
         isAuthenticated = true;
         console.log('✅ Authenticated with Firebase');
 
         return true;
     } catch (error) {
+        isAuthenticated = false;
         console.error('❌ Firebase authentication failed:', error);
         throw error;
     }
+}
+
+/**
+ * The signed-in user's ID: the token's uid is authoritative (the server
+ * compares it with the userId in the URL/body), localStorage is the fallback.
+ */
+export function getCurrentUserId() {
+    try {
+        const uid = isFirebaseSdkLoaded() && firebase.auth && firebase.auth().currentUser
+            ? firebase.auth().currentUser.uid
+            : null;
+        return uid || localStorage.getItem('userId');
+    } catch {
+        return localStorage.getItem('userId');
+    }
+}
+
+/**
+ * Fresh Firebase ID token for `Authorization: Bearer`. getIdToken() refreshes
+ * an expired token by itself (they live one hour); forceRefresh is used after
+ * the server rejected one.
+ * @param {boolean} [forceRefresh]
+ * @returns {Promise<string>}
+ */
+export async function getIdToken(forceRefresh = false) {
+    let user = isFirebaseSdkLoaded() ? firebase.auth().currentUser : null;
+    if (!user) {
+        await authenticateWithFirebase({ force: true });
+        user = firebase.auth().currentUser;
+    }
+    if (!user) throw new Error('Not signed in');
+    return user.getIdToken(forceRefresh);
 }
 
 /**
@@ -83,7 +149,8 @@ export async function authenticateWithFirebase() {
  */
 export function getFirestore() {
     if (!firestore) {
-        throw new Error('Firestore not initialized. Call initializeFirebase() first.');
+        // Reaches the user through loadTimetable's error box, so keep it human.
+        throw new Error(FIREBASE_UNAVAILABLE_MESSAGE);
     }
     return firestore;
 }
@@ -97,7 +164,7 @@ export async function fetchDefinitionsFromFirebase() {
         const doc = await db.collection('definitions').doc('current').get();
 
         if (!doc.exists) {
-            throw new Error('Definitions not found in Firebase');
+            throw new Error('Seznam tříd, učitelů a učeben zatím není k dispozici.');
         }
 
         const data = doc.data();
@@ -124,7 +191,8 @@ export async function fetchTimetableFromFirebase(type, id, scheduleType) {
         const doc = await db.collection('timetables').doc(docKey).get();
 
         if (!doc.exists) {
-            throw new Error(`Timetable not found: ${docKey}`);
+            // Shown to the user (loadTimetable), so Czech and without the doc key
+            throw new Error('Tento rozvrh zatím není k dispozici. Zkuste to prosím později.');
         }
 
         const data = doc.data();
@@ -133,6 +201,30 @@ export async function fetchTimetableFromFirebase(type, id, scheduleType) {
         console.error(`Failed to fetch timetable from Firebase:`, error);
         throw error;
     }
+}
+
+/**
+ * Summary document aggregates/{id} (contract S3: changes_Actual|Next,
+ * freeRooms_Actual|Next). One read instead of every class / room timetable.
+ * @returns {Promise<object|null>} null until prefetch has written it
+ */
+export async function fetchAggregateFromFirebase(id) {
+    const db = getFirestore();
+    const doc = await db.collection('aggregates').doc(id).get();
+    return doc.exists ? doc.data() : null;
+}
+
+/**
+ * Live aggregate for the kiosk: Firestore pushes every new version, so a
+ * hallway screen shows a new substitution without reloading.
+ * @returns {() => void} unsubscribe
+ */
+export function watchAggregateFromFirebase(id, onData, onError) {
+    const db = getFirestore();
+    return db.collection('aggregates').doc(id).onSnapshot(
+        (snap) => onData(snap.exists ? snap.data() : null),
+        (err) => { if (onError) onError(err); },
+    );
 }
 
 /**

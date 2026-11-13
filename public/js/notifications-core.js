@@ -7,6 +7,8 @@ import { state, updateState } from './state.js';
 import { debug } from './debug.js';
 import { showToast } from './toast.js';
 import { applyDeepLink } from './deeplink.js';
+import { apiFetch } from './api.js';
+import { isIOSDevice, isApplePushEndpoint } from './platform.js';
 
 let messaging = null;
 let fcmToken = null;
@@ -28,9 +30,31 @@ function hasLessonRemindersEnabled(watchedTimetables) {
  * FCM does NOT show a system notification in this case, so we surface it as an
  * in-app toast. For change notifications the toast deep-links to the timetable.
  */
-function handleForegroundMessage(payload) {
+/**
+ * True when this device's push subscription is Apple's (WebKit). The service
+ * worker then shows every push as a system notification even in the
+ * foreground (WebKit revokes subscriptions whose pushes show nothing), so an
+ * in-app toast would duplicate it.
+ */
+async function serviceWorkerShowsForegroundPushes() {
+    try {
+        if (!('serviceWorker' in navigator)) return false;
+        const reg = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+        const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+        return isApplePushEndpoint(sub && sub.endpoint);
+    } catch {
+        return false;
+    }
+}
+
+async function handleForegroundMessage(payload) {
     const d = (payload && payload.data) || {};
     debug.log('📩 Foreground message:', d.type || 'unknown');
+
+    if (await serviceWorkerShowsForegroundPushes()) {
+        debug.log('System notification shown by the service worker (WebKit) — no toast');
+        return;
+    }
 
     const title = d.title || 'Nová notifikace';
     const body = d.body || '';
@@ -70,7 +94,8 @@ export function isNotificationSupported() {
  * Check if user is on iOS
  */
 export function isIOS() {
-    return /iPhone|iPad|iPod/.test(navigator.userAgent);
+    // iPadOS 13+ Safari pretends to be a Mac; isIOSDevice() catches that too
+    return isIOSDevice();
 }
 
 /**
@@ -86,7 +111,7 @@ export function isStandalone() {
  */
 export async function initializeMessaging() {
     try {
-        if (!firebase || !firebase.messaging) {
+        if (typeof firebase === 'undefined' || !firebase || !firebase.messaging) {
             debug.error('Firebase Messaging not available');
             return false;
         }
@@ -221,17 +246,11 @@ export async function requestNotificationPermission() {
  */
 async function saveTokenToServer(token) {
     try {
-        const userId = localStorage.getItem('userId');
-
-        if (!userId) {
-            throw new Error('User ID not found');
-        }
-
-        const response = await fetch('/api/fcm/subscribe', {
+        // Authenticated call (contract S1): the server checks the ID token
+        const response = await apiFetch((userId) => ['/api/fcm/subscribe', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, token })
-        });
+        }]);
 
         if (!response.ok) {
             throw new Error('Failed to save token to server');
@@ -254,7 +273,7 @@ async function saveTokenToServer(token) {
  * reported notifications as ON again and they came back by themselves.
  */
 export async function disableNotifications() {
-    const userId = localStorage.getItem('userId');
+    const hasUser = !!localStorage.getItem('userId');
 
     // Stop this device from receiving pushes at all. Best effort: the token is
     // not always available and deleteToken can fail offline.
@@ -270,15 +289,14 @@ export async function disableNotifications() {
     fcmToken = null;
     updateState('notificationsEnabled', false);
 
-    if (!userId) return;
+    if (!hasUser) return;
 
     // No token in the body → the server clears every token of this user and
     // records that notifications are off.
-    const response = await fetch('/api/fcm/unsubscribe', {
+    const response = await apiFetch((userId) => ['/api/fcm/unsubscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId })
-    });
+    }]);
 
     if (!response.ok) {
         throw new Error(`Server refused to disable notifications (${response.status})`);
@@ -292,11 +310,9 @@ export async function disableNotifications() {
  */
 export async function loadNotificationPreferences() {
     try {
-        const userId = localStorage.getItem('userId');
+        if (!localStorage.getItem('userId')) return null;
 
-        if (!userId) return null;
-
-        const response = await fetch(`/api/fcm/preferences/${userId}`);
+        const response = await apiFetch((userId) => [`/api/fcm/preferences/${encodeURIComponent(userId)}`]);
 
         if (!response.ok) {
             throw new Error('Failed to load preferences');
@@ -443,17 +459,10 @@ export async function reconcileLessonReminderToken() {
  */
 export async function saveWatchedTimetables(timetables) {
     try {
-        const userId = localStorage.getItem('userId');
-
-        if (!userId) {
-            throw new Error('User ID not found');
-        }
-
-        const response = await fetch('/api/fcm/update-preferences', {
+        const response = await apiFetch((userId) => ['/api/fcm/update-preferences', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, watchedTimetables: timetables })
-        });
+        }]);
 
         if (!response.ok) {
             throw new Error('Failed to save preferences');
