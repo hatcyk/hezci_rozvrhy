@@ -51,6 +51,20 @@ const waitFor = async (cond, ms = 2000) => {
     }
 };
 
+test('Vercel najde index.js jako vstup Expressu (jinak build spadne)', () => {
+    // Same check as @vercel/express 25.0.0 (dist/index.js: REGEX, validFilenames):
+    // the first of app/index/server(.js…) that imports express is the entry point.
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const ROOT = path.join(__dirname, '..');
+    const IMPORTS_EXPRESS = /(?:from|require|import)\s*(?:\(\s*)?["']express["']\s*(?:\))?/;
+    const candidates = ['app', 'index', 'server', 'src/app', 'src/index', 'src/server']
+        .flatMap(f => ['js', 'cjs', 'mjs', 'ts', 'cts', 'mts'].map(ext => `${f}.${ext}`))
+        .filter(f => fs.existsSync(path.join(ROOT, f)));
+    const entry = candidates.find(f => IMPORTS_EXPRESS.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
+    assert.equal(entry, 'index.js', `kandidáti: ${candidates.join(', ') || 'žádní'}`);
+});
+
 test('bezpečnostní hlavičky jsou na každé odpovědi', async () => {
     const r = await fetch(base + '/api/debug/status');
     assert.equal(r.headers.get('x-content-type-options'), 'nosniff');

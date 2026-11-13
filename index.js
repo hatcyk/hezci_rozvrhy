@@ -1,4 +1,9 @@
 require('dotenv').config();
+// Vercel deploys index.js as the Express app only if this file itself
+// requires 'express' (@vercel/express checks the source with a regex), even
+// though the app is built in routes/index.js. Without it the build fails with
+// "No entrypoint found which imports express".
+require('express');
 const os = require('os');
 const { createApp } = require('./routes');
 
