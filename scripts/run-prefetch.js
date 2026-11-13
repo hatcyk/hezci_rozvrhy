@@ -1,105 +1,51 @@
 #!/usr/bin/env node
 
 /**
- * Standalone Prefetch Script for GitHub Actions
- * Runs prefetch directly without Vercel serverless function limitations
+ * Standalone prefetch run (GitHub Actions, host crontab, or by hand).
+ *
+ * Records the run in `runs` and updates `system/health` (contract S4);
+ * lastSuccessAt moves only when the prefetch really succeeded.
+ *
+ * Exit code: 0 for success and for the expected "Bakaláři unavailable" outcomes
+ * (guard exits, login/network failures) - those are reported through
+ * /api/status?strict=1 instead of a failure e-mail every 15 minutes;
+ * 1 for unexpected errors (bugs).
  */
 
 require('dotenv').config();
-const { initializeFirebaseAdmin, getFirestore } = require('../backend/firebase-admin-init');
-const { prefetchAllData } = require('../backend/prefetch');
+const { initializeFirebaseAdmin } = require('../backend/firebase-admin-init');
+const { runPrefetchJob } = require('../backend/cron');
+
+const EXPECTED_FAILURES = new Set(['guard_no_definitions', 'guard_no_lessons', 'login_failed', 'network']);
 
 async function main() {
-    console.log('🚀 Starting prefetch from GitHub Actions...\n');
-
-    const startTime = new Date();
+    console.log('🚀 Starting prefetch...\n');
 
     try {
-        // Initialize Firebase Admin
-        console.log('🔥 Initializing Firebase Admin...');
         initializeFirebaseAdmin();
-        console.log('✅ Firebase Admin initialized\n');
-
-        // Run prefetch
-        const result = await prefetchAllData();
-
-        // Update status in Firestore (for /api/status endpoint)
-        const db = getFirestore();
-        const isHealthy = result.definitionsCount > 0;
-
-        await db.collection('system').doc('prefetchStatus').set({
-            isHealthy: isHealthy,
-            lastRun: startTime.toISOString(),
-            lastSuccess: startTime.toISOString(),
-            definitionsCount: result.definitionsCount || 0,
-            successCount: result.successCount,
-            totalRequests: result.totalRequests,
-            error: null,
-            updatedAt: new Date().toISOString()
-        });
-
-        console.log('✅ Status updated in Firestore');
-
-        // Log results
-        console.log('\n' + '='.repeat(60));
-        console.log('✅ PREFETCH COMPLETED SUCCESSFULLY');
-        console.log('='.repeat(60));
-        console.log(`📊 Total requests: ${result.totalRequests}`);
-        console.log(`✅ Successful: ${result.successCount}`);
-        console.log(`❌ Errors: ${result.errorCount}`);
-        console.log(`📚 Definitions: ${result.definitionsCount}`);
-        console.log(`⏱️  Duration: ${(result.duration / 1000 / 60).toFixed(2)} minutes`);
-        console.log('='.repeat(60) + '\n');
-
-        // Exit with success
-        process.exit(0);
-
     } catch (error) {
-        console.error('\n' + '='.repeat(60));
-        console.error('❌ PREFETCH FAILED');
-        console.error('='.repeat(60));
-        console.error('Error:', error.message);
-        console.error('Stack:', error.stack);
-        console.error('='.repeat(60) + '\n');
-
-        // Update status in Firestore with error
-        try {
-            const db = getFirestore();
-            await db.collection('system').doc('prefetchStatus').set({
-                isHealthy: false,
-                lastRun: startTime.toISOString(),
-                lastSuccess: null,
-                definitionsCount: 0,
-                successCount: 0,
-                totalRequests: 0,
-                error: error.message,
-                updatedAt: new Date().toISOString()
-            });
-            console.log('❌ Error status saved to Firestore');
-        } catch (fsError) {
-            console.error('Failed to save error status to Firestore:', fsError.message);
-        }
-
-        // Distinguish expected connectivity issues from real bugs
-        // Network/timeout errors = Bakaláři server unreachable (expected, no alert needed)
-        const isConnectivityError =
-            error.message.includes('timeout') ||
-            error.message.includes('login failed after') ||
-            error.message.includes('ECONNREFUSED') ||
-            error.message.includes('ENOTFOUND') ||
-            error.message.includes('ETIMEDOUT') ||
-            error.message.includes('socket hang up') ||
-            error.message.includes('network');
-
-        if (isConnectivityError) {
-            console.log('⚠️  Bakaláři server unreachable — skipping (not a script error)');
-            process.exit(0);
-        }
-
-        // Real unexpected error → exit 1 → GitHub Actions failure email
+        console.error('❌ Firebase Admin init failed:', error.message);
         process.exit(1);
     }
+
+    const { run, result, error } = await runPrefetchJob();
+
+    console.log('\n' + '='.repeat(60));
+    console.log(`Prefetch status: ${run.status} (trigger ${run.trigger}, ${(run.durationMs / 1000).toFixed(1)} s)`);
+    if (result) {
+        console.log(`📊 Requests: ${result.totalRequests ?? '?'}, ok ${result.successCount ?? '?'}, errors ${result.errorCount ?? '?'}`);
+        console.log(`📚 Definitions: ${result.definitionsCount ?? '?'}`);
+    }
+    if (run.error) console.log(`⚠️  ${run.error}`);
+    if (error && error.stack) console.error(error.stack);
+    console.log('='.repeat(60) + '\n');
+
+    if (run.status === 'ok') process.exit(0);
+    if (EXPECTED_FAILURES.has(run.status)) {
+        console.log('⚠️  Bakaláři unavailable or returned no data — not a script error');
+        process.exit(0);
+    }
+    process.exit(1);
 }
 
-// Run main function
 main();
