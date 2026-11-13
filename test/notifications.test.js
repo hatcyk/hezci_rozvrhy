@@ -9,7 +9,7 @@ const change = (type, extra = {}) => ({
     day: 0,
     dayName: 'Po',
     hour: 3,
-    lesson: { subject: 'Matematika', teacher: 'J. Tužilová', room: 'A102' },
+    lesson: { subject: 'Matematika', teacher: 'J. Ukázková', room: 'A102' },
     change: { newValue: 'removed' },
     ...extra,
 });
@@ -61,4 +61,46 @@ test('a cancelled lesson produces readable notification text', () => {
     const detailed = createDetailedChangeSummary([cancelled]);
     assert.match(detailed, /Matematika/);
     assert.match(detailed, /odpadla/);
+});
+
+const { findDeadTokens, buildChangeNotification, DEAD_TOKEN_ERRORS } = require('../backend/fcm');
+
+test('token se maže jen u „neregistrován“, ne při messaging/invalid-argument (chyba zprávy)', () => {
+    const tokens = ['ok', 'gone', 'bad-payload', 'malformed'];
+    const result = {
+        responses: [
+            { success: true },
+            { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+            { success: false, error: { code: 'messaging/invalid-argument' } },
+            { success: false, error: { code: 'messaging/invalid-registration-token' } },
+        ],
+    };
+    assert.deepEqual(findDeadTokens(tokens, result), ['gone', 'malformed']);
+    assert.equal(DEAD_TOKEN_ERRORS.has('messaging/invalid-argument'), false);
+    // A payload error for everyone must not wipe anyone's token.
+    const allInvalid = { responses: tokens.map(() => ({ success: false, error: { code: 'messaging/invalid-argument' } })) };
+    assert.deepEqual(findDeadTokens(tokens, allInvalid), []);
+    assert.deepEqual(findDeadTokens(tokens, null), []);
+});
+
+test('notifikace o změně nese typ, id a druh rozvrhu (SW z nich skládá tag) jako řetězce', () => {
+    const n = buildChangeNotification(
+        { type: 'Class', id: 'ZL', name: 'ZL', scheduleType: 'Next' },
+        [change('substitution', { day: 3 })]
+    );
+    assert.equal(n.title, 'ZL PŘÍŠTÍ: Změny v rozvrhu');
+    assert.equal(n.data.type, 'timetable_change');
+    assert.equal(n.data.timetableType, 'Class');
+    assert.equal(n.data.timetableId, 'ZL');
+    assert.equal(n.data.scheduleType, 'Next');
+    assert.equal(n.data.day, '3');
+    assert.equal(n.data.changeCount, '1');
+    // FCM rejects non-string data values (that would be messaging/invalid-argument).
+    for (const [k, v] of Object.entries(n.data)) assert.equal(typeof v, 'string', k);
+    const tag = 'change_' + n.data.timetableType + '_' + n.data.timetableId + '_' + n.data.scheduleType;
+    assert.equal(tag, 'change_Class_ZL_Next');
+
+    const numericId = buildChangeNotification({ type: 'Room', id: 17, name: '17', scheduleType: 'Permanent' }, [change('room_change')]);
+    assert.equal(numericId.data.timetableId, '17');
+    assert.equal(numericId.title, '17 STÁLÝ: Změny v rozvrhu');
 });

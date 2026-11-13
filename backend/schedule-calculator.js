@@ -4,25 +4,49 @@
  */
 
 /**
+ * Non-negative integer from an environment variable.
+ * `parseInt(x) || fallback` turned a deliberate 0 (e.g. "send until the lesson
+ * starts", LESSON_REMINDER_WINDOW_END=0) back into the default.
+ * @param {string} name
+ * @param {number} fallback
+ */
+function intFromEnv(name, fallback) {
+    const raw = process.env[name];
+    if (raw === undefined || String(raw).trim() === '') return fallback;
+    const value = Number.parseInt(raw, 10);
+    return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+/**
+ * Feature flag from an environment variable; anything but an explicit "off"
+ * value keeps it on.
+ */
+function flagFromEnv(name, fallback = true) {
+    const raw = process.env[name];
+    if (raw === undefined || String(raw).trim() === '') return fallback;
+    return !['false', '0', 'off', 'no'].includes(String(raw).trim().toLowerCase());
+}
+
+/**
  * Get notification configuration from environment or defaults
  * @returns {Object} Configuration object
  */
 function getNotificationConfig() {
     return {
         // Target notification time (minutes before lesson starts)
-        minutesBefore: parseInt(process.env.LESSON_REMINDER_MINUTES_BEFORE) || 5,
+        minutesBefore: intFromEnv('LESSON_REMINDER_MINUTES_BEFORE', 5),
 
         // Window start (how early can we send? minutes before lesson).
         // Tight by default: the workflow now polls every minute, so a wide catch-up
         // window is unnecessary and only makes the "Za X minut" text inconsistent.
         // The first poll inside [windowEnd, windowStart] fires the reminder.
-        windowStartMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_START) || 6,
+        windowStartMinutes: intFromEnv('LESSON_REMINDER_WINDOW_START', 6),
 
         // Window end (how late can we send? minutes before lesson)
-        windowEndMinutes: parseInt(process.env.LESSON_REMINDER_WINDOW_END) || 1,
+        windowEndMinutes: intFromEnv('LESSON_REMINDER_WINDOW_END', 1),
 
-        // Feature flag
-        enabled: process.env.LESSON_REMINDER_ENABLED !== 'false',
+        // Feature flag (checked by sendLessonReminders before any work)
+        enabled: flagFromEnv('LESSON_REMINDER_ENABLED', true),
 
         // Debug mode
         debug: process.env.LESSON_REMINDER_DEBUG === 'true'
@@ -138,6 +162,8 @@ function getScheduleStatus(currentTimeInMinutes, lessonTimes, customConfig = nul
 }
 
 module.exports = {
+    getNotificationConfig,
+    intFromEnv,
     calculateNotificationWindows,
     findLessonsToNotify,
     formatMinutesToTime,

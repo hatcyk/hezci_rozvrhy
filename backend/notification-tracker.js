@@ -7,53 +7,71 @@ const { getFirestore } = require('./firebase-admin-init');
 
 const COLLECTION_NAME = 'lesson_notifications_sent';
 
+// gRPC status ALREADY_EXISTS, raised by DocumentReference.create() when the
+// document is already there.
+const ALREADY_EXISTS = 6;
+
+function reminderDocId(userId, date, lessonHour) {
+    return `${userId}_${date}_${lessonHour}`;
+}
+
+function isAlreadyExists(error) {
+    return !!error && (error.code === ALREADY_EXISTS || error.code === 'already-exists' ||
+        /ALREADY_EXISTS/.test(String(error.message || '')));
+}
+
 /**
- * Check if notification has already been sent for this user/date/lesson
- * @param {String} userId - User ID
- * @param {String} date - Date string (YYYY-MM-DD)
- * @param {Number} lessonHour - Lesson hour (0-12)
- * @returns {Promise<Boolean>} True if already sent
+ * Claim the right to send one reminder (user, date, lesson hour).
+ *
+ * docRef.create() fails when the document exists, so of several runs that
+ * reach the same reminder at the same time exactly one wins. The old
+ * get → send → set let two overlapping runs (cron-job.org every minute + a
+ * slow run, or a retried request) both pass the check and send twice.
+ *
+ * Delivery is at-most-once: a run that claims and then dies does not retry.
+ * `sentAt` is set at claim time so the nightly cleanup also removes claims
+ * that never finished.
+ *
+ * @returns {Promise<boolean>} true = this run owns the reminder and must send it
  */
-async function hasNotificationBeenSent(userId, date, lessonHour) {
+async function claimReminder(userId, date, lessonHour, details = {}) {
+    const db = getFirestore();
+    const docId = reminderDocId(userId, date, lessonHour);
     try {
-        const db = getFirestore();
-        const docId = `${userId}_${date}_${lessonHour}`;
-
-        const doc = await db.collection(COLLECTION_NAME).doc(docId).get();
-
-        return doc.exists;
+        await db.collection(COLLECTION_NAME).doc(docId).create({
+            userId,
+            date,
+            lessonHour,
+            status: 'sending',
+            sentAt: new Date().toISOString(),
+            ...details
+        });
+        return true;
     } catch (error) {
-        console.error(`[DEDUP ERROR] Failed to check if notification was sent:`, error.message);
-        // In case of error, return false (better to send duplicate than miss notification)
+        if (isAlreadyExists(error)) return false;
+        // Firestore unavailable: skip rather than risk one duplicate per poll
+        // for the whole reminder window.
+        console.error(`[CLAIM ERROR] Failed to claim reminder ${docId}:`, error.message);
         return false;
     }
 }
 
 /**
- * Record that a notification has been sent
- * @param {String} userId - User ID
- * @param {String} date - Date string (YYYY-MM-DD)
- * @param {Number} lessonHour - Lesson hour (0-12)
- * @param {Object} details - Additional details to store
- * @returns {Promise<void>}
+ * Record how a claimed reminder ended ('sent' | 'failed').
  */
-async function recordNotificationSent(userId, date, lessonHour, details = {}) {
+async function finishReminder(userId, date, lessonHour, outcome = {}) {
+    const docId = reminderDocId(userId, date, lessonHour);
     try {
         const db = getFirestore();
-        const docId = `${userId}_${date}_${lessonHour}`;
-
-        await db.collection(COLLECTION_NAME).doc(docId).set({
-            userId,
-            date,
-            lessonHour,
-            sentAt: new Date().toISOString(),
-            ...details
+        await db.collection(COLLECTION_NAME).doc(docId).update({
+            status: outcome.status || 'sent',
+            finishedAt: new Date().toISOString(),
+            ...(outcome.successCount !== undefined ? { successCount: outcome.successCount } : {}),
+            ...(outcome.error ? { error: String(outcome.error).slice(0, 500) } : {})
         });
-
-        console.log(`💾 [RECORD] Recorded notification: ${docId}`);
     } catch (error) {
-        console.error(`[RECORD ERROR] Failed to record notification:`, error.message);
-        // Don't throw - notification was already sent successfully
+        // The claim already prevents a resend; this is bookkeeping only.
+        console.error(`[RECORD ERROR] Failed to finish reminder ${docId}:`, error.message);
     }
 }
 
@@ -152,8 +170,11 @@ async function clearNotificationsForDate(date) {
 }
 
 module.exports = {
-    hasNotificationBeenSent,
-    recordNotificationSent,
+    COLLECTION_NAME,
+    reminderDocId,
+    isAlreadyExists,
+    claimReminder,
+    finishReminder,
     cleanupOldNotifications,
     clearNotificationsForDate,
 };
