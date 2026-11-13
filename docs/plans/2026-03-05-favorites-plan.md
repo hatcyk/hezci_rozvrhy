@@ -1,7 +1,5 @@
 # Oblíbené rozvrhy – Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Umožnit uživatelům označovat rozvrhy jako oblíbené (srdíčko v dropdownu), ukládat je do Firestore a mít rychlý přístup přes nové tlačítko v hlavičce.
 
 **Architecture:** Nový backend route `/api/favorites` (vzor jako `fcm.js`), ukládá `preferences.favoriteTimetables` v Firestore user dokumentu. Frontend modul `favorites.js` řídí stav a API volání. Dropdown.js rozšířen o srdíčka u každé možnosti. Nový bottom sheet `#favoritesModal` pro rychlý přístup.
