@@ -1,22 +1,29 @@
 /**
  * FCM Notification Routes
- * Handles push notification subscriptions and preferences
+ * Handles push notification subscriptions and preferences.
+ *
+ * Every user route goes through requireUser: the caller must send the Firebase
+ * ID token of the user named in the path/body (contract S1).
  */
 
 const express = require('express');
 const { getFirestore } = require('../backend/firebase-admin-init');
 const { processPendingChanges, deriveWatchIndex } = require('../backend/fcm');
+const { requireUser, verifyCronRequest } = require('../backend/auth-middleware');
+const { validateFcmToken, validateWatchedTimetables, isPlainObject } = require('./validation');
 
 const router = express.Router();
 
 // Subscribe user device to FCM notifications
-router.post('/subscribe', async (req, res) => {
+router.post('/subscribe', requireUser, async (req, res) => {
     try {
         const { userId, token } = req.body;
 
         if (!userId || !token) {
             return res.status(400).json({ error: 'userId and token are required' });
         }
+        const tokenError = validateFcmToken(token);
+        if (tokenError) return res.status(400).json({ error: tokenError });
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
@@ -33,12 +40,6 @@ router.post('/subscribe', async (req, res) => {
 
             console.log(`✅ Updated FCM token for user ${userId}`);
             console.log(`   Old tokens count: ${oldTokens.length} → New: 1`);
-
-            const verifyDoc = await userRef.get();
-            const verifyTokens = verifyDoc.data().tokens || [];
-            if (verifyTokens.length > 1) {
-                console.warn(`⚠️  WARNING: User ${userId} still has ${verifyTokens.length} tokens after update!`);
-            }
         } else {
             await userRef.set({
                 tokens: [token],
@@ -48,6 +49,7 @@ router.post('/subscribe', async (req, res) => {
                 },
                 watchedKeys: [],
                 hasReminders: false,
+                watchedTypes: [],
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
             });
@@ -66,12 +68,16 @@ router.post('/subscribe', async (req, res) => {
 // `token` is optional: without it every token of the user is removed, which is
 // what the app needs when the browser session never loaded its own token.
 // notificationsEnabled records the choice, so nothing re-enables it silently.
-router.post('/unsubscribe', async (req, res) => {
+router.post('/unsubscribe', requireUser, async (req, res) => {
     try {
         const { userId, token } = req.body;
 
         if (!userId) {
             return res.status(400).json({ error: 'userId is required' });
+        }
+        if (token !== undefined && token !== null) {
+            const tokenError = validateFcmToken(token);
+            if (tokenError) return res.status(400).json({ error: tokenError });
         }
 
         const db = getFirestore();
@@ -102,7 +108,7 @@ router.post('/unsubscribe', async (req, res) => {
 });
 
 // Update user notification preferences
-router.post('/update-preferences', async (req, res) => {
+router.post('/update-preferences', requireUser, async (req, res) => {
     try {
         const { userId, watchedTimetables } = req.body;
 
@@ -110,22 +116,22 @@ router.post('/update-preferences', async (req, res) => {
             return res.status(400).json({ error: 'userId is required' });
         }
 
-        if (!Array.isArray(watchedTimetables)) {
-            return res.status(400).json({ error: 'watchedTimetables must be an array' });
-        }
+        const listError = validateWatchedTimetables(watchedTimetables);
+        if (listError) return res.status(400).json({ error: listError });
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
         const userDoc = await userRef.get();
 
         // Denormalized index fields for efficient watcher/reminder queries.
-        const { watchedKeys, hasReminders } = deriveWatchIndex(watchedTimetables);
+        const { watchedKeys, hasReminders, watchedTypes } = deriveWatchIndex(watchedTimetables);
 
         if (userDoc.exists) {
             await userRef.update({
                 'preferences.watchedTimetables': watchedTimetables,
                 watchedKeys,
                 hasReminders,
+                watchedTypes,
                 lastUpdated: new Date().toISOString()
             });
         } else {
@@ -136,6 +142,7 @@ router.post('/update-preferences', async (req, res) => {
                 },
                 watchedKeys,
                 hasReminders,
+                watchedTypes,
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
             });
@@ -150,7 +157,7 @@ router.post('/update-preferences', async (req, res) => {
 });
 
 // Update global notification preferences (systemStatus)
-router.post('/update-global-preferences', async (req, res) => {
+router.post('/update-global-preferences', requireUser, async (req, res) => {
     try {
         const { userId, notificationTypes } = req.body;
 
@@ -158,9 +165,10 @@ router.post('/update-global-preferences', async (req, res) => {
             return res.status(400).json({ error: 'userId is required' });
         }
 
-        if (!notificationTypes || typeof notificationTypes !== 'object') {
+        if (!isPlainObject(notificationTypes)) {
             return res.status(400).json({ error: 'notificationTypes must be an object' });
         }
+        const systemStatus = notificationTypes.systemStatus === true;
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
@@ -169,7 +177,7 @@ router.post('/update-global-preferences', async (req, res) => {
         if (userDoc.exists) {
             // Update existing user
             await userRef.update({
-                'preferences.notificationTypes.systemStatus': notificationTypes.systemStatus ?? false,
+                'preferences.notificationTypes.systemStatus': systemStatus,
                 lastUpdated: new Date().toISOString()
             });
         } else {
@@ -178,9 +186,7 @@ router.post('/update-global-preferences', async (req, res) => {
                 tokens: [],
                 preferences: {
                     watchedTimetables: [],
-                    notificationTypes: {
-                        systemStatus: notificationTypes.systemStatus ?? false
-                    }
+                    notificationTypes: { systemStatus }
                 },
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
@@ -196,7 +202,7 @@ router.post('/update-global-preferences', async (req, res) => {
 });
 
 // Get user notification preferences
-router.get('/preferences/:userId', async (req, res) => {
+router.get('/preferences/:userId', requireUser, async (req, res) => {
     try {
         const { userId } = req.params;
 
@@ -237,8 +243,9 @@ router.get('/preferences/:userId', async (req, res) => {
     }
 });
 
-// Manually trigger notification processing
-router.post('/process-changes', async (req, res) => {
+// Manually trigger notification processing. Sends pushes to every watcher, so
+// it is a scheduler endpoint (CRON_SECRET), not a public one.
+router.post('/process-changes', verifyCronRequest, async (req, res) => {
     try {
         console.log('Manual notification processing triggered via API');
         processPendingChanges().catch(err => console.error('Process changes error:', err));
