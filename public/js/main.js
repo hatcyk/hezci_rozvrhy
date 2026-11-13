@@ -3,22 +3,68 @@ import { state, updateState } from './state.js';
 import { initTheme, initThemeToggle } from './theme.js';
 import { initModalListeners } from './modal.js';
 import { loadTimetable, populateValueSelect } from './timetable.js';
-import { fetchDefinitions, checkBakalariStatus } from './api.js';
+import { fetchDefinitions, fetchBackendStatus } from './api.js';
 import { initCustomDropdown, setDropdownValue, openDropdown } from './dropdown.js';
-import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek } from './utils.js';
+import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek, setPressed } from './utils.js';
 import { initSunData } from './suntime.js';
-import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime } from './firebase-client.js';
+import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime, isFirebaseSdkLoaded, FIREBASE_UNAVAILABLE_MESSAGE } from './firebase-client.js';
 import { registerServiceWorker, initializeMessaging, reconcileLessonReminderToken, initNotificationButton, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
 import { loadFavorites } from './favorites.js';
 import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
-import { initOfflineDetection } from './offline.js';
+import { initOfflineDetection, outageBannerText } from './offline.js';
 import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
 import { debug } from './debug.js';
-import { initNextLessonWidget } from './next-lesson.js';
+import { initNextLessonWidget, refreshNextLessonWidget } from './next-lesson.js';
 import { initLessonStatusUpdates } from './lesson-status.js';
+import { parseRoute } from './view-route.js';
+import { initViewRouter, onViewEnter, showView } from './view-router.js';
+import { initTimetableTools } from './timetable-tools.js';
+import { applyLayout } from './layout-manager.js';
+
+/**
+ * Register the views behind the navigation. They are imported on first use:
+ * the code is in the same bundle, but nothing of it runs for a user who only
+ * ever looks at the timetable.
+ */
+function initViews() {
+    onViewEnter('timetable', async () => {
+        // Back from another view: re-render (layouts measure the container,
+        // which had no size while hidden) and catch up on the widget
+        if (state.currentTimetableData && state.currentTimetableData.length) {
+            await applyLayout();
+            refreshNextLessonWidget();
+        }
+    });
+    onViewEnter('changes', async (params) => (await import('./changes-view.js')).enterChangesView(params));
+    onViewEnter('rooms', async (params) => (await import('./rooms-view.js')).enterRoomsView(params));
+    onViewEnter('common', async (params) => (await import('./common-view.js')).enterCommonView(params));
+    initViewRouter();
+    initTimetableTools({ applyLayout });
+}
+
+/**
+ * Hallway screen (?kiosk=changes): only what the board needs - sign-in for
+ * Firestore and the service worker for offline start. No messaging, no
+ * notification prompts, no favourites, no panels.
+ */
+async function initKiosk() {
+    initDOM();
+    initOfflineDetection();
+    // Dark board on a TV: less glare in a corridor; not saved as the user's theme
+    document.documentElement.setAttribute('data-theme', 'dark');
+    try {
+        await initializeFirebase(window.firebaseConfig);
+        try { await authenticateWithFirebase(); } catch (err) { console.warn('Kiosk: auth failed, using cached data', err?.message || err); }
+    } catch (err) {
+        console.warn('Kiosk: Firebase unavailable, using cached data', err?.message || err);
+    }
+    registerServiceWorker().catch(err => console.error('Service Worker registration failed:', err));
+    const { startKiosk } = await import('./kiosk.js');
+    startKiosk();
+}
 
 /**
  * Listen for deep-link messages from the service worker (fallback for browsers
@@ -76,37 +122,38 @@ async function cleanupOldServiceWorkers() {
     }
 }
 
-// Update outage banner text with last fetch time
-async function updateOutageBannerText() {
-    const textElement = document.getElementById('outageBannerText');
-    if (!textElement) return;
-
-    try {
-        const lastUpdate = await getLastUpdateTime();
-
-        if (lastUpdate && lastUpdate.seconds) {
-            const date = new Date(lastUpdate.seconds * 1000);
-            const hours = date.getHours().toString().padStart(2, '0');
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            textElement.textContent = `Probíhá výpadek Bakalářů - data z ${hours}:${minutes}`;
-        } else {
-            textElement.textContent = 'Probíhá výpadek Bakalářů - Používám nejnovější dostupná data';
-        }
-    } catch (error) {
-        console.error('Failed to get last update time:', error);
-        textElement.textContent = 'Probíhá výpadek Bakalářů - Používám nejnovější dostupná data';
+/**
+ * Show or hide the "data are stale" banner from /api/status (contract S4:
+ * isHealthy + dataAgeMin + lastSuccessAt). An older backend without those
+ * fields falls back to the metadata/lastPrefetch timestamp in Firestore.
+ */
+async function applyBackendStatus(status) {
+    if (!dom.outageBanner) return;
+    if (status.isHealthy) {
+        if (!dom.outageBanner.classList.contains('hidden')) console.log('✅ Data are fresh again - hiding outage banner');
+        dom.outageBanner.classList.add('hidden');
+        return;
     }
+
+    let info = status;
+    if (status.dataAgeMin === null && !status.lastSuccessAt) {
+        try {
+            const lastUpdate = await getLastUpdateTime();
+            if (lastUpdate && lastUpdate.seconds) {
+                info = { ...status, lastSuccessAt: new Date(lastUpdate.seconds * 1000).toISOString() };
+            }
+        } catch (error) {
+            console.error('Failed to get last update time:', error);
+        }
+    }
+    const textElement = document.getElementById('outageBannerText');
+    if (textElement) textElement.textContent = outageBannerText(info);
+    dom.outageBanner.classList.remove('hidden');
 }
 
 // Type button handlers
 function updateTypeButtons() {
-    dom.typeButtons.forEach(btn => {
-        if (btn.dataset.type === state.selectedType) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    });
+    setPressed(dom.typeButtons, btn => btn.dataset.type === state.selectedType);
 }
 
 function initTypeButtons() {
@@ -134,13 +181,7 @@ function initTypeButtons() {
 
 // Schedule type button handlers
 function updateScheduleTypeButtons() {
-    dom.scheduleTypeButtons.forEach(btn => {
-        if (btn.dataset.schedule === state.selectedScheduleType) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    });
+    setPressed(dom.scheduleTypeButtons, btn => btn.dataset.schedule === state.selectedScheduleType);
 }
 
 function initScheduleTypeButtons() {
@@ -160,6 +201,11 @@ function initScheduleTypeButtons() {
 
 // Initialize application
 async function init() {
+    const route = parseRoute();
+    if (route.kiosk) {
+        try { await initKiosk(); } catch (e) { console.error('Kiosk initialization error:', e); }
+        return;
+    }
     try {
         // Initialize DOM references first
         initDOM();
@@ -179,12 +225,11 @@ async function init() {
         // fail (e.g. offline, Firebase SDK script not in SW cache), the app
         // still boots and falls back to localStorage cache.
         console.log('Initializing Firebase...');
-        let firebaseReady = false;
         try {
             await initializeFirebase(window.firebaseConfig);
             try {
+                // Before any Firestore read or per-user API call (contract S1)
                 await authenticateWithFirebase();
-                firebaseReady = true;
                 console.log('Firebase ready!');
             } catch (authErr) {
                 console.warn('⚠️ Firebase auth failed — offline fallback mode:', authErr?.message || authErr);
@@ -214,40 +259,21 @@ async function init() {
         // Initialize custom dropdown
         initCustomDropdown(loadTimetable);
 
-        // Fetch definitions and check Bakalari status in parallel
-        const [definitions, isBakalariUp] = await Promise.all([
+        // Fetch definitions and check data freshness in parallel
+        const [definitions, backendStatus] = await Promise.all([
             fetchDefinitions(),
-            checkBakalariStatus(),
+            fetchBackendStatus(),
             loadFavorites()
         ]);
 
         updateState('definitions', definitions);
 
-        // Check for outage (API is down)
-        if (!isBakalariUp && dom.outageBanner) {
-            console.warn('⚠️ Bakaláři API is down - showing outage banner');
-            await updateOutageBannerText();
-            dom.outageBanner.classList.remove('hidden');
-        } else if (dom.outageBanner) {
-            dom.outageBanner.classList.add('hidden');
-        }
+        await applyBackendStatus(backendStatus);
 
-        // Periodically check Bakalari status (every 2 minutes)
+        // Periodically check data freshness (every 2 minutes)
         setInterval(async () => {
             if (document.visibilityState === 'hidden') return; // no point polling a hidden tab
-            const isUp = await checkBakalariStatus();
-            if (!isUp && dom.outageBanner) {
-                if (dom.outageBanner.classList.contains('hidden')) {
-                    console.warn('⚠️ Bakaláři API went down - showing outage banner');
-                }
-                await updateOutageBannerText();
-                dom.outageBanner.classList.remove('hidden');
-            } else if (dom.outageBanner) {
-                if (!dom.outageBanner.classList.contains('hidden')) {
-                    console.log('✅ Bakaláři API is back up - hiding outage banner');
-                }
-                dom.outageBanner.classList.add('hidden');
-            }
+            await applyBackendStatus(await fetchBackendStatus());
         }, 2 * 60 * 1000); // Check every 2 minutes
 
         // Expose state and dom to window for debugging (only in debug mode)
@@ -290,16 +316,25 @@ async function init() {
         // React to deep-link navigations sent by the SW after this page is loaded
         initServiceWorkerMessages();
 
+        // Views (changes, free rooms, common free time) + timetable toolbar
+        initViews();
+
         // If we were opened from a notification deep link (/?type=...&id=...),
         // honor it instead of the saved/default selection.
         const deepLink = parseDeepLinkParams();
         if (deepLink) {
             console.log('🔗 Opening from notification deep link:', deepLink);
+            await showView('timetable', {}, { history: 'none', focus: false });
             await applyDeepLink(deepLink);
             // Clean the URL so a refresh doesn't re-trigger the deep link.
             history.replaceState(null, '', location.pathname);
             return;
         }
+
+        // /?view=changes|rooms|common (manifest shortcuts, shared links): show
+        // that view right away; the saved timetable still loads below so the
+        // "Rozvrh" tab is ready when the user switches to it.
+        await showView(route.view, route.params, { history: route.view === 'timetable' ? 'none' : 'replace', focus: false });
 
         // Restore saved selection
         const savedType = localStorage.getItem('selectedType');
@@ -330,15 +365,28 @@ async function init() {
     } catch (e) {
         console.error('Initialization error:', e);
         if (dom.errorDiv) {
-            dom.errorDiv.textContent = "Nepodařilo se načíst rozvrhy.";
+            // Without the Firebase SDK (blocked script, no connection on first
+            // visit) say what to do instead of a generic failure
+            dom.errorDiv.textContent = isFirebaseSdkLoaded()
+                ? 'Nepodařilo se načíst rozvrhy. Zkuste stránku obnovit.'
+                : FIREBASE_UNAVAILABLE_MESSAGE;
             dom.errorDiv.classList.remove('hidden');
-        }
-    } finally {
-        if (dom.loading) {
-            dom.loading.classList.add('hidden');
         }
     }
 }
+
+// Mark the requested view on <html> as soon as the bundle runs - before the
+// awaits in init() - so CSS hides the timetable controls of a /?view= link
+// instead of flashing them. (Not in the inline <head> script: its CSP hash
+// lives in vercel.json, see tools/csp-hashes.js.)
+(function markInitialView() {
+    const route = parseRoute();
+    document.documentElement.dataset.view = route.view;
+    if (route.kiosk) {
+        document.documentElement.dataset.kiosk = route.kiosk;
+        document.documentElement.setAttribute('data-theme', 'dark');
+    }
+})();
 
 // Start application when DOM is ready
 if (document.readyState === 'loading') {

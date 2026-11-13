@@ -1,0 +1,667 @@
+/* ===== Phase 2 views: navigation, timetable toolbar, changes board,
+   free rooms, common free time, "originally → now" ===== */
+
+:root {
+    /* "free for everybody" in the common free time grid: text >= 4.5:1 on the card
+       (dark: #34d399 on hsl(208 50% 12%) ≈ 9:1; light: #047857 on white 5.5:1) */
+    --status-free: #34d399;
+    --status-free-tint: rgba(52, 211, 153, 0.12);
+    --nav-height: 60px;
+}
+[data-theme="light"] {
+    --status-free: #047857;
+    --status-free-tint: rgba(4, 120, 87, 0.08);
+}
+
+/* ---- Only the active view: timetable controls are hidden elsewhere.
+   html[data-view] is set by main.js as soon as the bundle runs and then kept
+   by view-router.js; without it (before JS) the timetable is shown. ---- */
+html[data-view]:not([data-view="timetable"]) :is(.schedule-type-selector, .type-selector, #valueDropdown, #favoritesBtn,
+    #daySelector, #nextLessonWidget, #timetableToolbar, #error, .timetable-container) {
+    display: none !important;
+}
+.app-view[hidden],
+.kiosk[hidden] {
+    display: none !important;
+}
+
+/* ---- View navigation ---- */
+.view-nav {
+    display: flex;
+    justify-content: center;
+    gap: 4px;
+    max-width: 1080px;
+    margin: -8px auto 16px;
+}
+.view-nav a {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 6px 14px;
+    color: var(--text-dim);
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 8px 8px 0 0;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+.view-nav a:hover {
+    color: var(--text-main);
+    background: var(--border-light);
+}
+.view-nav a[aria-current="page"] {
+    color: var(--status-active);
+    border-bottom-color: var(--spsd-orange);
+}
+.view-nav svg { flex-shrink: 0; }
+.vn-short { display: none; }
+
+/* ---- Timetable toolbar ---- */
+.tt-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px;
+}
+.tt-spacer { flex: 1; }
+.tt-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 6px 12px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-main);
+    background: var(--card-bg);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.tt-tool:hover { border-color: var(--spsd-orange); }
+.tt-tool[aria-pressed="true"],
+.tt-tool-primary {
+    background: var(--status-active-strong);   /* white text 5.2:1 */
+    border-color: var(--status-active-strong);
+    color: #fff;
+}
+.tt-tool:disabled { opacity: 0.55; cursor: not-allowed; }
+.tt-badge {
+    min-width: 22px;
+    padding: 1px 7px;
+    border-radius: 11px;
+    font-size: 0.75rem;
+    text-align: center;
+    background: var(--status-changed-tint);
+    color: var(--status-changed);
+    border: 1px solid currentColor;
+}
+.tt-badge:empty { display: none; }
+.tt-tool[aria-pressed="true"] .tt-badge {
+    background: transparent;
+    color: #fff;
+}
+.tt-tool[hidden] { display: none; }
+
+/* ---- Common view frame ---- */
+.app-view {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 20px 24px 24px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px var(--shadow);
+}
+.view-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 16px;
+    margin-bottom: 14px;
+}
+.view-title {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--text-main);
+}
+.view-meta {
+    font-size: 0.82rem;
+    color: var(--text-dim);
+}
+.view-intro {
+    color: var(--text-dim);
+    font-size: 0.92rem;
+    margin-bottom: 14px;
+    max-width: 65ch;
+}
+.view-note {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border-light);
+    border-left: 4px solid var(--status-changed);
+    border-radius: 8px;
+    background: var(--sidebar-accent);
+    font-size: 0.88rem;
+    line-height: 1.45;
+}
+.view-note svg { flex-shrink: 0; margin-top: 1px; color: var(--status-changed); }
+.view-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px 12px;
+    margin-bottom: 14px;
+}
+.view-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-left: auto;
+}
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+.field-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-dim);
+}
+.field-wide { flex: 1 1 260px; }
+/* Plain selects in the views (the global select style is for the old header) */
+.app-view select {
+    min-width: 170px;
+    max-width: 100%;
+    min-height: 40px;
+    padding: 8px 34px 8px 10px;
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+    background-color: var(--sidebar-accent);
+    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23878f99" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 16px;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    box-shadow: none;
+    transform: none;
+}
+.app-view select:hover,
+.app-view select:focus {
+    border-color: var(--spsd-orange);
+    background-color: var(--sidebar-accent);
+    background-image: url('data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23878f99" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>');
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 16px;
+    box-shadow: none;
+    transform: none;
+}
+.app-view select:disabled { opacity: 0.55; cursor: not-allowed; }
+.field-wide select { width: 100%; }
+
+/* Segmented buttons (day, week) */
+.seg-group {
+    display: inline-flex;
+    border: 1px solid var(--border-light);
+    border-radius: 9px;
+    overflow: hidden;
+}
+.seg-group:empty { display: none; }
+.seg-btn {
+    min-height: 40px;
+    padding: 6px 14px;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+.seg-btn + .seg-btn { border-left: 1px solid var(--border-light); }
+.seg-btn:hover { color: var(--text-main); background: var(--border-light); }
+.seg-btn[aria-pressed="true"] {
+    color: #fff;
+    background: var(--status-active-strong);
+}
+.seg-btn-solo {
+    border: 1px solid var(--border-light);
+    border-radius: 9px;
+}
+.view-summary {
+    font-weight: 700;
+    margin: 4px 0 2px;
+    min-height: 1.4em;
+}
+.view-empty {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 24px 6px;
+    font-size: 1rem;
+    color: var(--text-dim);
+}
+.view-empty svg { color: var(--status-free); flex-shrink: 0; }
+.view-loading {
+    display: flex;
+    gap: 6px;
+    padding: 24px 6px;
+}
+.view-loading span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border-light);
+    animation: view-dot 1s ease-in-out infinite;
+}
+.view-loading span:nth-child(2) { animation-delay: 0.15s; }
+.view-loading span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes view-dot { 50% { opacity: 0.3; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) {
+    .view-loading span { animation: none; }
+}
+
+/* ---- Change entries (board, "Jen změny", lesson detail) ---- */
+.chg-class { margin-top: 20px; }
+.chg-class-title,
+.oc-day-title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    margin-bottom: 6px;
+}
+.chg-count {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-dim);
+}
+.chg-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+}
+.chg-table th,
+.chg-table td {
+    text-align: left;
+    vertical-align: top;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+}
+.chg-table thead th {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom-width: 2px;
+}
+.chg-table tbody th {
+    width: 1%;
+    white-space: nowrap;
+    font-weight: 800;
+}
+.chg-table thead th:nth-child(2),
+.chg-table thead th:nth-child(3) { width: 49%; }
+.chg-hour { font-size: 1.05rem; }
+.chg-time,
+.chg-group {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-dim);
+}
+.chg-subject { font-weight: 700; }
+.chg-meta {
+    display: block;
+    font-size: 0.84rem;
+    color: var(--text-dim);
+}
+.chg-struck { color: var(--text-dim); text-decoration-thickness: 2px; }
+.chg-struck .chg-subject { font-weight: 600; }
+.chg-none { color: var(--text-dim); }
+.chg-note {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.84rem;
+    font-style: italic;
+    color: var(--text-dim);
+}
+.chg-kind {
+    display: inline-block;
+    margin: 0 6px 3px 0;
+    padding: 1px 7px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    vertical-align: 1px;
+    color: var(--status-changed);
+    background: var(--status-changed-tint);
+}
+.chg-kind--removed,
+.chg-kind--absent {
+    color: var(--status-removed);
+    background: var(--status-removed-tint);
+}
+
+/* "Jen změny" inside the timetable container */
+.only-changes-mode .oc-wrapper { padding: 18px 20px 22px; }
+.oc-title { font-size: 1.15rem; font-weight: 800; margin-bottom: 4px; }
+.oc-day { margin-top: 18px; }
+
+/* "Proti stálému rozvrhu" in the lesson detail */
+.modal-diff {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid var(--border-light);
+    border-left: 4px solid var(--status-changed);
+    border-radius: 12px;
+}
+.modal-diff-title {
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+.modal-diff-grid {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 8px 12px;
+    align-items: start;
+}
+.modal-diff-col { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.modal-diff .modal-value { text-align: left; }
+.modal-diff-arrow { align-self: center; font-size: 1.4rem; color: var(--text-dim); }
+
+/* "Do kalendáře" sheet (calendar-sheet.js) */
+.cal-body { display: flex; flex-direction: column; gap: 14px; }
+.cal-intro { font-size: 0.95rem; }
+.cal-fieldset { border: 1px solid var(--border-light); border-radius: 10px; padding: 10px 12px 12px; }
+.cal-fieldset legend { padding: 0 6px; font-size: 0.8rem; font-weight: 800; color: var(--text-dim); }
+.cal-hint { font-weight: 500; }
+.cal-option { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 0.92rem; cursor: pointer; }
+.cal-option input { width: 20px; height: 20px; margin-top: 1px; accent-color: var(--status-active-strong); flex-shrink: 0; }
+.cal-groups { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.cal-option-inline { align-items: center; }
+.cal-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-help { font-size: 0.85rem; color: var(--text-dim); }
+.cal-note {
+    font-size: 0.88rem;
+    line-height: 1.45;
+    padding: 10px 12px;
+    border-left: 4px solid var(--status-changed);
+    border-radius: 8px;
+    background: var(--sidebar-accent);
+}
+
+/* ---- Free rooms ---- */
+.rooms-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 16px;
+}
+.rooms-slot {
+    padding: 14px 16px 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+.rooms-slot-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+.rooms-when { color: var(--status-active); }
+.rooms-hour {
+    flex-basis: 100%;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text-dim);
+}
+.rooms-count {
+    margin-top: 6px;
+    font-size: 0.84rem;
+    color: var(--text-dim);
+}
+.room-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+.room-item {
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--sidebar-accent);
+}
+.room-link,
+.room-name {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 6px 12px;
+    font-weight: 800;
+    color: var(--text-main);
+}
+.room-link {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+.room-link:hover { color: var(--status-active); }
+.room-hide {
+    min-height: 40px;
+    padding: 0 10px;
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--chip-text);            /* --text-dim was 4.18:1 on this bg (light) */
+    background: transparent;
+    border: 0;
+    border-left: 1px solid var(--border-light);
+    cursor: pointer;
+}
+.room-hide:hover { color: var(--text-main); background: var(--border-light); }
+.rooms-hidden { margin-top: 18px; }
+.rooms-hidden summary {
+    cursor: pointer;
+    font-weight: 700;
+    min-height: 32px;
+    display: list-item;
+}
+.rooms-hidden-help { margin-top: 6px; font-size: 0.84rem; color: var(--text-dim); }
+
+/* ---- Common free time ---- */
+.chip-list {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: -2px 0 14px;
+}
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 2px 2px 12px;
+    font-size: 0.88rem;
+    font-weight: 700;
+    background: var(--sidebar-accent);
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+}
+.chip-remove {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    background: transparent;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+}
+.chip-remove:hover { color: var(--text-main); background: var(--border-light); }
+.common-subtitle {
+    font-size: 1.05rem;
+    font-weight: 800;
+    margin: 18px 0 8px;
+}
+.common-summary {
+    list-style: none;
+    display: grid;
+    gap: 6px;
+    font-size: 0.92rem;
+}
+.common-range.is-ideal { font-weight: 700; color: var(--status-free); }
+.common-none { color: var(--text-dim); }
+.table-scroll { overflow-x: auto; }
+.common-grid {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.common-grid th,
+.common-grid td {
+    padding: 6px;
+    text-align: center;
+    border: 1px solid var(--border);
+}
+.common-grid thead th { font-weight: 800; }
+.common-grid tbody th { text-align: left; white-space: nowrap; }
+.cg-hour { display: block; }
+.cg-time { display: block; font-size: 0.68rem; font-weight: 500; color: var(--text-dim); }
+.cg-cell.is-ideal {
+    font-weight: 800;
+    color: var(--status-free);
+    background: var(--status-free-tint);
+    outline: 2px solid var(--status-free);
+    outline-offset: -2px;
+}
+.cg-cell.is-free { font-weight: 700; color: var(--status-free); }
+.cg-busy { font-size: 0.7rem; color: var(--text-dim); }
+.common-legend {
+    margin-top: 10px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+}
+
+/* ---- Phones and tablets ---- */
+@media (max-width: 1079px) {
+    /* Bottom tab bar, the usual place for app sections on a phone */
+    .view-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 900;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0;
+        max-width: none;
+        margin: 0;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        background: var(--card-bg);
+        border-top: 1px solid var(--border);
+        box-shadow: 0 -2px 12px var(--shadow);
+    }
+    .view-nav a {
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+        min-height: var(--nav-height);
+        padding: 6px 2px 6px;
+        font-size: 0.72rem;
+        border-bottom: 0;
+        border-top: 3px solid transparent;
+        border-radius: 0;
+    }
+    /* No tinted background: orange text on it fell to 4.48:1 in the dark theme */
+    .view-nav a[aria-current="page"] {
+        border-top-color: var(--spsd-orange);
+        font-weight: 800;
+    }
+    .vn-long { display: none; }
+    .vn-short { display: inline; }
+
+    .app-container {
+        padding-bottom: calc(12px + var(--nav-height) + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Views scroll inside the locked mobile page, like the timetable */
+    .app-container > .app-view {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        padding: 14px 14px 18px;
+    }
+    .view-title { font-size: 1.15rem; }
+    .view-controls { gap: 8px; }
+    .view-controls .field { flex: 1 1 140px; }
+    .app-view select { min-width: 0; width: 100%; }
+    .view-actions { margin-left: 0; }
+
+    .chg-table { font-size: 0.86rem; }
+    .chg-table th,
+    .chg-table td { padding: 7px 6px; }
+
+    /* Other views: the header keeps only the settings button, next to the logo */
+    html[data-view]:not([data-view="timetable"]) header .dropdown-row {
+        position: absolute;
+        top: 6px;
+        right: 8px;
+        width: auto;
+        padding: 0;
+    }
+    html[data-view]:not([data-view="timetable"]) .header-left {
+        padding-right: 64px;
+        border-bottom: none;
+    }
+
+    .tt-toolbar { margin-bottom: 8px; }
+    .tt-tool { min-height: 40px; }
+    /* Icon-only on phones; the word stays the accessible name */
+    .tt-tool-text {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+
+    .modal-diff-grid { grid-template-columns: 1fr; }
+    .modal-diff-arrow { transform: rotate(90deg); justify-self: start; }
+}

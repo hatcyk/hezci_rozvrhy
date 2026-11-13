@@ -2,16 +2,32 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <!-- Zooming must stay possible (WCAG 1.4.4): no user-scalable / maximum-scale limits -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lepší Rozvrh</title>
+    <meta name="description" content="Přehledné rozvrhy tříd, učitelů a učeben SPŠD včetně změn a upozornění.">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
     <link rel="manifest" href="manifest.webmanifest">
-    <meta name="theme-color" content="#10111A">
+    <!-- Browser UI colour per theme; theme.js keeps both in sync with the chosen theme -->
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#071422">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F8FAFC">
+    <script>
+        // Apply the theme before the first paint (no flash of the wrong theme).
+        // First visit follows the system setting (prefers-color-scheme).
+        (function () {
+            try {
+                var saved = localStorage.getItem('theme');
+                var theme = saved === 'light' || saved === 'dark' ? saved
+                    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+                document.documentElement.setAttribute('data-theme', theme);
+            } catch (e) { /* storage blocked: CSS default (dark) */ }
+        })();
+    </script>
     <link rel="apple-touch-icon" href="icon-180.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Rozvrhy">
-    <link rel="stylesheet" href="css/app.css?v=69505063f4">
+    <link rel="stylesheet" href="css/app.css?v=c7e3004056">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap" rel="stylesheet">
@@ -24,50 +40,50 @@
                 <!-- Dark mode logo (white) - responsive -->
                 <picture class="logo logo-dark">
                     <source media="(max-width: 768px)" srcset="spsd_logo_white.png">
-                    <img src="spsd_long_white.png" alt="SPŠD Logo">
+                    <img src="spsd_long_white.png" alt="SPŠD">
                 </picture>
                 <!-- Light mode logo (dark) - responsive -->
                 <picture class="logo logo-light">
                     <source media="(max-width: 768px)" srcset="spsd_logo_dark.png">
-                    <img src="spsd_long_dark.png" alt="SPŠD Logo">
+                    <img src="spsd_long_dark.png" alt="SPŠD">
                 </picture>
-                <h1><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days-icon lucide-calendar-days"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg> Rozvrh</h1>
+                <h1><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-calendar-days-icon lucide-calendar-days"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg> Rozvrh</h1>
             </div>
             <div class="controls">
-                <div class="schedule-type-selector">
-                    <button class="schedule-type-btn" data-schedule="permanent">Stálý</button>
-                    <button class="schedule-type-btn active" data-schedule="actual">Aktuální</button>
-                    <button class="schedule-type-btn" data-schedule="next">Příští</button>
+                <div class="schedule-type-selector" role="group" aria-label="Týden">
+                    <button type="button" class="schedule-type-btn" data-schedule="permanent" aria-pressed="false">Stálý</button>
+                    <button type="button" class="schedule-type-btn active" data-schedule="actual" aria-pressed="true">Aktuální</button>
+                    <button type="button" class="schedule-type-btn" data-schedule="next" aria-pressed="false">Příští</button>
                 </div>
-                <div class="type-selector">
-                    <button class="type-btn active" data-type="Class">Třídy</button>
-                    <button class="type-btn" data-type="Teacher">Učitelé</button>
-                    <button class="type-btn" data-type="Room">Učebny</button>
+                <div class="type-selector" role="group" aria-label="Druh rozvrhu">
+                    <button type="button" class="type-btn active" data-type="Class" aria-pressed="true">Třídy</button>
+                    <button type="button" class="type-btn" data-type="Teacher" aria-pressed="false">Učitelé</button>
+                    <button type="button" class="type-btn" data-type="Room" aria-pressed="false">Učebny</button>
                 </div>
                 <div class="dropdown-row">
                     <div class="custom-dropdown" id="valueDropdown">
-                        <button class="custom-dropdown-trigger" id="valueDropdownTrigger">
-                            <span class="dropdown-trigger-heart" id="dropdownTriggerHeart">
+                        <button type="button" class="custom-dropdown-trigger" id="valueDropdownTrigger" aria-expanded="false" aria-controls="valueDropdownMenu">
+                            <span class="dropdown-trigger-heart" id="dropdownTriggerHeart" aria-hidden="true">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                             </span>
                             <span id="valueDropdownLabel">Načítám...</span>
-                            <svg class="custom-dropdown-arrow" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <svg class="custom-dropdown-arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <polyline points="6 9 12 15 18 9"></polyline>
                             </svg>
                         </button>
-                        <div class="custom-dropdown-menu" id="valueDropdownMenu">
+                        <div class="custom-dropdown-menu" id="valueDropdownMenu" inert>
                             <!-- Options will be generated here -->
                         </div>
                     </div>
-                    <button class="favorites-access-btn" id="favoritesBtn" aria-label="Oblíbené rozvrhy" title="Oblíbené rozvrhy">
+                    <button type="button" class="favorites-access-btn" id="favoritesBtn" aria-label="Oblíbené rozvrhy" title="Oblíbené rozvrhy" aria-haspopup="dialog">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                     </button>
-                    <button class="refresh-btn" id="refreshBtn" aria-label="Obnovit rozvrh" title="Obnovit rozvrh">
+                    <button type="button" class="refresh-btn" id="refreshBtn" aria-label="Obnovit rozvrh" title="Obnovit rozvrh">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
                         </svg>
                     </button>
-                    <button class="notification-bell disabled" id="notificationBell" aria-label="Notifikace" title="Notifikace vypnuty">
+                    <button type="button" class="notification-bell disabled" id="notificationBell" aria-label="Notifikace (vypnuty)" title="Notifikace vypnuty" aria-haspopup="dialog">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="bell-icon">
                             <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
                             <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
@@ -78,7 +94,7 @@
                             <line x1="4" y1="4" x2="20" y2="20"/>
                         </svg>
                     </button>
-                    <button class="theme-toggle" id="themeToggle" aria-label="Přepnout téma">
+                    <button type="button" class="theme-toggle" id="themeToggle" aria-label="Přepnout světlý / tmavý režim" title="Přepnout světlý / tmavý režim">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="sun-icon">
                             <circle cx="12" cy="12" r="4"/>
                             <path d="M12 2v2"/>
@@ -94,7 +110,7 @@
                             <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
                         </svg>
                     </button>
-                    <button class="settings-toggle mobile-only" id="settingsToggle" aria-label="Nastavení">
+                    <button type="button" class="settings-toggle mobile-only" id="settingsToggle" aria-label="Nastavení" aria-haspopup="dialog">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/>
                             <circle cx="12" cy="12" r="3"/>
@@ -104,7 +120,28 @@
             </div>
         </header>
 
-        <div id="offlineBanner" class="offline-banner hidden">
+        <!-- Views: real links (/?view=…) so they work as deep links, in a new tab
+             and without JS; view-router.js switches them in place -->
+        <nav class="view-nav" id="viewNav" aria-label="Pohledy">
+            <a href="/" data-view="timetable" aria-current="page">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                <span>Rozvrh</span>
+            </a>
+            <a href="/?view=changes" data-view="changes">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+                <span>Změny</span>
+            </a>
+            <a href="/?view=rooms" data-view="rooms">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/></svg>
+                <span class="vn-long">Volné učebny</span><span class="vn-short">Učebny</span>
+            </a>
+            <a href="/?view=common" data-view="common">
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span class="vn-long">Společné volno</span><span class="vn-short">Volno</span>
+            </a>
+        </nav>
+
+        <div id="offlineBanner" class="offline-banner hidden" role="status">
             <div class="offline-banner-content">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
@@ -115,48 +152,167 @@
             </div>
         </div>
 
-        <div id="outageBanner" class="outage-banner hidden">
+        <div id="outageBanner" class="outage-banner hidden" role="status">
             <div class="outage-banner-content">
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"/>
                     <line x1="12" y1="8" x2="12" y2="12"/>
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
-                <span id="outageBannerText">Probíhá výpadek bakalářů - Používám nejnovější dostupná data</span>
+                <span id="outageBannerText">Data z Bakalářů se teď nedaří aktualizovat – zobrazuji poslední stažená.</span>
             </div>
         </div>
 
-        <div id="loading" class="loading hidden">
-            <div class="loading-box">
-                <div class="spinner"></div>
-                <span>Načítám data...</span>
-            </div>
-        </div>
-        <div id="error" class="error hidden"></div>
+        <div id="error" class="error hidden" role="alert"></div>
 
-        <div class="day-selector" id="daySelector">
+        <div class="day-selector" id="daySelector" role="group" aria-label="Den v týdnu">
             <!-- Day selector buttons will be generated here for mobile -->
         </div>
 
         <!-- "Next lesson" widget: shows the current/next lesson for today -->
         <div id="nextLessonWidget" class="next-lesson-widget hidden" aria-live="polite"></div>
 
-        <div class="timetable-container">
+        <!-- Timetable toolbar (timetable-tools.js) -->
+        <div class="tt-toolbar" id="timetableToolbar">
+            <button type="button" class="tt-tool" id="onlyChangesBtn" aria-pressed="false">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M7 12h10M10 18h4"/></svg>
+                <span>Jen změny</span><span class="tt-badge" id="onlyChangesCount" aria-hidden="true"></span><span class="sr-only" id="onlyChangesCountSr"></span>
+            </button>
+            <span class="tt-spacer"></span>
+            <button type="button" class="tt-tool" id="calendarBtn" aria-haspopup="dialog">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4M16 2v4"/><path d="M21 13V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8"/><path d="M3 10h18M16 19h6M19 16v6"/></svg>
+                <span class="tt-tool-text">Do kalendáře</span>
+            </button>
+            <button type="button" class="tt-tool" id="shareBtn">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+                <span class="tt-tool-text">Sdílet</span>
+            </button>
+            <button type="button" class="tt-tool" id="printBtn">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                <span class="tt-tool-text">Tisk</span>
+            </button>
+        </div>
+
+        <main class="timetable-container" id="timetableView" aria-label="Rozvrh" tabindex="-1">
             <!-- Skeleton placeholder shown while the timetable loads -->
             <div id="timetableSkeleton" class="timetable-skeleton hidden" aria-hidden="true"></div>
             <div class="timetable-grid" id="timetable">
                 <!-- Tady se vygenerují dny a hodiny -->
             </div>
-        </div>
+        </main>
+
+        <!-- Changes of the whole school (changes-view.js, aggregates/changes_*) -->
+        <main class="app-view" id="changesView" aria-labelledby="changesTitle" hidden>
+            <div class="view-head">
+                <h2 class="view-title" id="changesTitle" tabindex="-1">Změny v rozvrhu</h2>
+                <p class="view-meta" id="changesFreshness"></p>
+            </div>
+            <div class="view-controls">
+                <div class="seg-group" id="changesQuickDays" role="group" aria-label="Rychlá volba dne"></div>
+                <label class="field"><span class="field-label">Den</span><select id="changesDay"></select></label>
+                <label class="field"><span class="field-label">Třída</span><select id="changesClass"><option value="">Všechny třídy</option></select></label>
+                <label class="field"><span class="field-label">Vyučující</span><select id="changesTeacher"><option value="">Všichni vyučující</option></select></label>
+                <div class="view-actions">
+                    <button type="button" class="tt-tool" id="changesShare">
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+                        <span>Sdílet</span>
+                    </button>
+                    <a class="tt-tool" href="/?kiosk=changes" target="_blank" rel="noopener">
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                        <span>Režim pro televizi</span>
+                    </a>
+                </div>
+            </div>
+            <p class="view-summary" id="changesSummary" role="status"></p>
+            <div class="chg-list" id="changesList"></div>
+        </main>
+
+        <!-- Free rooms (rooms-view.js, aggregates/freeRooms_*) -->
+        <main class="app-view" id="roomsView" aria-labelledby="roomsTitle" hidden>
+            <div class="view-head">
+                <h2 class="view-title" id="roomsTitle" tabindex="-1">Volné učebny</h2>
+                <p class="view-meta" id="roomsFreshness"></p>
+            </div>
+            <p class="view-note">
+                <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                <span>Učebna je volná <strong>podle rozvrhu, ne podle rezervace</strong>. Může v ní probíhat zkouška, akce nebo doučování, které v rozvrhu nejsou.</span>
+            </p>
+            <div class="view-controls">
+                <button type="button" class="seg-btn seg-btn-solo" id="roomsNow" aria-pressed="true">Teď</button>
+                <label class="field"><span class="field-label">Den</span><select id="roomsDay"></select></label>
+                <label class="field"><span class="field-label">Hodina</span><select id="roomsHour"></select></label>
+            </div>
+            <div class="rooms-grid" id="roomsResult"></div>
+            <details class="rooms-hidden" id="roomsHiddenBox" hidden>
+                <summary id="roomsHiddenSummary">Skryté učebny (<span id="roomsHiddenCount">0</span>)</summary>
+                <p class="rooms-hidden-help">Skryté učebny se v seznamu volných neukazují. Volba se ukládá jen v tomto prohlížeči.</p>
+                <ul class="room-list" id="roomsHiddenList"></ul>
+            </details>
+        </main>
+
+        <!-- Common free time (common-view.js, timetables/*) -->
+        <main class="app-view" id="commonView" aria-labelledby="commonTitle" hidden>
+            <div class="view-head">
+                <h2 class="view-title" id="commonTitle" tabindex="-1">Společné volno</h2>
+            </div>
+            <p class="view-intro">Vyberte 2 až 6 vyučujících nebo tříd. Ukážeme hodiny, kdy nikdo z nich nemá výuku – třeba na konzultaci, schůzku nebo opravný test.</p>
+            <div class="view-controls">
+                <label class="field field-wide"><span class="field-label">Přidat vyučujícího nebo třídu</span><select id="commonPick"></select></label>
+                <button type="button" class="tt-tool tt-tool-primary" id="commonAdd">Přidat</button>
+            </div>
+            <ul class="chip-list" id="commonChosen" aria-label="Vybraní" hidden></ul>
+            <div class="view-controls">
+                <div class="seg-group" id="commonWeek" role="group" aria-label="Týden">
+                    <button type="button" class="seg-btn" data-week="actual" aria-pressed="true">Tento týden</button>
+                    <button type="button" class="seg-btn" data-week="next" aria-pressed="false">Příští týden</button>
+                    <button type="button" class="seg-btn" data-week="permanent" aria-pressed="false">Stálý rozvrh</button>
+                </div>
+                <div class="view-actions">
+                    <button type="button" class="tt-tool" id="commonShare">
+                        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/></svg>
+                        <span>Sdílet</span>
+                    </button>
+                </div>
+            </div>
+            <p class="view-summary" id="commonStatus" role="status"></p>
+            <div id="commonResult"></div>
+        </main>
     </div>
 
-    <!-- Lesson Detail Bottom Sheet -->
-    <div class="bottom-sheet" id="lessonModal">
-        <div class="bottom-sheet-handle"></div>
+    <!-- Hallway TV (?kiosk=changes, kiosk.js) -->
+    <main class="kiosk" id="kioskView" aria-labelledby="kioskTitle" hidden>
+        <div class="kiosk-head">
+            <div class="kiosk-brand">
+                <img src="spsd_logo_white.png" alt="SPŠD" class="kiosk-logo">
+                <div>
+                    <h1 class="kiosk-title" id="kioskTitle">Změny v rozvrhu</h1>
+                    <p class="kiosk-day" id="kioskDay"></p>
+                </div>
+            </div>
+            <div class="kiosk-clock">
+                <time class="kiosk-time" id="kioskTime"></time>
+                <span class="kiosk-date" id="kioskDate"></span>
+                <span class="kiosk-lesson" id="kioskLesson"></span>
+            </div>
+        </div>
+        <div class="kiosk-board" id="kioskBoard" tabindex="0" role="region" aria-label="Seznam změn"></div>
+        <div class="kiosk-foot">
+            <span id="kioskFresh"></span>
+            <span id="kioskWake"></span>
+            <button type="button" class="kiosk-pause" id="kioskPause" aria-pressed="false"><span id="kioskPauseText">Pozastavit posouvání</span></button>
+        </div>
+    </main>
+
+    <!-- Filled right before printing (timetable-tools.js, css/print.css) -->
+    <div class="print-sheet" id="printSheet"></div>
+
+    <!-- Lesson Detail Bottom Sheet (native modal dialog, see bottom-sheet.js) -->
+    <dialog class="bottom-sheet" id="lessonModal" aria-labelledby="modalSubject">
+        <div class="bottom-sheet-handle" aria-hidden="true"></div>
         <div class="modal-header">
             <h2 id="modalSubject"></h2>
-            <button class="modal-close" id="modalClose">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" class="modal-close" id="modalClose" aria-label="Zavřít detail hodiny">
+                    <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="18" y1="6" x2="6" y2="18"></line>
                         <line x1="6" y1="6" x2="18" y2="18"></line>
                     </svg>
@@ -185,9 +341,23 @@
                         <span class="modal-value" id="modalTheme"></span>
                     </div>
                 </div>
+                <div class="modal-diff hidden" id="modalDiff">
+                    <h3 class="modal-diff-title">Proti stálému rozvrhu</h3>
+                    <div class="modal-diff-grid">
+                        <div class="modal-diff-col">
+                            <span class="modal-label">Původně</span>
+                            <span class="modal-value" id="modalDiffBefore"></span>
+                        </div>
+                        <span class="modal-diff-arrow" aria-hidden="true">→</span>
+                        <div class="modal-diff-col">
+                            <span class="modal-label">Nyní</span>
+                            <span class="modal-value" id="modalDiffAfter"></span>
+                        </div>
+                    </div>
+                </div>
                 <div class="modal-changes hidden" id="modalChanges">
                     <div class="modal-changes-container">
-                        <div class="modal-changes-icon" id="modalChangesIcon">
+                        <div class="modal-changes-icon" id="modalChangesIcon" aria-hidden="true">
                             <!-- SVG ikona bude vložena dynamicky -->
                         </div>
                         <div class="modal-changes-body">
@@ -199,11 +369,11 @@
                     </div>
                 </div>
             </div>
-    </div>
+    </dialog>
 
     <!-- Notification Settings Bottom Sheet -->
-    <div class="bottom-sheet bottom-sheet-full" id="notificationModal">
-        <div class="bottom-sheet-handle"></div>
+    <dialog class="bottom-sheet bottom-sheet-full" id="notificationModal" aria-labelledby="notifModalTitle">
+        <div class="bottom-sheet-handle" aria-hidden="true"></div>
         <div class="modal-header notif-modal-header">
             <h2 id="notifModalTitle">
                 <span class="notif-title-list">
@@ -215,8 +385,8 @@
                 </span>
                 <span class="notif-title-prefs" style="display:none">Nastavení</span>
             </h2>
-            <button class="modal-close" id="notificationModalClose">
-                <svg id="notifCloseIcon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" class="modal-close" id="notificationModalClose" aria-label="Zavřít">
+                <svg id="notifCloseIcon" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="15 18 9 12 15 6"></polyline>
                 </svg>
             </button>
@@ -260,11 +430,11 @@
                     </div>
                 </div>
 
-                <button id="notificationToggleEnable" class="notification-toggle-btn" disabled>
+                <button type="button" id="notificationToggleEnable" class="notification-toggle-btn" disabled>
                     Zapnout notifikace
                 </button>
 
-                <button id="notificationToggleDisable" class="notification-toggle-btn danger" style="display: none;">
+                <button type="button" id="notificationToggleDisable" class="notification-toggle-btn danger" style="display: none;">
                     Vypnout notifikace
                 </button>
 
@@ -288,75 +458,75 @@
                 </div>
             </div>
 
-            <!-- View 2: Per-timetable preferences (navigated to from list) -->
-            <div id="notifPreferencesView">
+            <!-- View 2: Per-timetable preferences (navigated to from list); inert while hidden -->
+            <div id="notifPreferencesView" inert>
                 <div id="notifPreferencesContainer">
                     <!-- Populated dynamically -->
                 </div>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Settings Bottom Sheet -->
-    <div class="bottom-sheet" id="settingsModal">
-        <div class="bottom-sheet-handle"></div>
+    <dialog class="bottom-sheet" id="settingsModal" aria-labelledby="settingsModalTitle">
+        <div class="bottom-sheet-handle" aria-hidden="true"></div>
         <div class="modal-header">
-            <h2>
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <h2 id="settingsModalTitle">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/>
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
                 Nastavení
             </h2>
-            <button class="modal-close" id="settingsModalClose">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" class="modal-close" id="settingsModalClose" aria-label="Zavřít nastavení">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
             </button>
         </div>
         <div class="modal-content">
-            <div class="settings-option" id="settingsNotifications">
-                <div class="settings-option-icon">
+            <button type="button" class="settings-option" id="settingsNotifications" aria-haspopup="dialog">
+                <span class="settings-option-icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
                         <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
                     </svg>
-                </div>
-                <div class="settings-option-content">
-                    <div class="settings-option-title">Notifikace</div>
-                    <div class="settings-option-description">Sledované rozvrhy a typy upozornění</div>
-                </div>
-                <svg class="settings-option-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                </span>
+                <span class="settings-option-content">
+                    <span class="settings-option-title">Notifikace</span>
+                    <span class="settings-option-description">Sledované rozvrhy a typy upozornění</span>
+                </span>
+                <svg class="settings-option-arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
-            </div>
+            </button>
 
-            <div class="settings-option" id="settingsLayout">
-                <div class="settings-option-icon">
+            <button type="button" class="settings-option" id="settingsLayout" aria-expanded="false" aria-controls="settingsLayoutPanel">
+                <span class="settings-option-icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="3" width="7" height="7"></rect>
                         <rect x="14" y="3" width="7" height="7"></rect>
                         <rect x="14" y="14" width="7" height="7"></rect>
                         <rect x="3" y="14" width="7" height="7"></rect>
                     </svg>
-                </div>
-                <div class="settings-option-content">
-                    <div class="settings-option-title">Rozvržení</div>
-                    <div class="settings-option-description" id="currentLayoutDescription">Denní zobrazení</div>
-                </div>
-                <svg class="settings-option-arrow" id="settingsLayoutArrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                </span>
+                <span class="settings-option-content">
+                    <span class="settings-option-title">Rozvržení</span>
+                    <span class="settings-option-description" id="currentLayoutDescription">Denní zobrazení</span>
+                </span>
+                <svg class="settings-option-arrow" id="settingsLayoutArrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
-            </div>
-            <div class="settings-layout-panel" id="settingsLayoutPanel">
+            </button>
+            <div class="settings-layout-panel" id="settingsLayoutPanel" inert>
                 <div class="settings-layout-panel-inner">
                     <div id="settingsLayoutOptionsContainer"></div>
                 </div>
             </div>
 
-            <div class="settings-option" id="settingsTheme">
-                <div class="settings-option-icon">
+            <button type="button" class="settings-option" id="settingsTheme">
+                <span class="settings-option-icon" aria-hidden="true">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="4"/>
                         <path d="M12 2v2"/><path d="M12 20v2"/>
@@ -364,32 +534,34 @@
                         <path d="M2 12h2"/><path d="M20 12h2"/>
                         <path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
                     </svg>
-                </div>
-                <div class="settings-option-content">
-                    <div class="settings-option-title">Přepnout téma</div>
-                    <div class="settings-option-description">Světlý / tmavý režim</div>
-                </div>
-                <svg class="settings-option-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                </span>
+                <span class="settings-option-content">
+                    <span class="settings-option-title">Přepnout téma</span>
+                    <span class="settings-option-description">Světlý / tmavý režim</span>
+                </span>
+                <svg class="settings-option-arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
-            </div>
+            </button>
 
             <div class="settings-footer">
                 <p>Created by <a href="https://github.com/hatcyk?tab=repositories" target="_blank" rel="noopener noreferrer">Štefan Barát</a></p>
+                <!-- Attribution required by the SunriseSunset.io API terms (sun times drive the night-mode hint) -->
+                <p class="settings-attribution">Časy východu a západu slunce: <a href="https://sunrisesunset.io/" target="_blank" rel="noopener noreferrer">Powered by SunriseSunset.io</a></p>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Favorites Bottom Sheet -->
-    <div class="bottom-sheet" id="favoritesModal">
-        <div class="bottom-sheet-handle"></div>
+    <dialog class="bottom-sheet" id="favoritesModal" aria-labelledby="favoritesModalTitle">
+        <div class="bottom-sheet-handle" aria-hidden="true"></div>
         <div class="modal-header">
-            <h2>
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="favorites-modal-heart-icon"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            <h2 id="favoritesModalTitle">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="favorites-modal-heart-icon"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                 Oblíbené
             </h2>
-            <button class="modal-close" id="favoritesModalClose">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" class="modal-close" id="favoritesModalClose" aria-label="Zavřít oblíbené">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18"></line>
                     <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
@@ -398,7 +570,7 @@
         <div class="favorites-sheet-list" id="favoritesSheetList">
             <!-- Dynamically populated -->
         </div>
-    </div>
+    </dialog>
 
     <footer>
         <p>Created by <a href="https://github.com/hatcyk?tab=repositories" target="_blank" rel="noopener noreferrer">Štefan Barát</a></p>
@@ -437,6 +609,6 @@
         });
     </script>
 
-    <script type="module" src="js/app.js?v=a1716c3854"></script>
+    <script type="module" src="js/app.js?v=ca0926878d"></script>
 </body>
 </html>

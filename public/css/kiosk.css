@@ -1,0 +1,130 @@
+/* ===== Kiosk (?kiosk=changes): the changes board on a hallway TV =====
+   Sizes follow the viewport so the same page reads from a distance on a
+   1080p or a 4K screen. */
+
+html[data-kiosk] body { overflow: hidden; }
+html[data-kiosk] .app-container,
+html[data-kiosk] footer,
+html[data-kiosk] .view-nav { display: none !important; }
+
+.kiosk {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5vh;
+    padding: 2.2vh 2.5vw 1.6vh;
+    font-size: clamp(16px, 1.55vw, 44px);
+    color: var(--text-main);
+    background: var(--bg-color);
+}
+.kiosk-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2vw;
+    padding-bottom: 1.4vh;
+    border-bottom: 2px solid var(--border-light);
+}
+.kiosk-brand { display: flex; align-items: center; gap: 1.4vw; }
+.kiosk-logo { height: 3em; width: auto; }
+.kiosk-title { font-size: 2.1em; font-weight: 900; line-height: 1.05; }
+.kiosk-day {
+    margin-top: 0.15em;
+    font-size: 1.15em;
+    font-weight: 700;
+    color: var(--status-active);
+}
+.kiosk-clock {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+}
+.kiosk-time {
+    font-size: 3.2em;
+    font-weight: 900;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+}
+.kiosk-date { font-size: 0.9em; color: var(--text-dim); }
+.kiosk-lesson { font-size: 0.95em; font-weight: 700; }
+
+.kiosk-board {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+.kiosk-board::-webkit-scrollbar { display: none; }
+.k-grid {
+    columns: 3 21em;
+    column-gap: 1.4vw;
+}
+.k-class {
+    break-inside: avoid;
+    margin-bottom: 1.4vh;
+    padding: 0.55em 0.85em 0.65em;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 0.5em;
+}
+.k-class-name {
+    font-size: 1.45em;
+    font-weight: 900;
+    padding-bottom: 0.15em;
+    margin-bottom: 0.2em;
+    border-bottom: 1px solid var(--border-light);
+}
+.k-rows { list-style: none; }
+.k-row {
+    display: grid;
+    grid-template-columns: 3.4em 1fr;
+    gap: 0.6em;
+    padding: 0.35em 0;
+    border-top: 1px dashed var(--border-light);
+}
+.k-row:first-child { border-top: 0; }
+.k-hour .chg-hour { font-size: 1.35em; font-weight: 900; }
+.k-hour .chg-time,
+.k-hour .chg-group { font-size: 0.62em; }
+.k-what {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.15em 0.45em;
+    line-height: 1.3;
+}
+.k-arrow { color: var(--text-dim); font-weight: 700; }
+.kiosk .chg-meta { display: inline; font-size: 0.85em; }
+.kiosk .chg-note { font-size: 0.8em; }
+.kiosk .chg-kind { font-size: 0.62em; }
+.kiosk-empty {
+    margin-top: 18vh;
+    text-align: center;
+    font-size: 2em;
+    font-weight: 700;
+    color: var(--text-dim);
+}
+.kiosk-foot {
+    display: flex;
+    align-items: center;
+    gap: 2vw;
+    font-size: 0.7em;
+    color: var(--text-dim);
+}
+.kiosk-pause {
+    margin-left: auto;
+    padding: 0.35em 0.9em;
+    font: inherit;
+    color: var(--text-main);
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: 0.4em;
+    cursor: pointer;
+}
+.kiosk-pause[aria-pressed="true"] {
+    color: #fff;
+    background: var(--status-active-strong);
+    border-color: var(--status-active-strong);
+}
