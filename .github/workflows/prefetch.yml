@@ -3,31 +3,48 @@ name: Prefetch Timetable Data
 on:
   schedule:
     # Every 15 minutes | Prázdninový provoz: Every 60 minutes
+    # GitHub runs scheduled workflows late or not at all under load (measured
+    # ~5 h between runs). The reliable trigger is workflow_dispatch from an
+    # external scheduler (cron-job.org, see ZMENY/DEPLOYMENT); this schedule
+    # stays as a fallback.
     - cron: '*/15 * * * *'
     #- cron: '0 * * * *'
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch: # cron-job.org → POST /repos/{owner}/{repo}/actions/workflows/prefetch.yml/dispatches
+
+# One prefetch at a time: a dispatch arriving while the scheduled run is still
+# downloading waits instead of racing it on the same Firestore documents.
+concurrency:
+  group: prefetch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   prefetch:
     name: Prefetch Timetable Data
     runs-on: ubuntu-latest
+    # A normal run takes ~3 min (220 pages), September ~5 min (310 pages);
+    # a hung login must not hold the concurrency slot for the default 6 h.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           # Scheduled runs use the workflow file from main, but the prefetch
           # code (Bakaláři parser) is maintained on dev - run that.
           ref: dev
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          # Node 20 is out of support since 30 April 2026.
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=dev
         env:
           NPM_CONFIG_RETRY: '3'
           NPM_CONFIG_RETRY_DELAY: '1000'
@@ -38,6 +55,10 @@ jobs:
           BAKALARI_PASSWORD: ${{ secrets.BAKALARI_PASSWORD }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VERCEL: 'true'
+          # Be gentle with the school's Bakaláři server.
+          PREFETCH_CONCURRENCY: '3'
+          # GITHUB_EVENT_NAME (schedule / workflow_dispatch) is set by GitHub
+          # and recorded as the run's trigger in the `runs` collection.
         run: node scripts/run-prefetch.js
 
       - name: Process notifications after prefetch

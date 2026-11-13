@@ -1,15 +1,44 @@
 import { dom } from './dom.js';
 import { isNightTime } from './suntime.js';
 
-// Theme management
-export function initTheme() {
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    setTheme(savedTheme);
+/** Browser UI colour (status bar, task switcher) per theme = --bg-color. */
+export const THEME_COLORS = { dark: '#071422', light: '#F8FAFC' };
+
+/**
+ * Theme for this visit: the user's saved choice, otherwise the system setting
+ * (prefers-color-scheme). It used to fall back to dark for everybody.
+ * @param {string|null} saved - localStorage 'theme'
+ * @param {boolean} systemPrefersLight
+ */
+export function resolveInitialTheme(saved, systemPrefersLight) {
+    if (saved === 'light' || saved === 'dark') return saved;
+    return systemPrefersLight ? 'light' : 'dark';
 }
 
-export function setTheme(theme, skipWarning = false) {
+function systemPrefersLight() {
+    return typeof window !== 'undefined' && !!window.matchMedia &&
+        window.matchMedia('(prefers-color-scheme: light)').matches;
+}
+
+// Theme management
+export function initTheme() {
+    let saved = null;
+    try { saved = localStorage.getItem('theme'); } catch { /* storage blocked */ }
+    // Not persisted here: until the user picks one, the system setting keeps applying
+    setTheme(resolveInitialTheme(saved, systemPrefersLight()), { persist: false });
+}
+
+export function setTheme(theme, { persist = true } = {}) {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('theme', theme);
+    if (persist) {
+        try { localStorage.setItem('theme', theme); } catch { /* storage blocked */ }
+    }
+
+    // Both media-specific theme-color metas follow the chosen theme, so a user
+    // who picked light on a dark-mode phone does not get a dark status bar.
+    document.querySelectorAll('meta[name="theme-color"]').forEach(meta => {
+        meta.setAttribute('content', THEME_COLORS[theme] || THEME_COLORS.dark);
+    });
 
     if (!dom.themeToggle) return;
 
@@ -23,52 +52,65 @@ export function setTheme(theme, skipWarning = false) {
         sunIcon.style.display = 'block';
         moonIcon.style.display = 'none';
     }
+    dom.themeToggle.setAttribute('aria-label', theme === 'light' ? 'Přepnout na tmavý režim' : 'Přepnout na světlý režim');
+    dom.themeToggle.setAttribute('title', theme === 'light' ? 'Přepnout na tmavý režim' : 'Přepnout na světlý režim');
 }
 
+/**
+ * "Switch to light at night?" confirmation. A native modal <dialog>: focus
+ * starts on the safe choice (Zrušit), Esc cancels, the page behind is inert.
+ */
 function showNightWarning(callback) {
-    const overlay = document.createElement('div');
-    overlay.className = 'theme-warning-overlay';
-    overlay.innerHTML = `
+    const dialog = document.createElement('dialog');
+    dialog.className = 'theme-warning-overlay';
+    dialog.setAttribute('aria-labelledby', 'themeWarningTitle');
+    dialog.setAttribute('aria-describedby', 'themeWarningBody');
+    dialog.innerHTML = `
         <div class="theme-warning-dialog">
             <div class="theme-warning-header">
-                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"/>
                     <line x1="12" y1="8" x2="12" y2="12"/>
                     <line x1="12" y1="16" x2="12.01" y2="16"/>
                 </svg>
-                <h3>Přepnout na světlý režim?</h3>
+                <h3 id="themeWarningTitle">Přepnout na světlý režim?</h3>
             </div>
-            <div class="theme-warning-body">
+            <div class="theme-warning-body" id="themeWarningBody">
                 <p>Venku je tma. Tmavý režim je šetrnější k očím a baterii.</p>
                 <p>Opravdu chcete přepnout na světlý režim?</p>
             </div>
             <div class="theme-warning-actions">
-                <button class="theme-warning-btn theme-warning-cancel">Zrušit</button>
-                <button class="theme-warning-btn theme-warning-confirm">Přepnout</button>
+                <button type="button" class="theme-warning-btn theme-warning-cancel" autofocus>Zrušit</button>
+                <button type="button" class="theme-warning-btn theme-warning-confirm">Přepnout</button>
             </div>
         </div>
     `;
 
-    document.body.appendChild(overlay);
+    document.body.appendChild(dialog);
+    dialog.showModal();
 
     // Fade in
     requestAnimationFrame(() => {
-        overlay.classList.add('visible');
+        dialog.classList.add('visible');
     });
 
-    const confirmBtn = overlay.querySelector('.theme-warning-confirm');
-    const cancelBtn = overlay.querySelector('.theme-warning-cancel');
+    const confirmBtn = dialog.querySelector('.theme-warning-confirm');
+    const cancelBtn = dialog.querySelector('.theme-warning-cancel');
+    let closed = false;
 
     const closeDialog = (confirmed) => {
-        overlay.classList.add('closing');
-        overlay.classList.remove('visible');
+        if (closed) return;
+        closed = true;
+        dialog.setAttribute('data-closing', '');
+        dialog.classList.add('closing');
+        dialog.classList.remove('visible');
 
-        const onAnimationEnd = () => {
-            overlay.remove();
-            overlay.removeEventListener('animationend', onAnimationEnd);
+        const finish = () => {
+            if (dialog.open) dialog.close();
+            dialog.remove();
         };
-
-        overlay.addEventListener('animationend', onAnimationEnd);
+        dialog.addEventListener('animationend', finish, { once: true });
+        setTimeout(finish, 700); // safety net (reduced motion, no animation)
 
         if (confirmed) {
             callback();
@@ -77,8 +119,11 @@ function showNightWarning(callback) {
 
     confirmBtn.addEventListener('click', () => closeDialog(true));
     cancelBtn.addEventListener('click', () => closeDialog(false));
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeDialog(false);
+    dialog.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(false); });
+    dialog.addEventListener('close', () => { if (!closed) { closed = true; dialog.remove(); } });
+    // Click on the dimmed area outside the box
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) closeDialog(false);
     });
 }
 

@@ -6,6 +6,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* now a <button> (keyboard reachable option): reset UA styles */
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    align-self: stretch;
+}
+
+.custom-dropdown-option .option-label:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
 }
 
 .favorite-btn {

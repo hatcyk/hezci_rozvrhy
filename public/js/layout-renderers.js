@@ -9,7 +9,7 @@ import { days, lessonTimes } from './constants.js';
 import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
 import { renderTimetable } from './timetable.js';
-import { abbreviateSubject, abbreviateTeacherName, getLessonTimeClass } from './utils.js';
+import { abbreviateSubject, abbreviateTeacherName, getLessonTimeClass, esc, makeActivatable, addLessonDescription, lessonStatusIcon } from './utils.js';
 
 /**
  * Time-based highlight for a rendered slot: the class to add now plus the
@@ -213,10 +213,10 @@ function renderSingleLesson(lesson) {
 
     return `
         <div class="card-lessons-split">
-            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}">
-                ${lesson.group ? `<div class="lesson-group-badge">${lesson.group}</div>` : ''}
+            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}"${isChanged ? ' data-changed="true"' : ''}>
+                ${lesson.group ? `<div class="lesson-group-badge">${esc(lesson.group)}</div>` : ''}
 
-                <div class="lesson-subject-name">${lesson.subject}</div>
+                <div class="lesson-subject-name">${esc(lesson.subject)}</div>
 
                 <!-- Details with SVG Icons -->
                 <div class="card-details">
@@ -226,7 +226,7 @@ function renderSingleLesson(lesson) {
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
-                            <span>${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}</span>
+                            <span>${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}</span>
                         </div>
                     ` : ''}
                     ${lesson.room ? `
@@ -238,7 +238,7 @@ function renderSingleLesson(lesson) {
                                 <path d="M14 12h.01"/>
                                 <path d="M22 20h-3"/>
                             </svg>
-                            <span>${lesson.room}</span>
+                            <span>${esc(lesson.room)}</span>
                         </div>
                     ` : ''}
                 </div>
@@ -284,9 +284,9 @@ function renderSplitLessons(lessons) {
         const isChanged = lesson.changed;
 
         html += `
-            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}">
-                ${lesson.group ? `<div class="lesson-group-badge">${lesson.group}</div>` : ''}
-                <div class="lesson-subject-name">${lesson.subject}</div>
+            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}"${isChanged ? ' data-changed="true"' : ''}>
+                ${lesson.group ? `<div class="lesson-group-badge">${esc(lesson.group)}</div>` : ''}
+                <div class="lesson-subject-name">${esc(lesson.subject)}</div>
 
                 <div class="card-details">
                     ${lesson.teacher ? `
@@ -295,7 +295,7 @@ function renderSplitLessons(lessons) {
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
-                            <span>${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}</span>
+                            <span>${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}</span>
                         </div>
                     ` : ''}
                     ${lesson.room ? `
@@ -307,7 +307,7 @@ function renderSplitLessons(lessons) {
                                 <path d="M14 12h.01"/>
                                 <path d="M22 20h-3"/>
                             </svg>
-                            <span>${lesson.room}</span>
+                            <span>${esc(lesson.room)}</span>
                         </div>
                     ` : ''}
                 </div>
@@ -479,19 +479,20 @@ export function renderCardLayout() {
     // Add navigation dots - OPRAVA: Použít allHoursList.length místo hours.length
     html += '<div class="card-view-dots">';
     allHoursList.forEach((_, index) => {
-        html += `<div class="card-view-dot ${index === currentCardIndex ? 'active' : ''}" data-dot-index="${index}"></div>`;
+        // Decorative for AT: the labelled prev/next buttons are the keyboard path
+        html += `<div class="card-view-dot ${index === currentCardIndex ? 'active' : ''}" data-dot-index="${index}" aria-hidden="true"></div>`;
     });
     html += '</div>';
 
     // Add navigation buttons
     html += `
         <div class="card-view-navigation">
-            <button class="card-view-nav-btn" id="cardPrevBtn" ${currentCardIndex === 0 ? 'disabled' : ''}>
+            <button type="button" class="card-view-nav-btn" id="cardPrevBtn" aria-label="Předchozí hodina" ${currentCardIndex === 0 ? 'disabled' : ''}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="15 18 9 12 15 6"></polyline>
                 </svg>
             </button>
-            <button class="card-view-nav-btn" id="cardNextBtn" ${currentCardIndex >= allHoursList.length - 1 ? 'disabled' : ''}>
+            <button type="button" class="card-view-nav-btn" id="cardNextBtn" aria-label="Další hodina" ${currentCardIndex >= allHoursList.length - 1 ? 'disabled' : ''}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="9 18 15 12 9 6"></polyline>
                 </svg>
@@ -500,6 +501,9 @@ export function renderCardLayout() {
     `;
 
     container.innerHTML = html;
+
+    // Off-screen cards must not take keyboard focus (they are only translated away)
+    syncCardInert(currentCardIndex);
 
     // Add event listeners - OPRAVA: Použít allHoursList.length
     initCardViewNavigation(allHoursList.length);
@@ -564,6 +568,7 @@ function navigateToCard(index, totalCards) {
     document.querySelectorAll('.card-view-dot').forEach((dot, i) => {
         dot.classList.toggle('active', i === index);
     });
+    syncCardInert(index);
 
     // Update buttons
     const prevBtn = document.getElementById('cardPrevBtn');
@@ -571,6 +576,26 @@ function navigateToCard(index, totalCards) {
 
     if (prevBtn) prevBtn.disabled = index === 0;
     if (nextBtn) nextBtn.disabled = index === totalCards - 1;
+}
+
+/** Only the visible card is focusable / exposed; the rest are inert. */
+function syncCardInert(index) {
+    document.querySelectorAll('.card-view-wrapper > .lesson-card-full').forEach((card, i) => {
+        card.inert = i !== index;
+    });
+}
+
+/**
+ * Show the card that contains `el` (used by the deep-link highlight, which
+ * cannot scroll a card into view - the card view is a translated strip).
+ * @returns {boolean} true when a card was found
+ */
+export function showCardContaining(el) {
+    const card = el && el.closest ? el.closest('.lesson-card-full') : null;
+    if (!card || card.dataset.cardIndex === undefined) return false;
+    const total = document.querySelectorAll('.card-view-wrapper > .lesson-card-full').length;
+    navigateToCard(Number(card.dataset.cardIndex), total);
+    return true;
 }
 
 /**
@@ -662,11 +687,11 @@ function addCardClickListeners(lessonsByHour) {
             const lessons = lessonsByHour[hour];
 
             lessonHalves.forEach((half, index) => {
-                half.addEventListener('click', (e) => {
+                if (!lessons || !lessons[index]) return;
+                addLessonDescription(half, lessons[index]);
+                makeActivatable(half, (e) => {
                     e.stopPropagation(); // Prevent card click
-                    if (lessons && lessons[index]) {
-                        showLessonModal(lessons[index]);
-                    }
+                    showLessonModal(lessons[index]);
                 });
             });
         }
@@ -716,7 +741,8 @@ function renderSingleCompactLesson(lesson) {
     const subjectDisplay = abbreviateSubject(lesson.subject);
 
     return `
-        <div class="${itemClasses}"${ts.attrs} data-lesson-id="${lesson.day}-${lesson.hour}">
+        <div class="${itemClasses}"${ts.attrs}${isChanged ? ' data-changed="true"' : ''} data-lesson-id="${lesson.day}-${lesson.hour}">
+            ${lessonStatusIcon(lesson)}
             <div class="compact-lesson-meta">
                 <div class="compact-lesson-badge compact-badge-small">${lesson.hour}</div>
                 <div class="compact-lesson-time compact-time-small">
@@ -724,7 +750,7 @@ function renderSingleCompactLesson(lesson) {
                 </div>
             </div>
             <div class="compact-lesson-content">
-                <div class="compact-lesson-subject">${subjectDisplay}</div>
+                <div class="compact-lesson-subject">${esc(subjectDisplay)}</div>
                 <div class="compact-lesson-details">
                     ${lesson.teacher ? `
                         <span class="compact-detail-item">
@@ -732,7 +758,7 @@ function renderSingleCompactLesson(lesson) {
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
-                            ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
+                            ${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}
                         </span>
                     ` : ''}
                     ${lesson.room ? `
@@ -744,12 +770,12 @@ function renderSingleCompactLesson(lesson) {
                                 <path d="M14 12h.01"/>
                                 <path d="M22 20h-3"/>
                             </svg>
-                            ${lesson.room}
+                            ${esc(lesson.room)}
                         </span>
                     ` : ''}
                 </div>
             </div>
-            ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
+            ${lesson.group ? `<div class="compact-group-badge">${esc(lesson.group)}</div>` : ''}
         </div>
     `;
 }
@@ -795,9 +821,10 @@ function renderSplitCompactLessons(lessons, isVertical = false) {
         if (isChanged) halfClasses += ' lesson-changed';
 
         html += `
-            <div class="${halfClasses}" data-lesson-index="${lessons.indexOf(lesson)}">
-                ${lesson.group ? `<div class="compact-group-badge">${lesson.group}</div>` : ''}
-                <div class="compact-lesson-subject">${subjectDisplay}</div>
+            <div class="${halfClasses}"${isChanged ? ' data-changed="true"' : ''} data-lesson-index="${lessons.indexOf(lesson)}">
+                ${lessonStatusIcon(lesson)}
+                ${lesson.group ? `<div class="compact-group-badge">${esc(lesson.group)}</div>` : ''}
+                <div class="compact-lesson-subject">${esc(subjectDisplay)}</div>
                 <div class="compact-lesson-details">
                     ${lesson.teacher ? `
                         <span class="compact-detail-item">
@@ -805,7 +832,7 @@ function renderSplitCompactLessons(lessons, isVertical = false) {
                                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                 <circle cx="12" cy="7" r="4"/>
                             </svg>
-                            ${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}
+                            ${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}
                         </span>
                     ` : ''}
                     ${lesson.room ? `
@@ -817,7 +844,7 @@ function renderSplitCompactLessons(lessons, isVertical = false) {
                                 <path d="M14 12h.01"/>
                                 <path d="M22 20h-3"/>
                             </svg>
-                            ${lesson.room}
+                            ${esc(lesson.room)}
                         </span>
                     ` : ''}
                 </div>
@@ -916,9 +943,8 @@ export function renderCompactListLayout() {
         const [day, hour] = lessonId.split('-').map(Number);
         const lessons = lessonMap[hour];
         if (lessons && lessons[0]) {
-            item.addEventListener('click', () => {
-                showLessonModal(lessons[0]);
-            });
+            addLessonDescription(item, lessons[0]);
+            makeActivatable(item, () => showLessonModal(lessons[0]));
         }
     });
 
@@ -938,7 +964,8 @@ export function renderCompactListLayout() {
         const lesson = lessonsInHour[halfIndex];
 
         if (lesson) {
-            half.addEventListener('click', (e) => {
+            addLessonDescription(half, lesson);
+            makeActivatable(half, (e) => {
                 e.stopPropagation(); // Zabrání propagaci na parent
                 showLessonModal(lesson);
             });
@@ -1027,14 +1054,14 @@ export function renderAgendaLayout() {
                 rowClasses += ts.cls;
 
                 html += `
-                    <div class="${rowClasses}"${ts.attrs} data-lesson-id="${lesson.day}-${hour}-${lessonIdx}">
+                    <div class="${rowClasses}"${ts.attrs}${isChanged ? ' data-changed="true"' : ''} data-lesson-id="${lesson.day}-${hour}-${lessonIdx}">
                         <div class="agenda-time">${lessonIdx === 0 ? startTime : ''}</div>
                         <div class="agenda-card">
-                            ${lesson.group ? `<div class="agenda-group">${lesson.group}</div>` : ''}
-                            <div class="agenda-subject">${lesson.subject}</div>
+                            ${lesson.group ? `<div class="agenda-group">${esc(lesson.group)}</div>` : ''}
+                            <div class="agenda-subject">${esc(lesson.subject)}</div>
                             <div class="agenda-details">
-                                ${lesson.teacher ? `<span class="agenda-detail">${abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap)}</span>` : ''}
-                                ${lesson.room ? `<span class="agenda-detail agenda-room">${lesson.room}</span>` : ''}
+                                ${lesson.teacher ? `<span class="agenda-detail">${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}</span>` : ''}
+                                ${lesson.room ? `<span class="agenda-detail agenda-room">${esc(lesson.room)}</span>` : ''}
                             </div>
                             ${(isChanged || isRemoved) ? `
                                 <div class="agenda-badge ${isRemoved ? 'removed' : 'changed'}">
@@ -1058,7 +1085,8 @@ export function renderAgendaLayout() {
         const idx = parts[2];
         const lessons = lessonMap[hour];
         if (lessons && lessons[idx]) {
-            row.addEventListener('click', () => showLessonModal(lessons[idx]));
+            addLessonDescription(row, lessons[idx]);
+            makeActivatable(row, () => showLessonModal(lessons[idx]));
         }
     });
 

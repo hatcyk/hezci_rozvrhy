@@ -16,13 +16,18 @@
 }
 
 .settings-toggle:hover {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
     transform: scale(1.05);
 }
 
 /* Settings Bottom Sheet - override old modal-specific rules */
 
+/* Now a <button>: reset UA button styles, keep the card look */
 .settings-option {
+    width: 100%;
+    font: inherit;
+    color: inherit;
+    text-align: left;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -37,7 +42,17 @@
 }
 
 .settings-option:hover {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
+}
+
+.settings-option:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.settings-option-title,
+.settings-option-description {
+    display: block;
 }
 
 .settings-option-icon {
@@ -54,6 +69,7 @@
 }
 
 .settings-option-content {
+    display: block;
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -74,7 +90,6 @@
     font-size: 0.88em;
     color: var(--text-dim);
     line-height: 1.5;
-    opacity: 0.85;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -189,7 +204,12 @@
 }
 
 .layout-option-card.active .layout-option-card-name {
-    color: var(--spsd-orange, #f97316);
+    color: var(--status-active);
+}
+
+.layout-option-card:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
 }
 
 /* Inline layout accordion panel */
@@ -243,7 +263,7 @@
 }
 
 .settings-footer a {
-    color: var(--spsd-orange);
+    color: var(--status-active);
     text-decoration: none;
     font-weight: 600;
     transition: color 0.2s ease;
@@ -251,4 +271,9 @@
 
 .settings-footer a:hover {
     color: var(--spsd-red-light);
+}
+
+.settings-footer .settings-attribution {
+    margin-top: 8px;
+    font-size: 0.75rem;
 }

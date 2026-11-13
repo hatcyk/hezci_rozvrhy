@@ -139,7 +139,7 @@
 }
 
 .notification-global-option:hover {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
 }
 
 .notification-global-option-header {
@@ -241,11 +241,11 @@
 }
 
 .multiselect-trigger:hover:not(:disabled) {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
 }
 
 .multiselect-trigger.active {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
 }
@@ -267,7 +267,7 @@
     top: 100%;
     /* Position below trigger - no margin to connect directly */
     background: var(--card-bg);
-    border: 2px solid var(--accent);
+    border: 2px solid var(--accent-border);
     border-top: none;
     /* No top border to connect with trigger */
     border-radius: 0 0 8px 8px;
@@ -301,7 +301,7 @@
 
 .multiselect-search input:focus {
     outline: none;
-    border-color: var(--accent);
+    border-color: var(--accent-border);
 }
 
 .multiselect-options {
@@ -355,14 +355,14 @@
 }
 
 .timetable-category {
-    border-left: 3px solid var(--accent);
+    border-left: 3px solid var(--accent-border);
     padding-left: 12px;
 }
 
 .timetable-category h4 {
     font-size: 0.95em;
     margin-bottom: 8px;
-    color: var(--accent);
+    color: var(--accent-border);
     font-weight: 600;
 }
 
@@ -380,7 +380,7 @@
 }
 
 .watched-timetable-item:hover {
-    border-color: var(--accent);
+    border-color: var(--accent-border);
     background: var(--hover-bg);
 }
 
@@ -512,7 +512,7 @@
 .timetable-preference-badge {
     font-size: 0.7em;
     padding: 4px 10px;
-    background: linear-gradient(135deg, #EB5D43 0%, #d94e37 100%);
+    background: linear-gradient(135deg, #c2410c 0%, #9a3412 100%); /* white text >= 5.2:1 */
     color: white;
     border-radius: 6px;
     font-weight: 700;
@@ -811,6 +811,13 @@
 }
 
 .flat-accordion-header {
+    /* now a <button> with aria-expanded: reset UA styles */
+    width: 100%;
+    background: none;
+    border: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
     display: flex;
     align-items: center;
     gap: 8px;

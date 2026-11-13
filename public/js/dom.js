@@ -7,7 +7,6 @@ export const dom = {
     valueDropdownLabel: null,
     valueDropdownMenu: null,
     timetableGrid: null,
-    loading: null,
     errorDiv: null,
     offlineBanner: null,
     outageBanner: null,
@@ -39,7 +38,6 @@ export function initDOM() {
     dom.valueDropdownLabel = document.getElementById('valueDropdownLabel');
     dom.valueDropdownMenu = document.getElementById('valueDropdownMenu');
     dom.timetableGrid = document.getElementById('timetable');
-    dom.loading = document.getElementById('loading');
     dom.errorDiv = document.getElementById('error');
     dom.offlineBanner = document.getElementById('offlineBanner');
     dom.outageBanner = document.getElementById('outageBanner');

@@ -2,9 +2,47 @@ import { dom } from './dom.js';
 import { days, lessonTimes } from './constants.js';
 import { state, updateState } from './state.js';
 import { loadTimetable, populateValueSelect } from './timetable.js';
-import { parseChangeInfo, getChangeIcon, getChangeTypeInfo } from './utils.js';
-import { setDropdownValue } from './dropdown.js';
+import { parseChangeInfo, getChangeIcon, getChangeTypeInfo, esc, setPressed, getMondayOfWeek } from './utils.js';
+import { showToast } from './toast.js';
+import { setDropdownValue, getDropdownValue } from './dropdown.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+import { fetchTimetable } from './api.js';
+import { describeLessonChange } from './changes-core.js';
+import { briefHtml, afterHtml } from './changes-render.js';
+
+let diffSeq = 0;
+
+/**
+ * "Co je dnes jinak": for a changed / cancelled lesson show what the permanent
+ * timetable has in the same slot (day, hour, group) next to what happens now.
+ * The change note from Bakaláři alone often says only "Suplování" or
+ * "Hodina odpadla" without the original lesson.
+ */
+async function showLessonDiff(lesson) {
+    const box = document.getElementById('modalDiff');
+    if (!box) return;
+    const seq = ++diffSeq;
+    box.classList.add('hidden');
+    const flagged = lesson && (lesson.changed || lesson.type === 'removed' || lesson.type === 'absent');
+    if (!flagged || state.selectedScheduleType === 'permanent') return;
+
+    let permanent = [];
+    try {
+        const monday = getMondayOfWeek(0).toISOString().split('T')[0];
+        permanent = await fetchTimetable(state.selectedType, getDropdownValue(), 'permanent', monday);
+    } catch {
+        // offline without a cached permanent timetable: the change note may still tell the original
+    }
+    if (seq !== diffSeq) return; // another lesson was opened meanwhile
+
+    const entry = describeLessonChange(lesson, state.currentTimetableData || [], permanent);
+    if (!entry) return;
+    document.getElementById('modalDiffBefore').innerHTML = entry.before
+        ? briefHtml(entry.before, { strike: entry.kind === 'removed' || entry.kind === 'absent' })
+        : '<span class="chg-none">Podle stálého rozvrhu tu hodina nebyla</span>';
+    document.getElementById('modalDiffAfter').innerHTML = afterHtml(entry);
+    box.classList.remove('hidden');
+}
 
 // Modal functions
 export function showLessonModal(lesson) {
@@ -27,7 +65,7 @@ export function showLessonModal(lesson) {
         teacherContainer.style.display = 'flex';
 
         if (lesson.teacher) {
-            teacherEl.innerHTML = `<a href="#" class="modal-link" data-type="Teacher" data-name="${lesson.teacher}">${lesson.teacher}</a>`;
+            teacherEl.innerHTML = `<a href="#" class="modal-link" data-type="Teacher" data-name="${esc(lesson.teacher)}">${esc(lesson.teacher)}</a>`;
         } else {
             teacherEl.textContent = 'Není zadáno';
         }
@@ -37,7 +75,7 @@ export function showLessonModal(lesson) {
     // Set room (with clickable link if room exists)
     const roomEl = document.getElementById('modalRoom');
     if (lesson.room && state.selectedType !== 'Room') {
-        roomEl.innerHTML = `<a href="#" class="modal-link" data-type="Room" data-name="${lesson.room}">${lesson.room}</a>`;
+        roomEl.innerHTML = `<a href="#" class="modal-link" data-type="Room" data-name="${esc(lesson.room)}">${esc(lesson.room)}</a>`;
     } else {
         roomEl.textContent = lesson.room || 'Není zadáno';
     }
@@ -60,7 +98,7 @@ export function showLessonModal(lesson) {
         } else if (className) {
             // If viewing teacher/room, make class name clickable
             const groupEl = document.getElementById('modalGroup');
-            groupEl.innerHTML = `<a href="#" class="modal-link" data-type="Class" data-name="${className}">${lesson.group}</a>`;
+            groupEl.innerHTML = `<a href="#" class="modal-link" data-type="Class" data-name="${esc(className)}">${esc(lesson.group)}</a>`;
         } else {
             document.getElementById('modalGroup').textContent = lesson.group;
         }
@@ -127,6 +165,9 @@ export function showLessonModal(lesson) {
     } else {
         modalChanges.classList.add('hidden');
     }
+
+    // Original vs. now from the permanent timetable (async, fills in when loaded)
+    showLessonDiff(lesson);
 
     // Open as bottom sheet
     openBottomSheet('lessonModal');
@@ -250,14 +291,7 @@ function setupModalLinks() {
                 updateState('selectedType', type);
 
                 // Update UI buttons
-                const typeButtons = document.querySelectorAll('.type-btn');
-                typeButtons.forEach(btn => {
-                    if (btn.dataset.type === type) {
-                        btn.classList.add('active');
-                    } else {
-                        btn.classList.remove('active');
-                    }
-                });
+                setPressed(document.querySelectorAll('.type-btn'), btn => btn.dataset.type === type);
 
                 // Populate and select
                 populateValueSelect();
@@ -270,8 +304,14 @@ function setupModalLinks() {
                 console.error('Available options:', type === 'Teacher' ? definitions.teachers :
                     type === 'Room' ? definitions.rooms : definitions.classes);
 
-                // Show user-friendly error
-                alert(`Nepodařilo se najít rozvrh pro ${type === 'Teacher' ? 'učitele' : type === 'Room' ? 'učebnu' : 'třídu'}: "${name}"\n\nKlikněte na tlačítko Console (F12) pro více informací.`);
+                // Non-blocking message instead of alert(): alert() steals focus,
+                // cannot be styled and blocks the page (and screen readers) until dismissed.
+                showToast({
+                    title: `Rozvrh pro ${type === 'Teacher' ? 'vyučujícího' : type === 'Room' ? 'učebnu' : 'třídu'} „${name}“ se nepodařilo najít.`,
+                    body: 'Vyberte ho prosím ručně v seznamu.',
+                    icon: '⚠️',
+                    variant: 'info',
+                });
             }
         });
     });

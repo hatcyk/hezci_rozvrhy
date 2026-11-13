@@ -5,7 +5,7 @@
 
 import { state } from './state.js';
 import { saveWatchedTimetables } from './notifications-core.js';
-import { standardizeGroupName } from './utils.js';
+import { standardizeGroupName, esc, makeActivatable } from './utils.js';
 import { fetchTimetable } from './api.js';
 import { debug } from './debug.js';
 
@@ -158,10 +158,10 @@ function createTimetablePreferenceItem(timetable, index) {
     header.className = 'timetable-preference-header';
     header.innerHTML = `
         <div class="timetable-preference-name">
-            <span>${timetable.name}</span>
-            <span class="timetable-preference-badge">${getScheduleTypeLabel(timetable.scheduleType)}</span>
+            <span>${esc(timetable.name)}</span>
+            <span class="timetable-preference-badge">${esc(getScheduleTypeLabel(timetable.scheduleType))}</span>
         </div>
-        <svg class="timetable-preference-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg class="timetable-preference-arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="9 18 15 12 9 6"></polyline>
         </svg>
     `;
@@ -181,7 +181,7 @@ function createTimetablePreferenceItem(timetable, index) {
         groupFilterSection.innerHTML = `
             <label class="group-filter-label">Filtrovat podle skupiny:</label>
             <div class="multiselect-dropdown" id="group-filter-${index}">
-                <div class="multiselect-trigger">
+                <div class="multiselect-trigger" aria-haspopup="true" aria-expanded="false">
                     <span class="multiselect-label">Načítám...</span>
                     <svg class="multiselect-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -247,9 +247,11 @@ function createTimetablePreferenceItem(timetable, index) {
             optionDiv.appendChild(checkbox);
             optionDiv.appendChild(label);
 
-            // Click on the whole row to toggle
+            // Click on the whole row to toggle. Clicks inside the <label> are
+            // left alone: the label already toggles its checkbox, and toggling
+            // here as well flipped it twice (no change, two saves).
             optionDiv.addEventListener('click', (e) => {
-                if (e.target !== checkbox) {
+                if (e.target !== checkbox && !e.target.closest('label')) {
                     checkbox.checked = !checkbox.checked;
                     checkbox.dispatchEvent(new Event('change'));
                 }
@@ -263,10 +265,14 @@ function createTimetablePreferenceItem(timetable, index) {
 
     body.appendChild(bodyInner);
 
-    // Toggle expand/collapse
-    header.addEventListener('click', () => {
-        header.classList.toggle('expanded');
-        body.classList.toggle('expanded');
+    // Toggle expand/collapse (keyboard operable, state exposed to AT)
+    header.setAttribute('aria-expanded', 'false');
+    body.inert = true;
+    makeActivatable(header, () => {
+        const open = header.classList.toggle('expanded');
+        body.classList.toggle('expanded', open);
+        header.setAttribute('aria-expanded', String(open));
+        body.inert = !open;
     });
 
     item.appendChild(header);
@@ -470,6 +476,8 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
             checkbox.checked = allSelected;
 
             const span = document.createElement('span');
+            span.id = `${checkbox.id}-label`;
+            checkbox.setAttribute('aria-labelledby', span.id);
             // Show subgroups in tooltip
             if (subGroups.length > 1) {
                 span.textContent = `${displayName} (${subGroups.join(', ')})`;
@@ -507,8 +515,8 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
     // Update label based on selection
     updateGroupFilterLabel(label, watchedTimetable.groupFilters);
 
-    // Toggle dropdown on trigger click
-    trigger.addEventListener('click', (e) => {
+    // Toggle dropdown on trigger click (keyboard operable as well)
+    makeActivatable(trigger, (e) => {
         e.stopPropagation();
         const isActive = menu.classList.contains('active');
 
@@ -715,6 +723,7 @@ function updateGroupFilterLabel(label, groupFilters) {
 function openGroupFilterDropdown(trigger, menu) {
     trigger.classList.add('active');
     menu.classList.add('active');
+    trigger.setAttribute('aria-expanded', 'true');
 
     // Clear any inline styles that might override CSS
     menu.style.width = '';
@@ -733,4 +742,5 @@ function openGroupFilterDropdown(trigger, menu) {
 function closeGroupFilterDropdown(trigger, menu) {
     trigger.classList.remove('active');
     menu.classList.remove('active');
+    trigger.setAttribute('aria-expanded', 'false');
 }

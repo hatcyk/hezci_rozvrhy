@@ -9,9 +9,19 @@
 #                docker compose -f /srv/lepsi-rozvrh/docker-compose.yml exec -T app
 #
 # Adjust APP_DIR to where the project lives.
+#
+# TIME ZONE: cron reads the schedule below in the SYSTEM time zone. The TZ line
+# only sets the jobs' environment (most cron daemons, e.g. Debian/Ubuntu cron,
+# ignore it for scheduling). Check and set the system zone once:
+#     timedatectl                                   # "Time zone: Europe/Prague (CET, +0100)"
+#     sudo timedatectl set-timezone Europe/Prague
+# The app computes reminders in Europe/Prague itself; this only matters for
+# WHEN cron starts the jobs.
 
 APP_DIR=/srv/lepsi-rozvrh
 TZ=Europe/Prague
+# Recorded as trigger 'cron' in the runs collection (admin / measurements).
+RUN_TRIGGER=cron
 MAILTO=""
 
 # Download timetables from Bakaláři and detect changes — every 15 minutes.
@@ -20,8 +30,10 @@ MAILTO=""
 # Send push notifications for the changes found above — every 5 minutes.
 */5 * * * *   cd $APP_DIR && /usr/bin/node scripts/process-notifications.js >> /var/log/lepsi-rozvrh/notifications.log 2>&1
 
-# "Next lesson" reminders — every minute on school days, 7:00-16:00 only.
-* 7-15 * * 1-5  cd $APP_DIR && /usr/bin/node scripts/send-lesson-reminders.js >> /var/log/lepsi-rozvrh/reminders.log 2>&1
+# "Next lesson" reminders — every minute on school days, 7:00-17:59.
+# The windows run from 7:04 (0th lesson, 7:10) to 17:39 (12th lesson, 17:40);
+# the old "7-15" stopped at 15:59 and lessons 11 and 12 never got a reminder.
+* 7-17 * * 1-5  cd $APP_DIR && /usr/bin/node scripts/send-lesson-reminders.js >> /var/log/lepsi-rozvrh/reminders.log 2>&1
 
-# Prune delivered-reminder records and processed changes — nightly.
+# Prune delivered-reminder records, processed changes and runs older than 30 days — nightly.
 17 2 * * *    cd $APP_DIR && /usr/bin/node scripts/cleanup.js >> /var/log/lepsi-rozvrh/cleanup.log 2>&1

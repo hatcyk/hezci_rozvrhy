@@ -1,5 +1,9 @@
 name: Check API Status
 
+# Fails (→ GitHub e-mails the repo owner) when the timetable data is stale:
+# /api/status?strict=1 answers 503 when the last successful prefetch is older
+# than 120 min on a school day 6-18 h, or 12 h otherwise. The app itself calls
+# /api/status without ?strict and always gets 200.
 on:
   schedule:
     # Every 10 minutes | Prázdninový provoz: Every 60 minutes
@@ -7,16 +11,27 @@ on:
     #- cron: '0 * * * *'
   workflow_dispatch: # Allow manual triggering
 
+permissions:
+  contents: read
+
 jobs:
   check-status:
     name: Check API Status
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
-      - name: Check API Health Status
+      - name: Check data freshness
+        env:
+          BASE_URL: ${{ secrets.VERCEL_URL }}
         run: |
-          echo "Checking API health status..."
-          curl -X GET "${{ secrets.VERCEL_URL }}/api/status" \
-            -H "Content-Type: application/json" \
+          echo "Checking ${BASE_URL}/api/status?strict=1"
+          # --fail-with-body: exit 22 on HTTP >= 400 but still print the JSON
+          # (dataAgeMin, lastStatus, lastError) into the log.
+          # --retry also retries 503, so a blip right at a deploy is not an alert.
+          curl --fail-with-body -sS \
+            --connect-timeout 10 --max-time 30 \
+            --retry 2 --retry-delay 20 \
+            -H "Accept: application/json" \
             -w "\nHTTP Status: %{http_code}\n" \
-            -s -S || echo "Status check failed"
+            "${BASE_URL}/api/status?strict=1"

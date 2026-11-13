@@ -1,12 +1,14 @@
 {
-  "name": "bakalari-api",
-  "version": "1.0.0",
-  "description": "",
+  "name": "lepsi-rozvrh",
+  "version": "2.0.0",
+  "description": "Lepší Rozvrh – přehledné rozvrhy SPŠD z Bakalářů včetně změn, upozornění a PWA",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "build": "node tools/build.js",
     "test": "node --test \"test/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"backend/**\" --test-coverage-include=\"routes/**\" \"test/**/*.test.js\"",
+    "test:e2e": "playwright test",
     "test:e2e-notifications": "node tools/e2e-notifications.js",
     "prefetch": "node scripts/run-prefetch.js",
     "process-notifications": "node scripts/process-notifications.js",
@@ -25,20 +27,22 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hatcyk/bakalari.git"
+    "url": "git+https://github.com/hatcyk/hezci_rozvrhy.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/hatcyk/bakalari/issues"
+    "url": "https://github.com/hatcyk/hezci_rozvrhy/issues"
   },
-  "homepage": "https://github.com/hatcyk/bakalari#readme",
+  "homepage": "https://github.com/hatcyk/hezci_rozvrhy#readme",
   "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@playwright/test": "1.64.1",
     "esbuild": "^0.28.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.x"
   }
 }

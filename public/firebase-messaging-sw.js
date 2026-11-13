@@ -3,6 +3,112 @@
  * Required by Firebase Cloud Messaging for background notifications
  */
 
+/* ────────────────────────────────────────────────────────────────────
+ * Showing notifications
+ *
+ * iOS / iPadOS / Safari (WebKit) require every push to end in a visible
+ * notification: the subscription is created with userVisibleOnly and WebKit
+ * logs "Push event handling completed without showing any notification ...
+ * This may trigger removal of the push subscription" when a push event ends
+ * without showNotification() (WebKit ServiceWorkerThread.cpp; WebKit blog
+ * "Meet Web Push": "Violations of the userVisibleOnly promise will result in a
+ * push subscription being revoked").
+ *
+ * Firebase Messaging 9.22 does not show anything while a page of the app is
+ * visible: its push handler posts the message to the page and returns
+ * (firebase-messaging-compat.js, onPush: `if (clientList.some(c =>
+ * c.visibilityState === 'visible')) return sendMessagePayloadInternalToWindows`).
+ * On Apple's push service that silently counts against the subscription, so
+ * there this worker shows every push itself (handlePushForWebKit below) and
+ * onBackgroundMessage stays out of the way; the page skips its in-app toast
+ * for the same push (notifications-core.js), so nothing is shown twice.
+ * Other browsers keep the SDK behaviour (toast in the foreground, system
+ * notification in the background).
+ * ──────────────────────────────────────────────────────────────────── */
+
+/** Push service of Apple (WebKit). Same rule as public/js/platform.js. */
+function isApplePushEndpoint(endpoint) {
+    if (!endpoint || typeof endpoint !== 'string') return false;
+    try {
+        const host = new URL(endpoint).hostname;
+        return host === 'push.apple.com' || host.endsWith('.push.apple.com');
+    } catch (_) {
+        return false;
+    }
+}
+
+async function usesApplePushService() {
+    try {
+        const sub = await self.registration.pushManager.getSubscription();
+        return isApplePushEndpoint(sub && sub.endpoint);
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * One tag per timetable and week: a newer change notification for the same
+ * timetable replaces the older one instead of piling up (data from
+ * backend/fcm.js: timetableType, timetableId, scheduleType).
+ */
+function notificationTag(data = {}) {
+    if (data.type === 'timetable_change' && data.timetableType && data.timetableId) {
+        return `change_${data.timetableType}_${data.timetableId}_${data.scheduleType || 'Actual'}`;
+    }
+    return data.type || 'default';
+}
+
+function buildNotification(data = {}) {
+    const title = data.title || 'Nová notifikace';
+    const tag = notificationTag(data);
+    return {
+        title,
+        options: {
+            // Use detailed body if available (for expandable notifications on Android)
+            body: data.detailedBody || data.body || '',
+            icon: data.icon || '/icon-192.png',
+            // Monochrome, transparent: Android draws the status-bar badge as a mask
+            badge: '/badge-96.png',
+            vibrate: [100, 50, 100],
+            data,
+            requireInteraction: true,
+            tag,
+            // A new change for the same timetable should alert again, not
+            // replace the old notification silently
+            renotify: tag.startsWith('change_'),
+        },
+    };
+}
+
+function showFromData(data) {
+    const { title, options } = buildNotification(data);
+    return self.registration.showNotification(title, options);
+}
+
+/** Parse the FCM web push body ({ data: {...}, notification?: {...}, from, ... }). */
+function parsePushMessage(event) {
+    if (!event || !event.data) return null;
+    try {
+        return event.data.json();
+    } catch (_) {
+        return null;
+    }
+}
+
+async function handlePushForWebKit(event) {
+    const message = parsePushMessage(event);
+    // Messages with a `notification` part (Firebase console) are shown by the
+    // SDK itself; this app's server only sends data messages.
+    if (!message || message.notification) return;
+    if (!(await usesApplePushService())) return;
+    await showFromData(message.data || {});
+}
+
+// Registered before the Firebase SDK's own push listener; both run.
+self.addEventListener('push', (event) => {
+    event.waitUntil(handlePushForWebKit(event));
+});
+
 // Import Firebase scripts
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
@@ -24,28 +130,12 @@ firebase.initializeApp(firebaseConfig);
 // Initialize Firebase Messaging
 const messaging = firebase.messaging();
 
-// Handle background messages
-messaging.onBackgroundMessage((payload) => {
+// Handle background messages (no visible page). On Apple's push service the
+// push listener above already showed this message.
+messaging.onBackgroundMessage(async (payload) => {
     console.log('[firebase-messaging-sw.js] Received background message:', payload);
-
-    const notificationTitle = payload.data?.title || 'Nová notifikace';
-
-    // Use detailed body if available (for expandable notifications on Android)
-    const body = payload.data?.detailedBody || payload.data?.body || '';
-
-    const notificationOptions = {
-        body: body,
-        icon: payload.data?.icon || '/icon-192.png',
-        badge: '/icon-192.png',
-        vibrate: [100, 50, 100],
-        data: payload.data || {},
-        requireInteraction: true,
-        tag: payload.data?.type || 'default',
-        // Android will automatically make long text expandable
-        // iOS shows first ~2 lines, expandable on long press
-    };
-
-    return self.registration.showNotification(notificationTitle, notificationOptions);
+    if (await usesApplePushService()) return;
+    return showFromData((payload && payload.data) || {});
 });
 
 // Build a deep-link path from a notification's data payload so clicking a change
@@ -106,7 +196,7 @@ self.addEventListener('notificationclick', (event) => {
  * App-shell caching (offline support)
  * Bump SHELL_CACHE version whenever the precache list changes.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-69505063f4-a1716c3854';
+const SHELL_CACHE = 'bakalari-shell-c7e3004056-c6e1c36069';
 
 // Cross-origin scripts the app needs to boot. Cached as opaque responses
 // (status 0) so that offline loads still have the Firebase SDK available.
@@ -124,12 +214,14 @@ const PRECACHE_URLS = [
     '/icon-180.png',
     '/icon-192.png',
     '/icon-512.png',
+    '/icon-maskable-512.png',
+    '/badge-96.png',
     '/spsd_logo_dark.png',
     '/spsd_logo_white.png',
     '/spsd_long_dark.png',
     '/spsd_long_white.png',
-    '/css/app.css?v=69505063f4',
-    '/js/app.js?v=a1716c3854',
+    '/css/app.css?v=c7e3004056',
+    '/js/app.js?v=c6e1c36069',
 ];
 
 self.addEventListener('install', (event) => {

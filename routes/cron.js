@@ -1,65 +1,72 @@
 /**
- * Cron Routes for Vercel Cron Jobs
- * These endpoints are called by Vercel's cron scheduler
- * Protected by CRON_SECRET to prevent unauthorized access
+ * Cron Routes
+ * Called by an external scheduler (GitHub Actions, cron-job.org) with
+ * Authorization: Bearer <CRON_SECRET>. Every call is recorded in `runs`
+ * with trigger 'http' (contract S4).
  */
 
 const express = require('express');
-const { triggerManualPrefetch } = require('../backend/cron');
-const { sendLessonReminders, getPragueTime } = require('../backend/lesson-reminder');
+const { triggerManualPrefetch, runJob, cleanupOldRuns, failedCleanup } = require('../backend/cron');
+const { sendLessonReminders } = require('../backend/lesson-reminder');
 const { processPendingChanges, cleanupOldChanges } = require('../backend/fcm');
 const { cleanupOldNotifications } = require('../backend/notification-tracker');
-const { initializeFirebaseAdmin, getFirestore } = require('../backend/firebase-admin-init');
+const { initializeFirebaseAdmin } = require('../backend/firebase-admin-init');
+const { verifyCronRequest } = require('../backend/auth-middleware');
+const { formatPragueTime } = require('../backend/timezone-manager');
+const { intFromEnv } = require('../backend/schedule-calculator');
+const { cleanupOldAudit, AUDIT_KEEP_DAYS } = require('../backend/admin');
 
 const router = express.Router();
 
-/**
- * Middleware to verify Vercel Cron request
- * Vercel sends Authorization header with CRON_SECRET
- */
-function verifyCronRequest(req, res, next) {
-    const authHeader = req.headers.authorization;
-    const cronSecret = process.env.CRON_SECRET;
-    const isProduction = process.env.VERCEL === '1' || process.env.VERCEL === 'true' || process.env.NODE_ENV === 'production';
+const KEEP_NOTIFICATION_DAYS = 7;
+const KEEP_CHANGE_DAYS = 2;
+const KEEP_RUN_DAYS = 30;
 
-    // If CRON_SECRET is not set: allow only in local dev (fail-closed in production
-    // so the endpoints can't be triggered by anyone if the secret is misconfigured).
-    if (!cronSecret) {
-        if (isProduction) {
-            console.error('❌ CRON_SECRET not set in production - refusing cron request');
-            return res.status(503).json({ error: 'Cron not configured' });
-        }
-        console.warn('⚠️  CRON_SECRET not set - cron endpoint is unprotected (dev only)');
-        return next();
-    }
+// cron-job.org gives up after 30 s and disables a job after more than 25
+// failures, so the reminder route answers by this budget even if sending is
+// still in progress (it keeps running; the claims stop any double send).
+const DEFAULT_REMINDER_BUDGET_MS = 25000;
 
-    // Check if Authorization header matches
-    if (authHeader === `Bearer ${cronSecret}`) {
-        return next();
-    }
+// On Vercel, work left running after the response may be frozen. When the
+// optional @vercel/functions package is installed, waitUntil() keeps the
+// function alive until the reminder run finishes ("Extends the lifetime of
+// the request handler for the lifetime of the given Promise"). Without it
+// (local server, Docker) nothing changes - the process keeps running anyway.
+let waitUntil = null;
+try {
+    ({ waitUntil } = require('@vercel/functions'));
+} catch {
+    waitUntil = null;
+}
 
-    console.error('❌ Unauthorized cron request attempt');
-    return res.status(401).json({ error: 'Unauthorized' });
+// `timestamp` is the real UTC instant. It used to be getPragueTime().toISOString(),
+// i.e. Prague wall-clock time labelled as UTC ("Z"), one or two hours off.
+function times() {
+    const now = new Date();
+    return { timestamp: now.toISOString(), pragueTime: formatPragueTime(now) };
 }
 
 /**
- * Prefetch cron endpoint - runs every 10 minutes
- * Called by Vercel Cron (every 10 minutes)
+ * Resolve with the promise's value, or with `onTimeout` after `ms`.
+ */
+function withBudget(promise, ms, onTimeout) {
+    let timer;
+    const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(onTimeout), ms); });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Prefetch: started in the background, the run records itself when done.
  */
 router.get('/prefetch', verifyCronRequest, async (req, res) => {
     try {
-        console.log('⏰ Vercel Cron: Prefetch triggered');
+        console.log('⏰ Cron: Prefetch triggered');
 
-        // Start prefetch in background
-        triggerManualPrefetch().catch(err =>
+        triggerManualPrefetch({ trigger: 'http' }).catch(err =>
             console.error('Cron prefetch error:', err)
         );
 
-        res.json({
-            success: true,
-            message: 'Prefetch started',
-            timestamp: getPragueTime().toISOString()
-        });
+        res.json({ success: true, message: 'Prefetch started', ...times() });
     } catch (error) {
         console.error('Cron prefetch endpoint error:', error);
         res.status(500).json({ error: error.message });
@@ -67,23 +74,38 @@ router.get('/prefetch', verifyCronRequest, async (req, res) => {
 });
 
 /**
- * Lesson reminders cron endpoint - runs every minute
- * Called by Vercel Cron (every minute)
+ * Lesson reminders - every minute on school days.
+ * 200 with the result when done within the budget, otherwise 202 (still running).
  */
 router.get('/lesson-reminders', verifyCronRequest, async (req, res) => {
-    try {
-        console.log('⏰ Vercel Cron: Lesson reminders triggered');
-
-        // Send lesson reminders
+    const job = runJob('reminders', async () => {
         const result = await sendLessonReminders();
+        return {
+            result,
+            counts: {
+                sent: result.sent || 0,
+                users: result.users || 0,
+                skipped: result.skipped || 0,
+                failed: result.failed || 0,
+                ...(result.reason ? { reason: result.reason } : {}),
+            },
+        };
+    }, { trigger: 'http' });
 
-        res.json({
-            success: true,
-            result: result,
-            timestamp: getPragueTime().toISOString()
-        });
+    // Keep a late failure from becoming an unhandled rejection.
+    const settled = job.catch(err => console.error('Cron lesson reminders error:', err.message));
+    if (waitUntil) waitUntil(settled);
+
+    try {
+        const budget = intFromEnv('REMINDER_HTTP_BUDGET_MS', DEFAULT_REMINDER_BUDGET_MS);
+        const outcome = await withBudget(job, budget, null);
+
+        if (!outcome) {
+            console.warn(`⏳ Lesson reminders still running after ${budget} ms - answering early`);
+            return res.status(202).json({ success: true, pending: true, ...times() });
+        }
+        res.json({ success: true, result: outcome.result, ...times() });
     } catch (error) {
-        console.error('Cron lesson reminders error:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -93,26 +115,14 @@ router.get('/lesson-reminders', verifyCronRequest, async (req, res) => {
  * Processes pending change notifications from Firestore and sends FCM
  */
 router.get('/process-notifications', verifyCronRequest, async (req, res) => {
-    const startTime = new Date();
-
     try {
         console.log('⏰ Cron: Process notifications triggered');
-
-        // Ensure Firebase is initialized
         initializeFirebaseAdmin();
 
-        const result = await processPendingChanges();
-
-        // Update status in Firestore
-        const db = getFirestore();
-        await db.collection('system').doc('notificationStatus').set({
-            lastRun: startTime.toISOString(),
-            lastSuccess: startTime.toISOString(),
-            processedCount: result.processedCount || 0,
-            sentCount: result.sentCount || 0,
-            error: null,
-            updatedAt: new Date().toISOString()
-        });
+        const { result } = await runJob('notify', async () => {
+            const r = await processPendingChanges();
+            return { result: r, counts: { processed: r.processedCount || 0, sent: r.sentCount || 0 } };
+        }, { trigger: 'http' });
 
         console.log(`✅ Notifications processed: ${result.processedCount} changes, ${result.sentCount} sent`);
 
@@ -120,49 +130,40 @@ router.get('/process-notifications', verifyCronRequest, async (req, res) => {
             success: true,
             processedCount: result.processedCount || 0,
             sentCount: result.sentCount || 0,
-            timestamp: getPragueTime().toISOString()
+            ...times()
         });
     } catch (error) {
         console.error('Cron process-notifications error:', error);
-
-        // Save error status
-        try {
-            initializeFirebaseAdmin();
-            const db = getFirestore();
-            await db.collection('system').doc('notificationStatus').set({
-                lastRun: startTime.toISOString(),
-                lastSuccess: null,
-                processedCount: 0,
-                sentCount: 0,
-                error: error.message,
-                updatedAt: new Date().toISOString()
-            });
-        } catch (fsError) {
-            console.error('Failed to save error status:', fsError.message);
-        }
-
         res.status(500).json({ error: error.message });
     }
 });
 
 /**
- * Cleanup cron endpoint - prunes old dedup/notification records.
- * Driven by the scheduled GitHub Actions cleanup workflow.
+ * Cleanup cron endpoint - prunes old dedup/notification records and old runs.
  */
 router.get('/cleanup', verifyCronRequest, async (req, res) => {
     try {
         console.log('⏰ Cron: Cleanup triggered');
         initializeFirebaseAdmin();
 
-        const notifResult = await cleanupOldNotifications(7);
-        const changesResult = await cleanupOldChanges(2);
+        const { counts } = await runJob('cleanup', async () => {
+            const notifResult = await cleanupOldNotifications(KEEP_NOTIFICATION_DAYS);
+            const changesResult = await cleanupOldChanges(KEEP_CHANGE_DAYS);
+            const runsResult = await cleanupOldRuns(KEEP_RUN_DAYS);
+            const auditResult = await cleanupOldAudit(AUDIT_KEEP_DAYS);
+            return {
+                counts: {
+                    notificationsDeleted: notifResult.deleted || 0,
+                    changesDeleted: changesResult.deleted || 0,
+                    runsDeleted: runsResult.deleted || 0,
+                    auditDeleted: auditResult.deleted || 0,
+                },
+                // The cleanup helpers log and return their errors instead of throwing.
+                ...failedCleanup([notifResult, changesResult, runsResult, auditResult]),
+            };
+        }, { trigger: 'http' });
 
-        res.json({
-            success: true,
-            notificationsDeleted: notifResult.deleted || 0,
-            changesDeleted: changesResult.deleted || 0,
-            timestamp: getPragueTime().toISOString()
-        });
+        res.json({ success: true, ...counts, ...times() });
     } catch (error) {
         console.error('Cron cleanup error:', error);
         res.status(500).json({ error: error.message });
@@ -170,3 +171,4 @@ router.get('/cleanup', verifyCronRequest, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.withBudget = withBudget;

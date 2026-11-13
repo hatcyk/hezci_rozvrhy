@@ -2,14 +2,18 @@
  * Favorites Routes
  * GET  /api/favorites/:userId  — vrátí favoriteTimetables[]
  * POST /api/favorites/:userId  — uloží celý seznam
+ *
+ * Both need the ID token of that user (requireUser, contract S1).
  */
 
 const express = require('express');
 const { getFirestore } = require('../backend/firebase-admin-init');
+const { requireUser } = require('../backend/auth-middleware');
+const { validateFavorites } = require('./validation');
 
 const router = express.Router();
 
-router.get('/favorites/:userId', async (req, res) => {
+router.get('/favorites/:userId', requireUser, async (req, res) => {
     try {
         const { userId } = req.params;
         const db = getFirestore();
@@ -27,24 +31,13 @@ router.get('/favorites/:userId', async (req, res) => {
     }
 });
 
-router.post('/favorites/:userId', async (req, res) => {
+router.post('/favorites/:userId', requireUser, async (req, res) => {
     try {
         const { userId } = req.params;
-        const { favoriteTimetables } = req.body;
+        const { favoriteTimetables } = req.body || {};
 
-        if (!Array.isArray(favoriteTimetables)) {
-            return res.status(400).json({ error: 'favoriteTimetables must be an array' });
-        }
-        if (favoriteTimetables.length > 50) {
-            return res.status(400).json({ error: 'Too many favorites (max 50)' });
-        }
-        const validTypes = ['Class', 'Teacher', 'Room'];
-        for (const item of favoriteTimetables) {
-            if (!item || typeof item.type !== 'string' || !validTypes.includes(item.type) ||
-                typeof item.id !== 'string' || !item.id.trim()) {
-                return res.status(400).json({ error: 'Invalid favoriteTimetables item format' });
-            }
-        }
+        const listError = validateFavorites(favoriteTimetables);
+        if (listError) return res.status(400).json({ error: listError });
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);

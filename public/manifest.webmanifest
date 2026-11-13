@@ -1,6 +1,16 @@
 {
+  "id": "/",
   "name": "Lepší Rozvrh",
   "short_name": "Rozvrh",
+  "description": "Přehledné rozvrhy tříd, učitelů a učeben SPŠD včetně změn v rozvrhu a upozornění na ně.",
+  "lang": "cs",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#071422",
+  "background_color": "#071422",
+  "categories": ["education", "productivity"],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -15,20 +25,62 @@
       "purpose": "any"
     },
     {
-      "src": "/icon-192.png",
+      "src": "/icon-maskable-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     }
   ],
-  "theme_color": "#10111A",
-  "background_color": "#10111A",
-  "display": "standalone",
-  "start_url": "/"
+  "screenshots": [
+    {
+      "src": "/screenshots/mobil-rozvrh.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dnešní rozvrh třídy s probíhající hodinou a změnami"
+    },
+    {
+      "src": "/screenshots/mobil-detail.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Detail hodiny se suplováním"
+    },
+    {
+      "src": "/screenshots/desktop-tyden.png",
+      "sizes": "1440x900",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Týdenní rozvrh třídy na počítači"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Můj rozvrh",
+      "short_name": "Rozvrh",
+      "description": "Naposledy otevřený rozvrh",
+      "url": "/",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Změny dnes",
+      "short_name": "Změny",
+      "description": "Suplování a zrušené hodiny celé školy",
+      "url": "/?view=changes",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Volné učebny",
+      "short_name": "Učebny",
+      "description": "Které učebny jsou právě volné",
+      "url": "/?view=rooms",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
 }

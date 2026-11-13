@@ -8,7 +8,12 @@ import {
     getTodayIndex,
     parseGroupName,
     getLessonTimeClass,
-    getMondayOfWeek
+    getMondayOfWeek,
+    esc,
+    makeActivatable,
+    setPressed,
+    addLessonDescription,
+    lessonStatusIcon
 } from './utils.js';
 import { showLessonModal } from './modal.js';
 import { fetchTimetable } from './api.js';
@@ -226,14 +231,19 @@ export function createDaySelector() {
 
     daysShort.forEach((day, index) => {
         const btn = document.createElement('button');
+        btn.type = 'button';
         btn.textContent = day;
-        btn.className = index === state.selectedDayIndex ? 'active' : '';
+        // Full day name as a tooltip / description; the accessible name stays
+        // the visible "Po" (WCAG 2.5.3 Label in Name)
+        btn.title = days[index];
         if (index === todayIndex && state.selectedScheduleType === 'actual') {
             btn.classList.add('today-btn');
+            btn.setAttribute('aria-current', 'date');
         }
         btn.addEventListener('click', () => selectDay(index));
         dom.daySelector.appendChild(btn);
     });
+    updateActiveDayButton();
 
     // Set visibility based on showWholeWeek state using CSS class
     // Don't show day selector if whole week is being displayed
@@ -248,14 +258,8 @@ export function createDaySelector() {
 function updateActiveDayButton() {
     if (!dom.daySelector) return;
 
-    const buttons = dom.daySelector.querySelectorAll('button');
-    buttons.forEach((btn, index) => {
-        if (index === state.selectedDayIndex) {
-            btn.classList.add('active');
-        } else {
-            btn.classList.remove('active');
-        }
-    });
+    const buttons = [...dom.daySelector.querySelectorAll('button')];
+    setPressed(buttons, (btn) => buttons.indexOf(btn) === state.selectedDayIndex);
 }
 
 // Select day on mobile
@@ -471,6 +475,8 @@ export function renderTimetable(data) {
                 lessons.forEach(lesson => {
                     const card = document.createElement('div');
                     let cardClass = 'lesson-card';
+                    // Marks every changed slot for the deep-link highlight (deeplink.js)
+                    if (lesson.changed) card.dataset.changed = 'true';
                     if (lesson.changed) cardClass += ' changed';
 
                     // Add specific classes for removed/absent lessons
@@ -505,7 +511,7 @@ export function renderTimetable(data) {
                     if (state.selectedType === 'Teacher') {
                         // Teacher view: Show Subject, Room, Class (no teacher)
                         cardContent = `
-                            <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
+                            <div class="lesson-subject" title="${esc(lesson.subject)}">${esc(displaySubject)}</div>
                             <div class="lesson-details">
                                 ${lesson.room ? `
                                     <span class="lesson-detail-item">
@@ -516,41 +522,41 @@ export function renderTimetable(data) {
                                             <path d="M14 12h.01"/>
                                             <path d="M22 20h-3"/>
                                         </svg>
-                                        ${lesson.room}
+                                        ${esc(lesson.room)}
                                     </span>
                                 ` : ''}
                             </div>
-                            ${className ? `<div class="lesson-group">${className}</div>` : ''}
+                            ${className ? `<div class="lesson-group">${esc(className)}</div>` : ''}
                         `;
                     } else if (state.selectedType === 'Room') {
                         // Room view: Show Subject, Teacher, Class (no room)
                         cardContent = `
-                            <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
+                            <div class="lesson-subject" title="${esc(lesson.subject)}">${esc(displaySubject)}</div>
                             <div class="lesson-details">
                                 ${lesson.teacher ? `
-                                    <span class="lesson-detail-item" title="${lesson.teacher}">
+                                    <span class="lesson-detail-item" title="${esc(lesson.teacher)}">
                                         <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                             <circle cx="12" cy="7" r="4"/>
                                         </svg>
-                                        ${displayTeacher}
+                                        ${esc(displayTeacher)}
                                     </span>
                                 ` : ''}
                             </div>
-                            ${className ? `<div class="lesson-group">${className}</div>` : ''}
+                            ${className ? `<div class="lesson-group">${esc(className)}</div>` : ''}
                         `;
                     } else {
                         // Class view: Show Subject, Teacher, Room, Group (default)
                         cardContent = `
-                            <div class="lesson-subject" title="${lesson.subject}">${displaySubject}</div>
+                            <div class="lesson-subject" title="${esc(lesson.subject)}">${esc(displaySubject)}</div>
                             <div class="lesson-details">
                                 ${lesson.teacher ? `
-                                    <span class="lesson-detail-item" title="${lesson.teacher}">
+                                    <span class="lesson-detail-item" title="${esc(lesson.teacher)}">
                                         <svg class="lesson-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                                             <circle cx="12" cy="7" r="4"/>
                                         </svg>
-                                        ${displayTeacher}
+                                        ${esc(displayTeacher)}
                                     </span>
                                 ` : ''}
                                 ${lesson.room ? `
@@ -562,19 +568,20 @@ export function renderTimetable(data) {
                                             <path d="M14 12h.01"/>
                                             <path d="M22 20h-3"/>
                                         </svg>
-                                        ${lesson.room}
+                                        ${esc(lesson.room)}
                                     </span>
                                 ` : ''}
                             </div>
-                            ${lesson.group ? `<div class="lesson-group">${displayGroup}</div>` : ''}
+                            ${lesson.group ? `<div class="lesson-group">${esc(displayGroup)}</div>` : ''}
                         `;
                     }
 
-                    card.innerHTML = cardContent;
+                    card.innerHTML = lessonStatusIcon(lesson) + cardContent;
 
-                    // Add click event to show modal
+                    // Keyboard + screen reader access to the lesson detail (WCAG 2.1.1)
                     card.style.cursor = 'pointer';
-                    card.addEventListener('click', () => showLessonModal(lesson));
+                    addLessonDescription(card, lesson);
+                    makeActivatable(card, () => showLessonModal(lesson));
 
                     lessonCell.appendChild(card);
                 });
@@ -593,7 +600,7 @@ export function renderTimetable(data) {
 
 // Load timetable
 export async function loadTimetable() {
-    if (!dom.loading || !dom.errorDiv || !dom.timetableGrid) {
+    if (!dom.errorDiv || !dom.timetableGrid) {
         console.error('Required DOM elements not found');
         return;
     }
@@ -611,8 +618,9 @@ export async function loadTimetable() {
     showSkeleton();
 
     try {
-        // Calculate the Monday of the selected week for the API
-        const monday = getMondayOfWeek(state.weekOffset);
+        // The current Monday is only part of the session-cache key, so a tab left
+        // open over a weekend does not keep serving last week's timetable.
+        const monday = getMondayOfWeek(0);
         const dateParam = monday.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
         const data = await fetchTimetable(state.selectedType, id, state.selectedScheduleType, dateParam);

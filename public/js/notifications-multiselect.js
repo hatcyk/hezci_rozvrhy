@@ -7,6 +7,7 @@ import { state, updateState } from './state.js';
 import { saveWatchedTimetables } from './notifications-core.js';
 import { renderSelectedTimetablesPreferences, getDefaultPreferences } from './notifications-preferences.js';
 import { debug } from './debug.js';
+import { esc } from './utils.js';
 
 const GEAR_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>`;
 
@@ -60,9 +61,23 @@ export function populateFlatList() {
     container.querySelectorAll('.flat-accordion-header').forEach(header => {
         header.addEventListener('click', () => {
             const accordion = header.closest('.flat-accordion');
-            accordion.classList.toggle('open');
+            setAccordionOpen(accordion, !accordion.classList.contains('open'));
         });
     });
+}
+
+/**
+ * Open/close one accordion. The collapsed body is only squeezed to 0 rows, so
+ * it is made inert as well - otherwise Tab walked through dozens of invisible
+ * toggles (WCAG 2.4.3).
+ */
+function setAccordionOpen(accordion, open) {
+    if (!accordion) return;
+    accordion.classList.toggle('open', open);
+    const header = accordion.querySelector('.flat-accordion-header');
+    const body = accordion.querySelector('.flat-accordion-body');
+    if (header) header.setAttribute('aria-expanded', String(open));
+    if (body) body.inert = !open;
 }
 
 function renderAccordion(type, label, items) {
@@ -77,13 +92,13 @@ function renderAccordion(type, label, items) {
     });
 
     return `
-        <div class="flat-accordion" data-category="${type}">
-            <div class="flat-accordion-header">
-                <span class="flat-accordion-label">${label}</span>
+        <div class="flat-accordion" data-category="${esc(type)}">
+            <button type="button" class="flat-accordion-header" aria-expanded="false" aria-controls="flatAccordion-${esc(type)}">
+                <span class="flat-accordion-label">${esc(label)}</span>
                 ${countBadge}
                 ${CHEVRON_ICON}
-            </div>
-            <div class="flat-accordion-body">
+            </button>
+            <div class="flat-accordion-body" id="flatAccordion-${esc(type)}" inert>
                 <div class="flat-accordion-body-inner">
                     ${itemsHtml}
                 </div>
@@ -94,16 +109,17 @@ function renderAccordion(type, label, items) {
 
 function renderToggleItem(type, id, name, isWatched) {
     return `
-        <div class="flat-list-item" data-type="${type}" data-id="${id}" data-name="${name}">
-            <span class="flat-item-name">${name}</span>
-            <button class="flat-item-settings${isWatched ? '' : ' hidden'}" aria-label="Nastavení notifikací" title="Nastavení notifikací">
+        <div class="flat-list-item" data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}">
+            <span class="flat-item-name">${esc(name)}</span>
+            <button type="button" class="flat-item-settings${isWatched ? '' : ' hidden'}" aria-label="Nastavení notifikací: ${esc(name)}" title="Nastavení notifikací">
                 ${GEAR_ICON}
             </button>
             <label class="flat-toggle">
                 <input type="checkbox" class="flat-toggle-input"
-                       data-type="${type}" data-id="${id}" data-name="${name}"
+                       data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}"
+                       aria-label="Sledovat ${esc(name)}"
                        ${isWatched ? 'checked' : ''}>
-                <span class="flat-toggle-track"></span>
+                <span class="flat-toggle-track" aria-hidden="true"></span>
             </label>
         </div>
     `;
@@ -234,7 +250,7 @@ export function filterFlatList(searchTerm) {
 
         // Auto-open accordion when search has results
         if (term !== '' && hasVisible) {
-            accordion.classList.add('open');
+            setAccordionOpen(accordion, true);
         }
     });
 }

@@ -1,5 +1,62 @@
 # Changelog
 
+## [2.0.0] - 2026-11-04
+### Nové pohledy, data s datem, administrace, bezpečnost a přístupnost (maturitní verze)
+
+**Před nasazením si přečti DEPLOYMENT.md, kapitola 1:** backend a frontend se
+musí nasadit najednou (nový formát identity a tokeny u uživatelských API),
+přibyly proměnné prostředí a pravidla Firestore.
+
+### Přidáno
+- **Pohled Změny** (`/?view=changes`): tabule změn celé školy z nových souhrnných dokumentů `aggregates/changes_Actual|Next` – Dnes/Zítra, všechny dny obou týdnů, filtr třídy a vyučujícího v adrese, suplování sloučené do jednoho řádku „původně → nyní“.
+- **Kiosk** (`/?kiosk=changes`) pro televizi: živé odběry (`onSnapshot`), po 15:00 další školní den, automatické posouvání s tlačítkem pauzy (WCAG 2.2.2), `prefers-reduced-motion`, Screen Wake Lock, noční obnovení.
+- **Volné učebny** (`/?view=rooms`) z `aggregates/freeRooms_Actual|Next`: teď, další hodina, libovolný den a hodina, skrývání učeben, proklik na rozvrh učebny.
+- **Společné volno** (`/?view=common`): společné volné hodiny 2–6 vyučujících nebo tříd v aktuálním, příštím nebo stálém týdnu.
+- **Navigace mezi pohledy** jako skutečné odkazy s History API (Zpět/Vpřed, `aria-current`, fokus na nadpis).
+- **„Jen změny“**, detail změněné hodiny „Proti stálému rozvrhu: původně → nyní“, **sdílení** odkazu (Web Share API, jinak schránka), **tisk** týdne na A4 na šířku.
+- **Export do kalendáře** `GET /api/ical/:type/:id.ics` (RFC 5545, VTIMEZONE Europe/Prague, stabilní UID, ETag/304) a panel „Do kalendáře“ s odkazem `webcal://`; vypínač `ICAL_ENABLED`, konec pololetí `SEMESTER_END`.
+- **Administrace** `/admin` a `/api/admin/*` (`ADMIN_SECRET`): semafor stáří dat, běhy úloh a jejich rozestupy, změny a doručení, statistiky jen přes agregace Firestore, ruční spuštění sběru (GitHub `workflow_dispatch`, nejvýš 1× za 10 min), audit.
+- **Provozní záznamy:** každý běh úlohy zapisuje `runs/{auto}`, prefetch `system/health`; `/api/status` vrací `isHealthy`, `lastSuccessAt`, `dataAgeMin` a s `?strict=1` při zastaralých datech 503.
+- **Datum u hodin a týden u snímků:** hodina má `date`, snímek `weekStart` a `daysOff` (dny volna).
+- **PWA:** maskovatelné ikony, ikona odznaku, snímky obrazovky a zkratky v manifestu, `theme-color` pro obě schémata.
+- **Testy:** 223 testů `node:test` (dříve 3 soubory) včetně atrapy Firestore; end-to-end testy v Playwrightu s auditem axe-core (`npm run test:e2e`, mobil + desktop, 76 scénářů); CI `test.yml` (Node 22/24 × UTC/Praha, pokrytí) a `e2e.yml`.
+- `README.md`, přepsaná `DOKUMENTACE.md`, `firestore.rules`, `firestore.indexes.json`, `firebase.json`.
+
+### Změněno
+- **Identita (S1):** server přiděluje `anon-<uuid>`; starý `anonymous-<ms>` se při prvním otevření jednorázově převede i s nastavením. Uživatelská API vyžadují Firebase ID token.
+- **Detektor změn** porovnává jen snímky téhož týdne (`weekStart`) – při přechodu na nový týden už nehlásí falešné změny; páruje všechny hodiny ve slotu (nejen první); počet „a N dalších“ odpovídá skutečnosti.
+- **Prefetch** šetrnější ke školnímu serveru: nejvýš 3 souběžné požadavky všude (dříve 20), opakování jen při síťové chybě, 429 a 5xx s ohledem na `Retry-After`, ověření přihlášení, pojistka proti přepsání neprázdného rozvrhu prázdným, volitelný `BAKALARI_USER_AGENT`.
+- **Plánování:** sběr spouští cron-job.org přes `workflow_dispatch` (GitHub `schedule` jen jako záloha), `concurrency` a časový limit ve workflow, Node 22 (`engines: 22.x`), akce `checkout@v7` / `setup-node@v7`.
+- **Upomínky:** souběžné zpracování uživatelů, odpověď HTTP do 25 s (cron-job.org), přeskočení dnů volna a hodin s jiným než dnešním datem, vypínač `LESSON_REMINDER_ENABLED=false`.
+- **Panely** jsou nativní `<dialog>` (fokus uvnitř, Esc, návrat fokusu); všech 10 `alert()` nahradily toasty.
+- Banner výpadku říká, z kdy data jsou („… data jsou z dnes v 7:30 (před 2 h)“).
+- Notifikace jsou jen datové zprávy hlídané limitem velikosti FCM; na Apple zobrazí každý push service worker.
+- `package.json`: název `lepsi-rozvrh`, odkazy na repozitář `hatcyk/hezci_rozvrhy`.
+
+### Opraveno
+- Falešná hlášení změn po přepnutí týdne (porovnání různých týdnů) a nefunkční filtr „návrat ke stálému rozvrhu“.
+- `lastSuccess` se zapisoval i při neúspěšném běhu (pojistka „0 definic“).
+- Jedna vadná zpráva FCM (`messaging/invalid-argument`) smazala tokeny všem příjemcům.
+- Souběžné běhy mohly poslat stejnou upomínku dvakrát; upomínka podle loňského pondělí, když se týden ještě nepřepnul.
+- Posun pásma v první hodině po změně letního času (`date-fns-tz`), cron routy posílaly pražský čas s příponou „Z“.
+- `LESSON_REMINDER_*=0` se chovalo jako výchozí hodnota; `Permanent` měl v notifikaci popisek „PŘÍŠTÍ“.
+- Dělení cookie z Bakalářů useklo výplň `==` v base64.
+- Dny volna (ředitelské volno, svátky) se v rozvrhu tříd ukazovaly jako „odpadlé“ hodiny a hlásily se jako změny.
+- Přístupnost (WCAG 2.2 AA): zablokovaný zoom, nedostatečný kontrast (mj. popisky v detailu změny ve světlém motivu), karty hodin nedosažitelné klávesnicí, chybějící názvy tlačítek, panely bez správy fokusu – audit axe-core dnes 0 porušení.
+- iPadOS se nerozpoznal jako iOS; dvojí přepnutí volby notifikace při klepnutí na popisek.
+
+### Bezpečnost
+- `POST /api/auth` dříve podepsal token pro libovolné uid (převzetí cizího účtu); nyní jen pro nový formát a s ověřením ID tokenu na každém volání (`requireUser`, 401/403), validace těl požadavků. Existující ID znovu vydá a starý `anonymous-<ms>` převede jen s ID tokenem téže identity; jinak vydá nové prázdné ID.
+- Odstraněny neověřené `/api/prefetch/trigger` a `/status`; `/api/fcm/process-changes` za `CRON_SECRET`; tajemství se porovnávají v konstantním čase; bez `CRON_SECRET`/`ADMIN_SECRET` v produkci 503.
+- CORS jen pro povolené původy (`CORS_ORIGINS`, dříve `*`).
+- Bezpečnostní hlavičky na Expressu i CDN: `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `X-Frame-Options: DENY`, CSP v režimu Report-Only s hashi inline skriptů a hlášením na `/api/csp-report`; administrace s vynucenou CSP.
+- XSS: všechna data z Bakalářů se ve frontendu escapují (`esc()`), test s `<img onerror>` v datech.
+- Administrace: limit chybných pokusů (5 / 15 min), audit s HMAC hashem IP, statistiky bez čtení uživatelských dokumentů.
+- Pravidla Firestore: prohlížeč jen čte veřejná data a vlastní dokument, zápis jen server.
+- Skutečná jména vyučujících odstraněna z testovacích dat, komentářů a dokumentace.
+
+---
+
 ## [1.9.1] - 2026-01-09
 ### fix(ui): oprava indikátorů změn u skupinových hodin a automatické přepnutí layoutu při resize
 
@@ -524,8 +581,8 @@ const newDay = (currentDay + dayDirection + 5) % 5;
 
 ### Přidáno
 - **Zkrácená jména učitelů stejně jako v týdenním a denním rozvrhu**
-  - Dříve: V kartách a seznamu byla zobrazena plná jména s tituly (např. "Ing. Kamila Kozakovičová")
-  - Nyní: Zobrazují se zkrácená jména ve formátu "K. Kozakovičová"
+  - Dříve: V kartách a seznamu byla zobrazena plná jména s tituly (např. "Ing. Jana Ukázková")
+  - Nyní: Zobrazují se zkrácená jména ve formátu "J. Ukázková"
   - Konzistentní napříč všemi layouty (týden, den, karty, seznam)
 
 ### Změněno

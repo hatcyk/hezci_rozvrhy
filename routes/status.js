@@ -1,23 +1,28 @@
 /**
  * Status Routes
- * Provides system health status
+ * GET /api/status[?strict=1] — freshness of the timetable data (contract S4).
+ *
+ * The app always gets 200 and reads `isHealthy` to show its "data may be old"
+ * banner. Monitors (check-status.yml, cron-job.org) pass ?strict=1 and get 503
+ * when the data is stale, so `curl --fail` turns into an alert.
  */
 
 const express = require('express');
-const { getLastPrefetchStatus } = require('../backend/cron');
+const { getStatus } = require('../backend/cron');
 
 const router = express.Router();
 
-/**
- * Get system health status
- * Returns whether Bakalari API is healthy based on last prefetch
- */
-router.get('/status', async (_req, res) => {
+const isStrict = (req) => ['1', 'true', 'yes'].includes(String(req.query.strict || '').toLowerCase());
+
+router.get('/status', async (req, res) => {
+    // Never cached: a stale "healthy" answer would hide an outage.
+    res.setHeader('Cache-Control', 'no-store');
     try {
-        const status = await getLastPrefetchStatus();
-        res.json(status);
+        const status = await getStatus();
+        res.status(!status.isHealthy && isStrict(req) ? 503 : 200).json(status);
     } catch (error) {
-        res.status(500).json({
+        console.error('Status error:', error.message);
+        res.status(isStrict(req) ? 503 : 500).json({
             isHealthy: false,
             error: 'Failed to get status'
         });

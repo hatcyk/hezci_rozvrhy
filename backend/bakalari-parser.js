@@ -62,8 +62,8 @@ function matchesGroupFilters(groupName, groupFilters) {
 }
 
 /**
- * Abbreviate a teacher name to "R. Kozakovič" from either
- * "Kozakovič Radko" (Bakaláři order) or "Radko Kozakovič".
+ * Abbreviate a teacher name to "R. Příkladovič" from either
+ * "Příkladovič Radim" (Bakaláři order) or "Radim Příkladovič".
  * @param {String} fullName
  * @returns {String}
  */
@@ -96,7 +96,7 @@ function abbreviateTeacherName(fullName) {
  * Parse one `.day-item-hover` data-detail payload into a lesson object.
  * Returns null when the payload is not valid JSON.
  */
-function parseLessonDetail(detailRaw, dayIndex, dayName, hour) {
+function parseLessonDetail(detailRaw, dayIndex, dayName, hour, date = null) {
     let data;
     try {
         data = JSON.parse(detailRaw);
@@ -133,6 +133,9 @@ function parseLessonDetail(detailRaw, dayIndex, dayName, hour) {
     return {
         day: dayIndex,
         dayName,
+        // Calendar date of the lesson. Without it two different weeks look the
+        // same to the change detector (false "changes" every Monday).
+        date: date || null,
         hour,
         subject: subject || '',
         teacher: teacher || '',
@@ -212,24 +215,105 @@ function toMinutes(time) {
     return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
 
+const pad2 = (n) => String(n).padStart(2, '0');
+
+/** Date.UTC(...) → 'YYYY-MM-DD' (calendar arithmetic only, no time zone involved). */
+function utcToIso(ms) {
+    const d = new Date(ms);
+    return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`;
+}
+
+/** 'YYYY-MM-DD' → ms of its UTC midnight, or null for anything else. */
+function isoToUtc(iso) {
+    const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return utcToIso(ms) === iso ? ms : null;
+}
+
 /**
- * Parse the embedded timetable model (Days → Hours → Atoms) into lessons.
+ * Turn Bakaláři's "D.M." day label (`Days[].Date`, e.g. "7.9." — the page has
+ * no year) into 'YYYY-MM-DD'. The year is the one of Y−1, Y, Y+1 (Y = year of
+ * `now`, i.e. when the page was downloaded) that puts the date closest to
+ * `now`, so the week across New Year resolves correctly ("4.1." fetched on
+ * 30.12.2026 → 2027-01-04). An explicit year ("7.9.2026") is used as is.
+ * @param {String} label
+ * @param {Date} [now] - injectable for tests
+ * @returns {String|null}
+ */
+function inferIsoDate(label, now = new Date()) {
+    const m = String(label || '').trim().match(/^(\d{1,2})\.\s*(\d{1,2})\.?\s*(\d{4})?$/);
+    if (!m) return null;
+    const day = Number(m[1]);
+    const month = Number(m[2]);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+    const valid = (y) => {
+        const ms = Date.UTC(y, month - 1, day);
+        const d = new Date(ms);
+        return d.getUTCMonth() === month - 1 && d.getUTCDate() === day ? ms : null; // rejects 31.4., 29.2.2027
+    };
+    if (m[3]) {
+        const ms = valid(Number(m[3]));
+        return ms == null ? null : utcToIso(ms);
+    }
+
+    const ref = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+    const year = ref.getUTCFullYear();
+    let best = null;
+    for (const y of [year - 1, year, year + 1]) {
+        const ms = valid(y);
+        if (ms == null) continue;
+        if (best == null || Math.abs(ms - ref.getTime()) < Math.abs(best - ref.getTime())) best = ms;
+    }
+    return best == null ? null : utcToIso(best);
+}
+
+/** Monday of the ISO week containing `iso` ('YYYY-MM-DD'), or null. */
+function mondayOf(iso) {
+    const ms = isoToUtc(iso);
+    if (ms == null) return null;
+    const weekday = (new Date(ms).getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+    return utcToIso(ms - weekday * 86400000);
+}
+
+/** `iso` + `days` calendar days ('YYYY-MM-DD'), or null. */
+function addDaysIso(iso, days) {
+    const ms = isoToUtc(iso);
+    return ms == null ? null : utcToIso(ms + days * 86400000);
+}
+
+/**
+ * Parse the embedded timetable model (Days → Hours → Atoms).
  * The hour number comes from the raster (`Hours[].Caption` matched by begin
  * time); an hour or atom whose time is not in the raster is skipped.
+ * @returns {{ lessons: Array, weekStart: String|null, allDaysOff: Boolean,
+ *            daysOff: Array<{day: Number, date: String|null, name: String}>, hours: Array<Number> }}
  */
-function parseEmbeddedTimetable(data) {
+function parseEmbeddedTimetable(data, { now } = {}) {
     const hourByStart = new Map();
     for (const h of data.Hours || []) {
         const mins = toMinutes(h.BeginTime);
         if (mins != null && /^\d+$/.test(String(h.Caption))) hourByStart.set(mins, Number(h.Caption));
     }
 
+    const days = Array.isArray(data.Days) ? data.Days : [];
     const lessons = [];
-    (data.Days || []).forEach((day, position) => {
-        if (day.DayOff) return;
+    const daysOff = [];
+    let weekStart = null;
+    days.forEach((day, position) => {
+        const date = inferIsoDate(day.Date, now);
+        // Day-off days still carry a date, so a week that is entirely off gets a weekStart too.
+        if (!weekStart && date) weekStart = mondayOf(date);
         const dayName = String(day.DayAbbrev || '').trim();
         const byName = DAY_NAMES.indexOf(dayName.toLowerCase());
         const dayIndex = byName >= 0 ? byName : position;
+        if (day.DayOff) {
+            // Kept so later steps know the day is a holiday, not a day whose
+            // lessons all disappeared (see addRemovedLessonsFromPermanent).
+            daysOff.push({ day: dayIndex, date: date || null, name: String(day.DayOffName || '').trim() });
+            return;
+        }
 
         for (const slot of day.Hours || []) {
             const hour = hourByStart.get(toMinutes(slot.Begin));
@@ -238,7 +322,7 @@ function parseEmbeddedTimetable(data) {
             const atoms = slot.Atoms && slot.Atoms.length ? slot.Atoms : (slot.TooltipDetails ? [slot] : []);
             for (const atom of atoms) {
                 if (!atom.TooltipDetails) continue;
-                const lesson = parseLessonDetail(atom.TooltipDetails, dayIndex, dayName, hour);
+                const lesson = parseLessonDetail(atom.TooltipDetails, dayIndex, dayName, hour, date);
                 if (!lesson) continue;
                 let detail = {};
                 try { detail = JSON.parse(atom.TooltipDetails); } catch { /* handled above */ }
@@ -249,7 +333,30 @@ function parseEmbeddedTimetable(data) {
             }
         }
     });
-    return lessons;
+
+    return {
+        lessons,
+        weekStart,
+        // "Nothing to show because the whole week is off" (holidays) is a legitimate
+        // empty timetable; an empty Days list is not (prefetch keeps the old snapshot then).
+        allDaysOff: days.length > 0 && days.every(day => !!day.DayOff),
+        daysOff,
+        hours: [...new Set(hourByStart.values())].sort((a, b) => a - b),
+    };
+}
+
+/**
+ * Parse a Bakaláři public timetable page with everything prefetch needs.
+ * @param {String} html - Response body of /Timetable/Public/{schedule}/{type}/{id}
+ * @param {{ now?: Date }} [options] - `now` = download time, used to infer the year of "D.M." dates
+ * @returns {{ lessons: Array, weekStart: String|null, allDaysOff: Boolean, daysOff: Array, hours: Array<Number>, format: 'embedded'|'legacy' }}
+ */
+function parseTimetablePage(html, options = {}) {
+    const embedded = extractEmbeddedTimetableData(html);
+    if (embedded) return { ...parseEmbeddedTimetable(embedded, options), format: 'embedded' };
+    // The pre-2026 markup has no dates in its cells, so its week is unknown (null):
+    // the change detector then does not compare it rather than guess.
+    return { lessons: parseLegacyTimetableHtml(html), weekStart: null, allDaysOff: false, daysOff: [], hours: [], format: 'legacy' };
 }
 
 /**
@@ -257,12 +364,11 @@ function parseEmbeddedTimetable(data) {
  * Supports the current page (data embedded as `const timetableData = {...}`)
  * and the pre-2026 server-rendered markup (`.day-item-hover[data-detail]`).
  * @param {String} html - Response body of /Timetable/Public/{schedule}/{type}/{id}
+ * @param {{ now?: Date }} [options]
  * @returns {Array<Object>}
  */
-function parseTimetableHtml(html) {
-    const embedded = extractEmbeddedTimetableData(html);
-    if (embedded) return parseEmbeddedTimetable(embedded);
-    return parseLegacyTimetableHtml(html);
+function parseTimetableHtml(html, options = {}) {
+    return parseTimetablePage(html, options).lessons;
 }
 
 /** Pre-2026 markup: one .bk-timetable-cell per hour, lessons in data-detail. */
@@ -288,17 +394,38 @@ function parseLegacyTimetableHtml(html) {
 }
 
 /**
+ * Day indexes (0-4) of the days off of a page: accepts the `daysOff` objects of
+ * parseTimetablePage() or plain numbers.
+ */
+function dayOffIndexes(daysOff) {
+    const set = new Set();
+    for (const entry of Array.isArray(daysOff) ? daysOff : []) {
+        const day = typeof entry === 'number' ? entry : entry && entry.day;
+        if (Number.isInteger(day)) set.add(day);
+    }
+    return set;
+}
+
+/**
  * Add lessons that exist in the permanent schedule but are missing from the
  * actual one as type="removed", so cancelled group lessons still render
  * (struck through). Existing "removed" entries in `actualLessons` are rebuilt.
+ * Days off (holidays, "ředitelské volno") are skipped: their lessons are not
+ * cancelled one by one, the whole day is free. Copying them used to put a
+ * struck-through "Hodina odpadla" into every hour of a holiday and send a
+ * "lesson cancelled" notification and a changes-board row for each of them.
  * @param {Array} actualLessons
  * @param {Array} permanentLessons
+ * @param {{ weekStart?: String|null, daysOff?: Array }} [options] - week of `actualLessons`; the copied
+ *        lessons get the date of their day in that week (the permanent ones have none).
+ *        `daysOff` = parseTimetablePage().daysOff of the same week.
  * @returns {Array}
  */
-function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
+function addRemovedLessonsFromPermanent(actualLessons, permanentLessons, { weekStart = null, daysOff = [] } = {}) {
     if (!permanentLessons || permanentLessons.length === 0) {
         return actualLessons;
     }
+    const offDays = dayOffIndexes(daysOff);
 
     const keyOf = (lesson) => [
         lesson.day,
@@ -312,9 +439,12 @@ function addRemovedLessonsFromPermanent(actualLessons, permanentLessons) {
     const actualKeys = new Set(actualNonRemoved.map(keyOf));
 
     const removedLessons = permanentLessons
-        .filter(permLesson => permLesson.type !== 'removed' && !actualKeys.has(keyOf(permLesson)))
+        .filter(permLesson => permLesson.type !== 'removed' && !offDays.has(permLesson.day) && !actualKeys.has(keyOf(permLesson)))
         .map(permLesson => ({
             ...permLesson,
+            date: weekStart && Number.isInteger(permLesson.day) && permLesson.day >= 0
+                ? addDaysIso(weekStart, permLesson.day)
+                : null,
             type: 'removed',
             changed: true,
             changeInfo: { raw: 'Hodina odpadla', description: 'Hodina odpadla' },
@@ -333,5 +463,10 @@ module.exports = {
     matchesGroupFilters,
     abbreviateTeacherName,
     parseTimetableHtml,
+    parseTimetablePage,
     addRemovedLessonsFromPermanent,
+    dayOffIndexes,
+    inferIsoDate,
+    mondayOf,
+    addDaysIso,
 };

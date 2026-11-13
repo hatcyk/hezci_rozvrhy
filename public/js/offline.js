@@ -18,6 +18,32 @@ function formatAge(ageMs) {
     return `před ${days} d`;
 }
 
+/**
+ * Text of the "data are stale" banner from /api/status (contract S4).
+ * Says how old the data are instead of a vague "outage": the backend now
+ * reports when the last successful download happened.
+ * @param {{ dataAgeMin?: number|null, lastSuccessAt?: string|null }} status
+ * @param {Date} [now]
+ * @returns {string}
+ */
+export function outageBannerText(status = {}, now = new Date()) {
+    const base = 'Data z Bakalářů se teď nedaří aktualizovat';
+    const ageMin = Number.isFinite(status.dataAgeMin) ? status.dataAgeMin : null;
+    const at = status.lastSuccessAt ? new Date(status.lastSuccessAt) : null;
+    const validAt = at && !Number.isNaN(at.getTime()) ? at : null;
+
+    if (ageMin === null && !validAt) {
+        return `${base} – zobrazuji poslední stažená.`;
+    }
+    const ageText = formatAge((ageMin !== null ? ageMin : Math.max(0, Math.floor((now - validAt) / 60000))) * 60000);
+    if (!validAt) return `${base} – zobrazená data jsou stažena ${ageText}.`;
+
+    const hhmm = `${validAt.getHours()}:${String(validAt.getMinutes()).padStart(2, '0')}`;
+    const sameDay = validAt.toDateString() === now.toDateString();
+    const when = sameDay ? `dnes v ${hhmm}` : `${validAt.getDate()}. ${validAt.getMonth() + 1}. v ${hhmm}`;
+    return `${base} – zobrazená data jsou z ${when} (${ageText}).`;
+}
+
 function renderBanner(ageMs) {
     if (!dom.offlineBanner) return;
     const span = dom.offlineBanner.querySelector('.offline-banner-content span');

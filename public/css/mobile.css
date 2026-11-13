@@ -138,13 +138,13 @@
     }
 
     .week-view-toggle:hover {
-        border-color: var(--accent);
+        border-color: var(--accent-border);
     }
 
     .week-view-toggle.active {
         background: var(--accent);
         color: white;
-        border-color: var(--accent);
+        border-color: var(--accent-border);
         transform: scale(1.05);
     }
 

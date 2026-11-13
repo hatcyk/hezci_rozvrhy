@@ -12,26 +12,12 @@
 const { getFirestore } = require('./firebase-admin-init');
 const { sendNotificationToTokens, pruneInvalidTokens, ensureWatchIndexMigrated } = require('./fcm');
 const { getPragueTime, getPragueTimeInfo, isWeekend } = require('./timezone-manager');
-const { calculateNotificationWindows, findLessonsToNotify, formatMinutesToTime } = require('./schedule-calculator');
-const { hasNotificationBeenSent, recordNotificationSent } = require('./notification-tracker');
+const { calculateNotificationWindows, findLessonsToNotify, getNotificationConfig, intFromEnv } = require('./schedule-calculator');
+const { claimReminder, finishReminder } = require('./notification-tracker');
 const { matchesGroupFilters } = require('./bakalari-parser');
 
-// Lesson times (from /public/js/constants.js)
-const lessonTimes = [
-    { hour: 0, start: [7, 10], end: [7, 55], label: '7:10-7:55' },
-    { hour: 1, start: [8, 0], end: [8, 45], label: '8:00-8:45' },
-    { hour: 2, start: [8, 50], end: [9, 35], label: '8:50-9:35' },
-    { hour: 3, start: [9, 45], end: [10, 30], label: '9:45-10:30' },
-    { hour: 4, start: [10, 50], end: [11, 35], label: '10:50-11:35' },
-    { hour: 5, start: [11, 40], end: [12, 25], label: '11:40-12:25' },
-    { hour: 6, start: [12, 35], end: [13, 20], label: '12:35-13:20' },
-    { hour: 7, start: [13, 25], end: [14, 10], label: '13:25-14:10' },
-    { hour: 8, start: [14, 20], end: [15, 5], label: '14:20-15:05' },
-    { hour: 9, start: [15, 10], end: [15, 55], label: '15:10-15:55' },
-    { hour: 10, start: [16, 0], end: [16, 45], label: '16:00-16:45' },
-    { hour: 11, start: [16, 50], end: [17, 35], label: '16:50-17:35' },
-    { hour: 12, start: [17, 40], end: [18, 25], label: '17:40-18:25' }
-];
+// Lesson times (same table as /public/js/constants.js), shared with the iCal export.
+const { lessonTimes } = require('./lesson-times');
 
 // Subject abbreviations (from /public/js/constants.js - key ones)
 const subjectAbbreviations = {
@@ -188,46 +174,71 @@ async function getUsersWithLessonReminders() {
 }
 
 /**
+ * Is `dayIndex` (on `todayDate`, 'YYYY-MM-DD') a day off in a snapshot's `daysOff`
+ * ({day, date, name} entries written by prefetch)? An entry with a date only
+ * counts on that date, so last week's holiday in a not-yet-switched "Actual"
+ * snapshot does not silence this week's lessons.
+ */
+function isDayOff(daysOff, dayIndex, todayDate = null) {
+    return (Array.isArray(daysOff) ? daysOff : []).some(entry => entry
+        && entry.day === dayIndex
+        && (!entry.date || !todayDate || entry.date === todayDate));
+}
+
+/**
  * Get today's timetable data for a watched timetable
  * @param {Object} watchedTimetable - { type, id, scheduleType }
  * @param {Number} todayIndex - Day index (0-4)
  * @param {Map} cache - Cache for timetable data
- * @returns {Promise<Array>} Array of lessons for today
+ * @param {String|null} [todayDate] - 'YYYY-MM-DD' (Prague) for the day-off check
+ * @returns {Promise<Array>} Array of lessons for today ([] on a day off)
  */
-async function getTodaysTimetableForUser(watchedTimetable, todayIndex, cache = null) {
-    try {
-        // Document key: Type_Id_Actual (use Actual for current schedule)
-        const docKey = `${watchedTimetable.type}_${watchedTimetable.id}_Actual`;
+async function getTodaysTimetableForUser(watchedTimetable, todayIndex, cache = null, todayDate = null) {
+    // Document key: Type_Id_Actual (use Actual for current schedule)
+    const docKey = `${watchedTimetable.type}_${watchedTimetable.id}_Actual`;
 
-        // Check cache first
-        if (cache && cache.has(docKey)) {
-            const cachedData = cache.get(docKey);
-            return cachedData.filter(lesson => lesson.day === todayIndex);
-        }
-
-        const db = getFirestore();
-        const timetableDoc = await db.collection('timetables').doc(docKey).get();
-
-        if (!timetableDoc.exists) {
-            if (cache) cache.set(docKey, []);
-            return [];
-        }
-
-        const timetableData = timetableDoc.data();
-        const allLessons = timetableData.data || [];
-
-        // Store in cache
-        if (cache) {
-            cache.set(docKey, allLessons);
-        }
-
-        // Filter for today's lessons
-        return allLessons.filter(lesson => lesson.day === todayIndex);
-
-    } catch (error) {
-        console.error(`❌ Failed to get timetable for ${watchedTimetable.type}/${watchedTimetable.id}:`, error.message);
-        return [];
+    // The cache holds the pending read, so users processed in parallel that
+    // watch the same timetable share one Firestore read.
+    let snapshotPromise = cache && cache.get(docKey);
+    if (!snapshotPromise) {
+        snapshotPromise = (async () => {
+            try {
+                const db = getFirestore();
+                const timetableDoc = await db.collection('timetables').doc(docKey).get();
+                if (!timetableDoc.exists) return { lessons: [], daysOff: [] };
+                const data = timetableDoc.data();
+                return { lessons: data.data || [], daysOff: data.daysOff || [] };
+            } catch (error) {
+                console.error(`❌ Failed to get timetable for ${watchedTimetable.type}/${watchedTimetable.id}:`, error.message);
+                return { lessons: [], daysOff: [] };
+            }
+        })();
+        if (cache) cache.set(docKey, snapshotPromise);
     }
+
+    const { lessons, daysOff } = await snapshotPromise;
+    // Holidays / "ředitelské volno": no reminders, whatever lessons the
+    // snapshot may still hold for that day.
+    if (isDayOff(daysOff, todayIndex, todayDate)) return [];
+    return lessons.filter(lesson => lesson.day === todayIndex);
+}
+
+/**
+ * Run `worker` over `items` with at most `limit` in flight.
+ * Users used to be processed one by one; with tens of users the HTTP run took
+ * longer than cron-job.org's 30 s timeout.
+ */
+async function mapWithConcurrency(items, limit, worker) {
+    const results = new Array(items.length);
+    let next = 0;
+    const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+        while (next < items.length) {
+            const index = next++;
+            results[index] = await worker(items[index], index);
+        }
+    });
+    await Promise.all(runners);
+    return results;
 }
 
 /**
@@ -292,6 +303,55 @@ function formatLessonNotification(lesson, startTime, minutesUntilLesson) {
 }
 
 /**
+ * Lessons of one user in one hour slot, across all their watched timetables,
+ * after removing cancelled lessons, other groups and girls' PE.
+ * @returns {Promise<Array<{lesson: Object, source: Object}>>}
+ */
+async function findUserLessonsInSlot(user, dayIndex, hour, timetableCache, todayDate = null) {
+    const userLessons = [];
+
+    for (const watchedTimetable of user.watchedTimetables) {
+        const todaysLessons = await getTodaysTimetableForUser(watchedTimetable, dayIndex, timetableCache, todayDate);
+        // Lessons carry their date since S2. When the stored "Actual" week is
+        // not this week yet (prefetch late on a Monday morning), day index 0
+        // would otherwise remind about last Monday's lessons. Lessons without
+        // a date (older snapshots) keep the old day-index behaviour.
+        const lessonsInSlot = findLessonInSlot(todaysLessons, hour)
+            .filter(lesson => !todayDate || lesson.date == null || lesson.date === todayDate);
+
+        // Filter out removed/cancelled lessons
+        const validLessons = lessonsInSlot.filter(lesson =>
+            lesson.type !== 'removed' && lesson.subject && lesson.subject.trim() !== ''
+        );
+
+        // Filter by group preferences
+        let groupFilters = watchedTimetable.groupFilters;
+        if (!groupFilters && watchedTimetable.groupFilter) {
+            groupFilters = [watchedTimetable.groupFilter];
+        } else if (!groupFilters) {
+            groupFilters = [];
+        }
+
+        // Whole-class lessons always pass; group lessons must match the
+        // user's (normalized) group filters.
+        const groupFilteredLessons = validLessons.filter(lesson =>
+            matchesGroupFilters(lesson.group, groupFilters)
+        );
+
+        // Filter out "Dívčí tělocvik" lessons
+        const filteredLessons = groupFilteredLessons.filter(lesson =>
+            !lesson.subject || !lesson.subject.toLowerCase().includes('dívčí tělocvik')
+        );
+
+        // Each entry keeps the timetable it came from so the dedup record names
+        // the right source (it used to always point at watchedTimetables[0]).
+        filteredLessons.forEach(lesson => userLessons.push({ lesson, source: watchedTimetable }));
+    }
+
+    return userLessons;
+}
+
+/**
  * Main function: Check for upcoming lessons and send reminders
  * @param {Object} [options] - Optional parameters for testing
  * @param {Date} [options.mockTime] - Mock time for testing
@@ -302,12 +362,18 @@ async function sendLessonReminders(options = {}) {
     const { mockTime = null, dryRun = false } = options;
 
     try {
+        // The flag used to be read into the config and then ignored.
+        if (!getNotificationConfig().enabled) {
+            console.log('⏭️  Lesson reminders disabled (LESSON_REMINDER_ENABLED)');
+            return { sent: 0, reason: 'disabled' };
+        }
+
         // 1. Get Prague time and check basic conditions
         const timeInfo = getPragueTimeInfo(mockTime);
 
         console.log(`\n⏰ [INIT] Starting lesson reminder check`);
-        console.log(`   Prague time: ${timeInfo.formatted} (UTC${timeInfo.isDST ? '+2' : '+1'}, DST: ${timeInfo.isDST})`);
-        console.log(`   Day: ${timeInfo.dayOfWeek === 1 ? 'Monday' : timeInfo.dayOfWeek === 2 ? 'Tuesday' : timeInfo.dayOfWeek === 3 ? 'Wednesday' : timeInfo.dayOfWeek === 4 ? 'Thursday' : timeInfo.dayOfWeek === 5 ? 'Friday' : timeInfo.dayOfWeek === 6 ? 'Saturday' : 'Sunday'} (index: ${timeInfo.dayIndex})`);
+        console.log(`   Prague time: ${timeInfo.formatted} (UTC+${timeInfo.utcOffset}, DST: ${timeInfo.isDST})`);
+        console.log(`   Day index: ${timeInfo.dayIndex} (0 = Monday, -1 = weekend)`);
 
         // Check if weekend
         if (isWeekend(mockTime)) {
@@ -332,14 +398,6 @@ async function sendLessonReminders(options = {}) {
             return { sent: 0, reason: 'no_lessons_in_window' };
         }
 
-        // Log lessons to notify
-        lessonsToNotify.forEach(lesson => {
-            console.log(`\n🔍 [WINDOW] Lesson hour ${lesson.hour} (${lesson.label})`);
-            console.log(`   Window: ${lesson.windowStartFormatted} - ${lesson.windowEndFormatted}`);
-            console.log(`   Target: ${lesson.targetTimeFormatted}`);
-            console.log(`   Status: IN WINDOW ✅`);
-        });
-
         // 3. Get all users with lesson reminders enabled
         const users = await getUsersWithLessonReminders();
 
@@ -354,153 +412,93 @@ async function sendLessonReminders(options = {}) {
         let totalSent = 0;
         let totalUsers = 0;
         let totalSkipped = 0;
+        let totalFailed = 0;
 
-        // Cache for timetable data
         const timetableCache = new Map();
-
+        const concurrency = intFromEnv('LESSON_REMINDER_CONCURRENCY', 10) || 1;
         const startTime = Date.now();
 
         for (const lessonWindow of lessonsToNotify) {
             console.log(`\n📚 [LESSON] Processing hour ${lessonWindow.hour} (${lessonWindow.label})`);
 
-            for (const user of users) {
+            await mapWithConcurrency(users, concurrency, async (user) => {
                 try {
-                    // Get user's lessons for this hour. Each entry keeps a reference to
-                    // the timetable it came from so we record the correct source below
-                    // (previously metadata always pointed at watchedTimetables[0]).
-                    let userHasLesson = false;
-                    const userLessons = [];
-
-                    for (const watchedTimetable of user.watchedTimetables) {
-                        const todaysLessons = await getTodaysTimetableForUser(
-                            watchedTimetable,
-                            timeInfo.dayIndex,
-                            timetableCache
-                        );
-                        const lessonsInSlot = findLessonInSlot(todaysLessons, lessonWindow.hour);
-
-                        // Filter out removed/cancelled lessons
-                        const validLessons = lessonsInSlot.filter(lesson =>
-                            lesson.type !== 'removed' && lesson.subject && lesson.subject.trim() !== ''
-                        );
-
-                        // Filter by group preferences
-                        let groupFilters = watchedTimetable.groupFilters;
-                        if (!groupFilters && watchedTimetable.groupFilter) {
-                            groupFilters = [watchedTimetable.groupFilter];
-                        } else if (!groupFilters) {
-                            groupFilters = [];
-                        }
-
-                        // Whole-class lessons always pass; group lessons must match the
-                        // user's (normalized) group filters.
-                        const groupFilteredLessons = validLessons.filter(lesson =>
-                            matchesGroupFilters(lesson.group, groupFilters)
-                        );
-
-                        // Filter out "Dívčí tělocvik" lessons
-                        const filteredLessons = groupFilteredLessons.filter(lesson =>
-                            !lesson.subject || !lesson.subject.toLowerCase().includes('dívčí tělocvik')
-                        );
-
-                        if (filteredLessons.length > 0) {
-                            userHasLesson = true;
-                            filteredLessons.forEach(lesson =>
-                                userLessons.push({ lesson, source: watchedTimetable })
-                            );
-                        }
-                    }
-
-                    if (!userHasLesson || userLessons.length === 0) {
-                        console.log(`   ⏭️  User ${user.userId} has no lesson in hour ${lessonWindow.hour}`);
-                        continue;
-                    }
-
-                    // Check if notification already sent (IDEMPOTENCY). Done after the
-                    // timetable lookup (served from the in-run cache) so users without a
-                    // lesson in this hour cost no Firestore read every minute.
-                    const alreadySent = await hasNotificationBeenSent(
-                        user.userId,
-                        timeInfo.formattedDate,
-                        lessonWindow.hour
-                    );
-
-                    if (alreadySent) {
-                        console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - already sent, skipping`);
-                        totalSkipped++;
-                        continue;
-                    }
-
-                    console.log(`🔐 [DEDUP] User ${user.userId} / hour ${lessonWindow.hour} - not sent yet`);
+                    const userLessons = await findUserLessonsInSlot(user, timeInfo.dayIndex, lessonWindow.hour, timetableCache, timeInfo.formattedDate);
+                    if (userLessons.length === 0) return;
 
                     // Send notification for first lesson (if multiple, they're usually the same subject)
                     const { lesson, source: lessonSource } = userLessons[0];
-
-                    console.log(`📚 [TIMETABLE] User ${user.userId} has lesson: ${lesson.subject}`);
-                    console.log(`   Room: ${lesson.room}, Teacher: ${lesson.teacher}`);
-
                     const notification = formatLessonNotification(
                         lesson,
                         lessonWindow.lessonStartFormatted,
                         lessonWindow.minutesUntilLesson
                     );
 
-                    if (!dryRun) {
+                    if (dryRun) {
+                        console.log(`🔍 [DRY RUN] Would send to user ${user.userId}: ${notification.title}`);
+                        totalSent++;
+                        totalUsers++;
+                        return;
+                    }
+
+                    // Claim first (atomic create), send only if this run won it.
+                    // Done after the timetable lookup (served from the in-run
+                    // cache) so users without a lesson cost no Firestore write.
+                    const claimed = await claimReminder(user.userId, timeInfo.formattedDate, lessonWindow.hour, {
+                        lessonStartTime: lessonWindow.lessonStartFormatted,
+                        timetableId: `${lessonSource.type}_${lessonSource.id}_Actual`,
+                        lessonDetails: {
+                            subject: lesson.subject,
+                            room: lesson.room,
+                            teacher: lesson.teacher
+                        },
+                        cronExecutionTime: new Date().toISOString(),
+                        pragueTime: timeInfo.formattedTime
+                    });
+                    if (!claimed) {
+                        totalSkipped++;
+                        return;
+                    }
+
+                    try {
                         const result = await sendNotificationToTokens(user.tokens, notification);
                         totalSent += result.successCount;
-
-                        console.log(`📨 [SEND] Sent to user ${user.userId}: ${notification.title}`);
-                        console.log(`   Tokens: ${user.tokens.length}, Success: ${result.successCount}`);
+                        totalUsers++;
+                        console.log(`📨 [SEND] User ${user.userId}: ${notification.title} (${result.successCount}/${user.tokens.length})`);
 
                         // Drop any tokens FCM reported as permanently invalid.
                         await pruneInvalidTokens(user.userId, user.tokens, result);
-
-                        // Record notification as sent (using the timetable the lesson
-                        // actually came from, not always the first watched one).
-                        await recordNotificationSent(
-                            user.userId,
-                            timeInfo.formattedDate,
-                            lessonWindow.hour,
-                            {
-                                lessonStartTime: lessonWindow.lessonStartFormatted,
-                                timetableId: `${lessonSource.type}_${lessonSource.id}_Actual`,
-                                lessonDetails: {
-                                    subject: lesson.subject,
-                                    room: lesson.room,
-                                    teacher: lesson.teacher
-                                },
-                                cronExecutionTime: new Date().toISOString(),
-                                pragueTime: timeInfo.formattedTime
-                            }
-                        );
-                    } else {
-                        console.log(`🔍 [DRY RUN] Would send to user ${user.userId}: ${notification.title}`);
-                        totalSent++;
+                        await finishReminder(user.userId, timeInfo.formattedDate, lessonWindow.hour, {
+                            status: result.successCount > 0 ? 'sent' : 'failed',
+                            successCount: result.successCount
+                        });
+                    } catch (sendError) {
+                        totalFailed++;
+                        await finishReminder(user.userId, timeInfo.formattedDate, lessonWindow.hour, {
+                            status: 'failed',
+                            error: sendError.message
+                        });
+                        throw sendError;
                     }
-
-                    totalUsers++;
-
                 } catch (error) {
                     console.error(`❌ [ERROR] Failed to send reminder to user ${user.userId}:`, error.message);
                     // Continue with other users
                 }
-            }
+            });
         }
 
         const duration = Date.now() - startTime;
 
-        console.log(`\n✅ [DONE] Summary`);
-        console.log(`   Total notifications sent: ${totalSent}`);
-        console.log(`   Total users notified: ${totalUsers}`);
-        console.log(`   Total skipped (already sent): ${totalSkipped}`);
-        console.log(`   Lessons processed: ${lessonsToNotify.length} (hours: ${lessonsToNotify.map(l => l.hour).join(', ')})`);
-        console.log(`   Duration: ${duration}ms\n`);
+        console.log(`\n✅ [DONE] sent ${totalSent}, users ${totalUsers}, skipped ${totalSkipped}, failed ${totalFailed}, ` +
+            `hours ${lessonsToNotify.map(l => l.hour).join(', ')}, ${duration}ms\n`);
 
         return {
             sent: totalSent,
             users: totalUsers,
             skipped: totalSkipped,
+            failed: totalFailed,
             lessons: lessonsToNotify.map(l => l.hour),
+            durationMs: duration,
             dryRun: dryRun
         };
 
@@ -514,5 +512,8 @@ async function sendLessonReminders(options = {}) {
 module.exports = {
     sendLessonReminders,
     getPragueTime,
-    lessonTimes
+    lessonTimes,
+    mapWithConcurrency,
+    isDayOff,
+    getTodaysTimetableForUser,
 };

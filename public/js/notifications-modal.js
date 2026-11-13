@@ -10,6 +10,17 @@ import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCh
 import { renderSelectedTimetablesPreferences, renderTimetablePreferencesView } from './notifications-preferences.js';
 import { debug } from './debug.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+import { showToast } from './toast.js';
+import { esc } from './utils.js';
+
+/**
+ * Error/info messages used to be alert(): it blocks the page, steals focus and
+ * on iOS standalone apps looks like a system error. A toast is announced by
+ * screen readers (role="status") and does not interrupt.
+ */
+function notify(title, body = '', icon = '⚠️') {
+    showToast({ title, body, icon, variant: 'info', timeout: 9000 });
+}
 
 // Track which view is currently shown in the notification sheet
 let currentNotifView = 'list';
@@ -20,12 +31,15 @@ let currentNotifView = 'list';
 export function updateNotificationBellUI() {
     if (!dom.notificationBell) return;
 
+    // The crossed bell is not the only cue: the name says it too (WCAG 1.4.1)
     if (state.notificationsEnabled) {
         dom.notificationBell.classList.remove('disabled');
         dom.notificationBell.setAttribute('title', 'Notifikace zapnuty');
+        dom.notificationBell.setAttribute('aria-label', 'Notifikace (zapnuty)');
     } else {
         dom.notificationBell.classList.add('disabled');
         dom.notificationBell.setAttribute('title', 'Notifikace vypnuty');
+        dom.notificationBell.setAttribute('aria-label', 'Notifikace (vypnuty)');
     }
 
 }
@@ -70,6 +84,13 @@ export function showNotifListView() {
     if (views) views.classList.remove('notif-prefs-open');
     if (titleList) titleList.style.display = '';
     if (titlePrefs) titlePrefs.style.display = 'none';
+    // The same header button closes the sheet here and goes back in the prefs view
+    if (dom.notificationModalClose) dom.notificationModalClose.setAttribute('aria-label', 'Zavřít');
+    // The hidden prefs view must not be reachable by Tab
+    const prefsView = document.getElementById('notifPreferencesView');
+    const listView = document.getElementById('notifListView');
+    if (prefsView) prefsView.inert = true;
+    if (listView) listView.inert = false;
 
     const sheet = document.getElementById('notificationModal');
     if (sheet) sheet.scrollTop = 0;
@@ -96,6 +117,12 @@ export function showNotifPreferencesView(type, id, name) {
         titlePrefs.textContent = name;
         titlePrefs.style.display = '';
     }
+
+    if (dom.notificationModalClose) dom.notificationModalClose.setAttribute('aria-label', 'Zpět na seznam rozvrhů');
+    const prefsView = document.getElementById('notifPreferencesView');
+    const listView = document.getElementById('notifListView');
+    if (prefsView) prefsView.inert = false;
+    if (listView) listView.inert = true;
 
     // Slide to preferences view and scroll sheet to top
     if (views) views.classList.add('notif-prefs-open');
@@ -204,7 +231,7 @@ export async function enableNotifications() {
 
     // Check if at least one timetable is selected
     if (!state.watchedTimetables || state.watchedTimetables.length === 0) {
-        alert('Nejdřív vyberte alespoň jeden rozvrh ke sledování.');
+        notify('Nejdřív vyberte alespoň jeden rozvrh ke sledování.', '', 'ℹ️');
         return;
     }
 
@@ -217,13 +244,13 @@ export async function enableNotifications() {
         await requestNotificationPermission();
     } catch (error) {
         if (error.message === 'IOS_NOT_STANDALONE') {
-            alert('Na iOS musíte nejdřív přidat web na plochu (Home Screen). Klikněte na tlačítko "Sdílet" a pak "Přidat na plochu".');
+            notify('Nejdřív přidejte aplikaci na plochu.', 'Na iPhonu a iPadu fungují notifikace jen z plochy: Sdílet → Přidat na plochu.');
         } else if (error.message === 'PERMISSION_BLOCKED') {
-            alert('Prohlížeč má notifikace pro tuto stránku zablokované. Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
+            notify('Prohlížeč má notifikace pro tuto stránku zablokované.', 'Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
         } else if (error.message === 'PERMISSION_DISMISSED') {
-            alert('Notifikace nebyly povoleny. Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
+            notify('Notifikace nebyly povoleny.', 'Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
         } else {
-            alert('Nepodařilo se zapnout notifikace: ' + error.message);
+            notify('Nepodařilo se zapnout notifikace.', error.message);
         }
     } finally {
         button.disabled = false;
@@ -253,7 +280,7 @@ export async function disableNotificationsHandler() {
     } catch (error) {
         // The switch is only reported as off when the server confirmed it;
         // otherwise re-read the real state so the UI cannot lie.
-        alert('Nepodařilo se vypnout notifikace: ' + error.message);
+        notify('Nepodařilo se vypnout notifikace.', error.message);
         await loadNotificationPreferences();
     } finally {
         button.disabled = false;
@@ -288,7 +315,7 @@ function populateDebugTimetableSelect() {
                     name: item.name,
                     scheduleType: schedule.value
                 });
-                html += `<option value='${value}'>${item.name} - ${schedule.label}</option>`;
+                html += `<option value='${esc(value)}'>${esc(item.name)} - ${schedule.label}</option>`;
             });
         });
         html += '</optgroup>';
@@ -305,7 +332,7 @@ function populateDebugTimetableSelect() {
                     name: item.name,
                     scheduleType: schedule.value
                 });
-                html += `<option value='${value}'>${item.name} - ${schedule.label}</option>`;
+                html += `<option value='${esc(value)}'>${esc(item.name)} - ${schedule.label}</option>`;
             });
         });
         html += '</optgroup>';
@@ -322,7 +349,7 @@ function populateDebugTimetableSelect() {
                     name: item.name,
                     scheduleType: schedule.value
                 });
-                html += `<option value='${value}'>${item.name} - ${schedule.label}</option>`;
+                html += `<option value='${esc(value)}'>${esc(item.name)} - ${schedule.label}</option>`;
             });
         });
         html += '</optgroup>';
@@ -342,7 +369,7 @@ async function simulateTimetableChange() {
     // Get selected timetable from dropdown
     const selectedValue = select.value;
     if (!selectedValue) {
-        alert('Nejdřív vyber rozvrh z dropdownu!');
+        notify('Nejdřív vyberte rozvrh ze seznamu.', '', 'ℹ️');
         return;
     }
 
@@ -372,14 +399,12 @@ async function simulateTimetableChange() {
 
         console.log('✅ Simulated change result:', result);
 
-        alert(`✅ Hotovo!\n\n` +
-            `Změna vytvořena pro: ${timetable.name}\n` +
-            `Notifikace poslány: ${result.notificationResult?.sentCount || 0}x\n` +
-            `Zpracováno změn: ${result.notificationResult?.processedCount || 0}`);
+        notify(`Hotovo: změna vytvořena pro ${timetable.name}`,
+            `Notifikace poslány: ${result.notificationResult?.sentCount || 0}×, zpracováno změn: ${result.notificationResult?.processedCount || 0}`, '✅');
 
     } catch (error) {
         console.error('Failed to simulate change:', error);
-        alert('❌ Chyba při simulaci změny: ' + error.message);
+        notify('Chyba při simulaci změny.', error.message, '❌');
     } finally {
         button.disabled = false;
         button.textContent = originalText;

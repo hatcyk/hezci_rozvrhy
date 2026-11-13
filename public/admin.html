@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="cs" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>Správa – Lepší Rozvrh</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+    <!-- Same colour variables as the app; no inline scripts (enforced CSP, see backend/security-headers.js) -->
+    <link rel="stylesheet" href="/css/variables.css">
+    <link rel="stylesheet" href="/admin/admin.css">
+    <script type="module" src="/admin/admin.js"></script>
+</head>
+<body>
+    <a class="skip-link" href="#main">Přeskočit na obsah</a>
+
+    <header class="admin-header">
+        <h1>Lepší Rozvrh – správa</h1>
+        <div class="header-actions">
+            <button type="button" id="refreshBtn" hidden>Obnovit</button>
+            <button type="button" id="logoutBtn" hidden>Odhlásit</button>
+        </div>
+    </header>
+
+    <main id="main">
+        <section id="loginSection" class="card login" aria-labelledby="loginTitle" hidden>
+            <h2 id="loginTitle">Přihlášení</h2>
+            <form id="loginForm">
+                <label for="secretInput">Admin tajemství (<code>ADMIN_SECRET</code>)</label>
+                <input id="secretInput" name="secret" type="password" autocomplete="current-password" required aria-describedby="secretHint">
+                <p id="secretHint" class="hint">Uloží se jen v této kartě prohlížeče (sessionStorage) a po jejím zavření zmizí.</p>
+                <button type="submit" class="primary">Přihlásit</button>
+                <p id="loginError" class="error" role="alert" hidden></p>
+            </form>
+        </section>
+
+        <div id="dashboard" hidden>
+            <h2 id="dashboardTitle" class="visually-hidden" tabindex="-1">Přehled provozu</h2>
+            <p id="statusLine" class="status-line" role="status" aria-live="polite"></p>
+            <p id="indexWarning" class="warning" role="note" hidden>
+                Chybí složený index Firestore <code>runs (job, startedAt)</code>. Údaje se dočítají náhradní cestou a mohou být neúplné.
+                Nasazení: <code>npx firebase-tools deploy --only firestore:indexes</code>.
+            </p>
+
+            <section class="card" aria-labelledby="overviewTitle">
+                <h2 id="overviewTitle">Stáří dat</h2>
+                <div class="overview">
+                    <div id="semaphore" class="semaphore" data-level="bad">
+                        <span id="semaphoreSymbol" class="semaphore-light" aria-hidden="true">■</span>
+                        <div>
+                            <p id="semaphoreLabel" class="semaphore-label">–</p>
+                            <p id="semaphoreDetail" class="hint"></p>
+                        </div>
+                    </div>
+                    <dl id="healthList" class="kv"></dl>
+                </div>
+                <div class="table-wrapper" tabindex="0" role="region" aria-labelledby="lastRunsCaption">
+                    <table>
+                        <caption id="lastRunsCaption">Poslední běh každé úlohy</caption>
+                        <thead><tr><th scope="col">Úloha</th><th scope="col">Začátek</th><th scope="col">Stav</th><th scope="col">Trvání</th></tr></thead>
+                        <tbody id="lastRunsBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="chartTitleH">
+                <h2 id="chartTitleH">Rozestupy mezi běhy sběru (7 dní)</h2>
+                <figure class="chart-figure">
+                    <div id="intervalChart" class="chart"></div>
+                    <figcaption id="intervalSummary" class="hint"></figcaption>
+                </figure>
+                <ul class="legend" aria-label="Legenda grafu">
+                    <li><span class="legend-mark legend-schedule" aria-hidden="true">●</span> plán GitHubu</li>
+                    <li><span class="legend-mark legend-other" aria-hidden="true">■</span> spuštěno zvenku (cron-job.org, ručně)</li>
+                    <li><span class="legend-mark legend-failed" aria-hidden="true">✕</span> neúspěšný běh</li>
+                    <li><span class="legend-mark legend-capped" aria-hidden="true">▲</span> mezera delší než osa</li>
+                </ul>
+            </section>
+
+            <section class="card" aria-labelledby="runsTitle">
+                <h2 id="runsTitle">Běhy úloh</h2>
+                <div class="filter">
+                    <label for="jobFilter">Úloha</label>
+                    <select id="jobFilter">
+                        <option value="">všechny</option>
+                        <option value="prefetch">Sběr rozvrhů</option>
+                        <option value="notify">Notifikace o změnách</option>
+                        <option value="reminders">Upomínky hodin</option>
+                        <option value="cleanup">Úklid</option>
+                    </select>
+                </div>
+                <div class="table-wrapper tall" tabindex="0" role="region" aria-labelledby="runsCaption">
+                    <table>
+                        <caption id="runsCaption">Posledních 100 běhů (nejnovější nahoře)</caption>
+                        <thead><tr><th scope="col">Začátek</th><th scope="col">Úloha</th><th scope="col">Spouštěč</th><th scope="col">Trvání</th><th scope="col">Stav</th><th scope="col">Počty</th><th scope="col">Chyba</th></tr></thead>
+                        <tbody id="runsBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="changesTitle">
+                <h2 id="changesTitle">Detekované změny a doručení</h2>
+                <div class="table-wrapper tall" tabindex="0" role="region" aria-labelledby="changesCaption">
+                    <table>
+                        <caption id="changesCaption">Posledních 50 dokumentů se změnami</caption>
+                        <thead><tr><th scope="col">Zjištěno</th><th scope="col">Rozvrh</th><th scope="col">Týden</th><th scope="col">Změny</th><th scope="col">Doručení</th><th scope="col">Ukázka</th></tr></thead>
+                        <tbody id="changesBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="card" aria-labelledby="statsTitle">
+                <h2 id="statsTitle">Statistiky</h2>
+                <dl id="statsList" class="kv"></dl>
+                <p class="hint">Jen souhrnné počty spočítané ve Firestore (count/sum), žádné identifikátory ani tokeny. „Prohlížeč“ = jedna anonymní identita aplikace.</p>
+                <p id="statsProblems" class="hint"></p>
+            </section>
+
+            <section class="card" aria-labelledby="actionsTitle">
+                <h2 id="actionsTitle">Akce</h2>
+                <button type="button" id="dispatchBtn" class="primary">Spustit sběr</button>
+                <p id="dispatchResult" class="status-line" role="status" aria-live="polite"></p>
+                <dialog id="dispatchDialog" aria-labelledby="dispatchDialogTitle" aria-describedby="dispatchDialogText">
+                    <form method="dialog">
+                        <h2 id="dispatchDialogTitle">Spustit sběr dat teď?</h2>
+                        <p id="dispatchDialogText">Na GitHubu se spustí workflow <code>prefetch.yml</code>. Stáhne asi 220 stránek ze serveru Bakalářů školy a trvá několik minut. Spustit jde nejvýš jednou za 10 minut.</p>
+                        <div class="dialog-actions">
+                            <button value="cancel" autofocus>Zrušit</button>
+                            <button value="confirm" class="primary">Spustit</button>
+                        </div>
+                    </form>
+                </dialog>
+            </section>
+
+            <section class="card" aria-labelledby="auditTitle">
+                <h2 id="auditTitle">Audit</h2>
+                <div class="table-wrapper tall" tabindex="0" role="region" aria-labelledby="auditCaption">
+                    <table>
+                        <caption id="auditCaption">Posledních 50 požadavků na správu (IP jen jako otisk)</caption>
+                        <thead><tr><th scope="col">Čas</th><th scope="col">Akce</th><th scope="col">Cíl</th><th scope="col">Podrobnosti</th><th scope="col">Otisk IP</th></tr></thead>
+                        <tbody id="auditBody"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

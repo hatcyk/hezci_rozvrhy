@@ -92,10 +92,11 @@
 }
 
 /* Deep-link highlight: pulse the changed lesson(s) when opened from a notification */
-.lesson-card.deep-highlight {
+/* Deep-link highlight of changed lessons - every layout (data-changed) */
+.deep-highlight {
     animation: deep-highlight-pulse 1.1s ease-in-out 0s 3;
-    outline: 2px solid #ff9800;
-    outline-offset: 1px;
+    outline: 3px solid var(--status-changed);
+    outline-offset: 2px;
     border-radius: 10px;
 }
 
@@ -105,5 +106,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .lesson-card.deep-highlight { animation: none; }
+    .deep-highlight { animation: none; }
 }

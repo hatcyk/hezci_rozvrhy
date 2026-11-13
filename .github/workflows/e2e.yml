@@ -1,0 +1,54 @@
+name: E2E
+
+# Prohlížečové testy (Playwright + axe-core) nad sestaveným frontendem z public/.
+# Nepotřebují žádná tajemství: Firebase, /api/* i síť mimo lokální server
+# nahrazuje atrapa v test/e2e/support/, data jsou syntetická (smyšlená jména).
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Playwright (Chromium, mobil 390×844 + desktop 1440×900)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # Testuje se commitnutý bundle (public/js/app.js, css/app.css). Build je
+      # deterministický, takže když po něm vznikne rozdíl, někdo zapomněl
+      # po úpravě zdrojů spustit `npm run build`.
+      - name: Bundle odpovídá zdrojům
+        run: |
+          npm run build
+          if ! git diff --exit-code --stat -- public vercel.json; then
+            echo "::error::Sestavený frontend neodpovídá zdrojům – spusť 'npm run build' a změny commitni."
+            exit 1
+          fi
+
+      # Testy běží headless, stačí Chromium headless shell (+ systémové knihovny)
+      - name: Instalace Chromia
+        run: npx playwright install --with-deps --only-shell chromium
+
+      - name: E2E testy
+        run: npm run test:e2e
+
+      - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore

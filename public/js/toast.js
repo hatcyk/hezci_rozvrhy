@@ -6,19 +6,34 @@
  * feedback. Pure vanilla, no dependencies.
  */
 
+import { makeActivatable } from './utils.js';
+
 let container = null;
 
+/**
+ * Where toasts must live: inside the topmost open modal <dialog>, if any.
+ * showModal() makes everything outside the dialog inert, so a toast in <body>
+ * would sit under the backdrop, its close button would not react and screen
+ * readers would not announce it.
+ */
+function toastHost() {
+    const open = [...document.querySelectorAll('dialog[open]:not([data-closing])')]
+        .filter(d => { try { return d.matches(':modal'); } catch { return true; } })
+        .sort((a, b) => (Number(a.dataset.openSeq) || 0) - (Number(b.dataset.openSeq) || 0));
+    return open.pop() || document.body;
+}
+
 function ensureContainer() {
-    if (container && document.body.contains(container)) return container;
-    container = document.getElementById('toast-container');
+    if (!container) container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
         container.id = 'toast-container';
         container.className = 'toast-container';
         container.setAttribute('aria-live', 'polite');
         container.setAttribute('aria-atomic', 'false');
-        document.body.appendChild(container);
     }
+    const host = toastHost();
+    if (container.parentNode !== host) host.appendChild(container);
     return container;
 }
 
@@ -47,7 +62,7 @@ export function showToast({ title, body = '', icon = '🔔', variant = 'info', t
             <div class="toast-title"></div>
             ${body ? '<div class="toast-body"></div>' : ''}
         </div>
-        <button class="toast-close" aria-label="Zavřít">&times;</button>
+        <button type="button" class="toast-close" aria-label="Zavřít oznámení">&times;</button>
     `;
     // Use textContent to avoid HTML injection from notification payloads.
     toast.querySelector('.toast-title').textContent = title || '';
@@ -69,7 +84,8 @@ export function showToast({ title, body = '', icon = '🔔', variant = 'info', t
     });
 
     if (clickable) {
-        toast.querySelector('.toast-content').addEventListener('click', () => {
+        // Keyboard users can open the deep link too (Enter / Space)
+        makeActivatable(toast.querySelector('.toast-content'), () => {
             try { onClick(); } finally { dismiss(); }
         });
     }

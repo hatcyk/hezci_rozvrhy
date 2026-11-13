@@ -18,7 +18,7 @@ footer p {
 }
 
 footer a {
-    color: var(--spsd-orange);
+    color: var(--status-active); /* brand orange was 3.2:1 on the light page */
     text-decoration: none;
     font-weight: 600;
     transition: all 0.3s ease;

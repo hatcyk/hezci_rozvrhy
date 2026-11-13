@@ -126,10 +126,25 @@ export async function applyLayout() {
     console.log('Applying layout:', layout.id);
 
     // Remove all layout mode classes
-    container.classList.remove('single-day-mode', 'week-view-mode', 'card-view-mode', 'compact-list-mode', 'agenda-mode');
+    container.classList.remove('single-day-mode', 'week-view-mode', 'card-view-mode', 'compact-list-mode', 'agenda-mode', 'only-changes-mode');
+
+    // "Jen změny": a list of the week's changes replaces every layout, so all
+    // the places that re-render (load, day switch, layout switch) respect it.
+    const tools = await import('./timetable-tools.js');
+    if (tools.onlyChangesActive()) {
+        container.classList.add('only-changes-mode');
+        const { cleanupLayoutEventListeners } = await import('./layout-renderers.js');
+        cleanupLayoutEventListeners();
+        const daySel = document.getElementById('daySelector');
+        if (daySel) daySel.classList.add('hide-day-selector');
+        await tools.renderOnlyChanges(container);
+        tools.updateTimetableToolbar();
+        return;
+    }
 
     // Add current layout class
     container.classList.add(`${layout.id}-mode`);
+    container.tabIndex = -1; // focus target of the view navigation only (see "Jen změny")
 
     // Show/hide day selector based on layout
     const daySelector = document.getElementById('daySelector');
@@ -178,6 +193,7 @@ export async function applyLayout() {
     } catch (error) {
         console.error('Failed to apply layout:', error);
     }
+    tools.updateTimetableToolbar();
 }
 
 /**
@@ -188,7 +204,8 @@ function saveLayoutPreference(layoutId) {
     try {
         localStorage.setItem('layoutMode', layoutId);
         localStorage.setItem('layoutPreferences', JSON.stringify(state.layoutPreferences));
-        localStorage.setItem('layoutUpdatedAt', Date.now().toString());
+        // (layoutUpdatedAt was written here but never read - removed)
+        localStorage.removeItem('layoutUpdatedAt');
         console.log('Layout preference saved to localStorage');
     } catch (error) {
         console.error('Failed to save layout preference:', error);

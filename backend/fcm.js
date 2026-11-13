@@ -5,15 +5,36 @@
 
 const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('./firebase-admin-init');
-const { createChangeSummary, createDetailedChangeSummary } = require('./change-detector');
+const { createChangeSummary, createDetailedChangeSummary, fitFcmDataPayload } = require('./change-detector');
 const { matchesGroupFilters } = require('./bakalari-parser');
 
 // FCM error codes that mean a token is permanently dead and should be pruned.
+// 'messaging/invalid-argument' is NOT here: FCM returns it for a malformed
+// *message* too ("signals an invalid registration only if the payload is
+// completely valid", firebase.google.com/docs/cloud-messaging/manage-tokens),
+// so one bad payload used to wipe the tokens of every recipient.
 const DEAD_TOKEN_ERRORS = new Set([
     'messaging/registration-token-not-registered',
-    'messaging/invalid-registration-token',
-    'messaging/invalid-argument'
+    'messaging/invalid-registration-token'
 ]);
+
+/**
+ * Tokens of a multicast that FCM reported as permanently invalid.
+ * @param {Array<String>} tokens - Tokens used for the multicast (same order as responses)
+ * @param {Object} sendResult - Result from sendNotificationToTokens (has .responses)
+ * @returns {Array<String>}
+ */
+function findDeadTokens(tokens, sendResult) {
+    const responses = sendResult && sendResult.responses;
+    if (!responses || responses.length === 0) return [];
+    const dead = [];
+    responses.forEach((resp, idx) => {
+        if (!resp.success && resp.error && DEAD_TOKEN_ERRORS.has(resp.error.code) && tokens[idx]) {
+            dead.push(tokens[idx]);
+        }
+    });
+    return dead;
+}
 
 /**
  * Remove FCM tokens that the API reported as permanently invalid from a user doc.
@@ -26,16 +47,7 @@ const DEAD_TOKEN_ERRORS = new Set([
  */
 async function pruneInvalidTokens(userId, tokens, sendResult) {
     try {
-        const responses = sendResult && sendResult.responses;
-        if (!responses || responses.length === 0) return 0;
-
-        const deadTokens = [];
-        responses.forEach((resp, idx) => {
-            if (!resp.success && resp.error && DEAD_TOKEN_ERRORS.has(resp.error.code)) {
-                if (tokens[idx]) deadTokens.push(tokens[idx]);
-            }
-        });
-
+        const deadTokens = findDeadTokens(tokens, sendResult);
         if (deadTokens.length === 0) return 0;
 
         const db = getFirestore();
@@ -66,13 +78,17 @@ async function sendNotificationToTokens(tokens, notification) {
     try {
         const messaging = getMessaging();
 
+        // FCM refuses a message whose payload is over 4096 B (the whole multicast
+        // fails with messaging/invalid-argument). The detailed text is already
+        // capped, but title + body + ids are not, so the final data object is
+        // trimmed as a whole (detailedBody first, then body).
         const message = {
-            data: {
+            data: fitFcmDataPayload({
                 title: notification.title,
                 body: notification.body,
                 icon: notification.icon || '/icon-192.png',
                 ...(notification.data || {})
-            },
+            }),
             tokens: tokens
         };
 
@@ -105,20 +121,24 @@ async function sendNotificationToTokens(tokens, notification) {
  * Derive denormalized index fields from a watchedTimetables array.
  * - watchedKeys: ["Class_4A_Actual", ...] → query watchers with array-contains
  * - hasReminders: true if any watched timetable has a lesson reminder enabled
+ * - watchedTypes: ["Class", "Room"] → the admin statistics count users per
+ *   timetable type with count() (array-contains) instead of reading every user
  * @param {Array} watchedTimetables
- * @returns {{ watchedKeys: string[], hasReminders: boolean }}
+ * @returns {{ watchedKeys: string[], hasReminders: boolean, watchedTypes: string[] }}
  */
 function deriveWatchIndex(watchedTimetables) {
     const list = Array.isArray(watchedTimetables) ? watchedTimetables : [];
-    const watchedKeys = list
-        .filter(t => t && t.type && t.id && t.scheduleType)
-        .map(t => `${t.type}_${t.id}_${t.scheduleType}`);
+    const valid = list.filter(t => t && t.type && t.id && t.scheduleType);
+    const watchedKeys = valid.map(t => `${t.type}_${t.id}_${t.scheduleType}`);
+    const watchedTypes = [...new Set(valid.map(t => String(t.type)))].sort();
     const hasReminders = list.some(t => {
         const r = t && t.notificationTypes && t.notificationTypes.reminders;
         return !!(r && (r.next_lesson_room || r.next_lesson_teacher || r.next_lesson_subject));
     });
-    return { watchedKeys, hasReminders };
+    return { watchedKeys, hasReminders, watchedTypes };
 }
+
+const sameList = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
 
 let watchIndexMigrated = false;
 
@@ -133,9 +153,10 @@ async function ensureWatchIndexMigrated() {
 
     const db = getFirestore();
     try {
+        // V2 adds watchedTypes (admin statistics); V1 docs get it on this pass.
         const flagRef = db.collection('system').doc('migrations');
         const flag = await flagRef.get();
-        if (flag.exists && flag.data().watchIndexV1) {
+        if (flag.exists && flag.data().watchIndexV2) {
             watchIndexMigrated = true;
             return;
         }
@@ -147,18 +168,17 @@ async function ensureWatchIndexMigrated() {
 
         for (const doc of usersSnap.docs) {
             const data = doc.data();
-            const { watchedKeys, hasReminders } = deriveWatchIndex(data.preferences && data.preferences.watchedTimetables);
-            const cur = data.watchedKeys || [];
-            const sameKeys = cur.length === watchedKeys.length && cur.every((k, i) => k === watchedKeys[i]);
-            if (sameKeys && data.hasReminders === hasReminders) continue;
+            const { watchedKeys, hasReminders, watchedTypes } = deriveWatchIndex(data.preferences && data.preferences.watchedTimetables);
+            if (sameList(data.watchedKeys || [], watchedKeys) && data.hasReminders === hasReminders
+                && sameList(data.watchedTypes, watchedTypes)) continue;
 
-            batch.update(doc.ref, { watchedKeys, hasReminders });
+            batch.update(doc.ref, { watchedKeys, hasReminders, watchedTypes });
             ops++; updated++;
             if (ops >= 450) { await batch.commit(); batch = db.batch(); ops = 0; }
         }
         if (ops > 0) await batch.commit();
 
-        await flagRef.set({ watchIndexV1: true, watchIndexAt: new Date().toISOString() }, { merge: true });
+        await flagRef.set({ watchIndexV1: true, watchIndexV2: true, watchIndexAt: new Date().toISOString() }, { merge: true });
         watchIndexMigrated = true;
         console.log(`✅ [MIGRATION] Watch index backfilled (${updated} user docs updated)`);
     } catch (error) {
@@ -299,6 +319,42 @@ function filterChangesByGroup(changes, groupFilters) {
     });
 }
 
+const SCHEDULE_TYPE_LABELS = { Actual: 'AKTUÁLNÍ', Next: 'PŘÍŠTÍ', Permanent: 'STÁLÝ' };
+
+/**
+ * Push payload for the changes of one timetable.
+ * FCM data values must be strings. timetableType / timetableId / scheduleType
+ * are what the service worker builds the notification tag from
+ * ('change_' + type + '_' + id + '_' + scheduleType), so a newer change of one
+ * timetable replaces its older notification but never another timetable's.
+ * @param {{type: string, id: string, name: string, scheduleType: string}} timetable
+ * @param {Array} filteredChanges - changes this user should hear about
+ */
+function buildChangeNotification(timetable, filteredChanges) {
+    const summary = createChangeSummary(filteredChanges);
+    const detailedSummary = createDetailedChangeSummary(filteredChanges);
+    // Format schedule type in CAPSLOCK for title
+    const scheduleTypeLabel = SCHEDULE_TYPE_LABELS[timetable.scheduleType] || String(timetable.scheduleType || '');
+    const first = filteredChanges[0];
+
+    return {
+        title: `${timetable.name} ${scheduleTypeLabel}: Změny v rozvrhu`,
+        body: summary,
+        data: {
+            type: 'timetable_change',
+            timetableType: String(timetable.type),
+            timetableId: String(timetable.id),
+            scheduleType: String(timetable.scheduleType),
+            changeCount: String(filteredChanges.length),
+            // Day of the first change so the client can deep-link to it.
+            day: String(first && first.day != null ? first.day : ''),
+            timestamp: new Date().toISOString(),
+            detailedBody: detailedSummary
+        },
+        icon: '/icon-192.png'
+    };
+}
+
 /**
  * Process pending changes and send notifications
  * This should be called periodically or triggered after prefetch
@@ -376,29 +432,7 @@ async function processPendingChanges() {
                         continue;
                     }
 
-                    // Create notification payload with filtered changes
-                    const summary = createChangeSummary(filteredChanges);
-                    const detailedSummary = createDetailedChangeSummary(filteredChanges);
-
-                    // Format schedule type in CAPSLOCK for title
-                    const scheduleTypeLabel = timetable.scheduleType === 'Actual' ? 'AKTUÁLNÍ' : 'PŘÍŠTÍ';
-
-                    const notification = {
-                        title: `${timetable.name} ${scheduleTypeLabel}: Změny v rozvrhu`,
-                        body: summary,
-                        data: {
-                            type: 'timetable_change',
-                            timetableType: timetable.type,
-                            timetableId: timetable.id,
-                            scheduleType: timetable.scheduleType,
-                            changeCount: filteredChanges.length.toString(),
-                            // Day of the first change so the client can deep-link to it.
-                            day: String(filteredChanges[0] && filteredChanges[0].day != null ? filteredChanges[0].day : ''),
-                            timestamp: new Date().toISOString(),
-                            detailedBody: detailedSummary
-                        },
-                        icon: '/icon-192.png'
-                    };
+                    const notification = buildChangeNotification(timetable, filteredChanges);
 
                     const result = await sendNotificationToTokens(user.tokens, notification);
                     totalSent += result.successCount;
@@ -499,6 +533,9 @@ async function cleanupOldChanges(daysToKeep = 2) {
 }
 
 module.exports = {
+    DEAD_TOKEN_ERRORS,
+    findDeadTokens,
+    buildChangeNotification,
     filterChangesByPreferences,
     preferenceKeyForChange,
     sendNotificationToTokens,

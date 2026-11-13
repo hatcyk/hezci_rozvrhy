@@ -1,84 +1,82 @@
-/* ===== Bottom Sheet System ===== */
+/* ===== Bottom Sheet System =====
+   Sheets are native <dialog> elements opened with showModal() (bottom-sheet.js).
+   The UA dialog styles (centered box, padding, border, CanvasText colour,
+   max-width/height) are reset here; the slide animation is driven by .active
+   so it works the same in Chrome, Safari and Firefox (exit transitions of
+   top-layer elements via `overlay` are Chromium-only). */
 
-.bottom-sheet-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0);
-    z-index: 900;
-    pointer-events: none;
-    transition: background 0.3s ease;
+dialog.bottom-sheet {
+    padding: 0;
+    border: none;
+    margin: 0;
+    color: var(--text-main);
+    background: var(--card-bg);
+    overflow-y: auto;
+    /* Scrolling inside the sheet must not scroll the page behind it */
+    overscroll-behavior: contain;
 }
 
-.bottom-sheet-overlay.active {
+/* Backdrop replaces the old .bottom-sheet-overlay <div> */
+dialog.bottom-sheet::backdrop {
+    background: rgba(0, 0, 0, 0);
+    transition: background 0.3s ease;
+    /* ::backdrop is no scroll container by default; this makes
+       overscroll-behavior apply, so swiping over it does not scroll the page */
+    overflow: hidden;
+    overscroll-behavior: contain;
+}
+
+dialog.bottom-sheet.active::backdrop {
     background: rgba(0, 0, 0, 0.5);
-    pointer-events: all;
 }
 
 /* ---- Mobile: slide up from bottom ---- */
 @media (max-width: 1079px) {
-    .bottom-sheet {
+    dialog.bottom-sheet {
         position: fixed;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        z-index: 1000;
-        background: var(--card-bg);
+        inset: auto 0 0 0;
+        width: 100%;
+        max-width: 100%;
         border-radius: 20px 20px 0 0;
         box-shadow: 0 -4px 32px rgba(0, 0, 0, 0.3);
         max-height: 90vh;
-        overflow-y: auto;
-        overscroll-behavior: contain;
         padding-bottom: env(safe-area-inset-bottom, 0px);
-        /* Start off-screen, hidden */
+        /* Closed position; .active slides it in */
         transform: translateY(100%);
-        visibility: hidden;
-        transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s 0.35s;
-        pointer-events: none;
+        transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
     }
 
-    .bottom-sheet.active {
-        transform: translateY(0);
-        visibility: visible;
-        transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), visibility 0s;
-        pointer-events: all;
+    dialog.bottom-sheet.active {
+        /* `none`, not translateY(0): a transform would make the sheet the
+           containing block of position:fixed children (toasts) */
+        transform: none;
     }
 
-    .bottom-sheet.bottom-sheet-full {
+    dialog.bottom-sheet.bottom-sheet-full {
         max-height: 95vh;
-    }
-
-    body.sheet-open {
-        overflow: hidden;
     }
 }
 
-/* ---- Desktop: centered dialog (unchanged visual) ---- */
+/* ---- Desktop: centered dialog ---- */
 @media (min-width: 1080px) {
-    .bottom-sheet {
+    dialog.bottom-sheet {
         position: fixed;
-        top: 50%;
-        left: 50%;
-        z-index: 1000;
-        background: var(--card-bg);
+        inset: 0;
+        margin: auto;
+        height: fit-content;
         border-radius: 16px;
         box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
         width: 90%;
         max-width: 560px;
         max-height: 85vh;
-        overflow-y: auto;
-        transform: translate(-50%, -50%) scale(0.96);
+        transform: scale(0.96);
         opacity: 0;
-        visibility: hidden;
-        transition: transform 0.25s ease, opacity 0.25s ease, visibility 0s 0.25s;
-        pointer-events: none;
+        transition: transform 0.25s ease, opacity 0.25s ease;
     }
 
-    .bottom-sheet.active {
-        transform: translate(-50%, -50%) scale(1);
+    dialog.bottom-sheet.active {
+        transform: none;
         opacity: 1;
-        visibility: visible;
-        transition: transform 0.25s ease, opacity 0.25s ease, visibility 0s;
-        pointer-events: all;
     }
 
     .bottom-sheet-handle {
@@ -86,9 +84,16 @@
     }
 }
 
+@media (prefers-reduced-motion: reduce) {
+    dialog.bottom-sheet,
+    dialog.bottom-sheet::backdrop {
+        transition-duration: 0.01s;
+    }
+}
+
 /* ---- Disable transitions during resize to prevent cross-breakpoint sliding ---- */
 body.no-transitions .bottom-sheet,
-body.no-transitions .bottom-sheet-overlay {
+body.no-transitions .bottom-sheet::backdrop {
     transition: none !important;
 }
 
@@ -149,6 +154,12 @@ body.no-transitions .bottom-sheet-overlay {
     transform: none; /* override any global rotate from modal.css */
 }
 
+/* 44x44 target (WCAG 2.5.8 asks 24, iOS HIG 44) */
+.bottom-sheet .modal-close {
+    min-width: 44px;
+    min-height: 44px;
+}
+
 /* ---- Body padding ---- */
 .bottom-sheet .modal-body,
 .bottom-sheet .modal-content,
@@ -181,6 +192,11 @@ body.no-transitions .bottom-sheet-overlay {
 
 .dropdown-sheet-search:focus {
     border-color: var(--spsd-orange);
+}
+
+.dropdown-sheet-search:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
 }
 
 .dropdown-sheet-search::placeholder {
@@ -221,12 +237,39 @@ body.no-transitions .bottom-sheet-overlay {
 }
 
 .dropdown-sheet-option.selected {
-    color: var(--spsd-orange);
+    color: var(--status-active);
     font-weight: 600;
 }
 
 .dropdown-sheet-option.selected svg {
     flex-shrink: 0;
-    color: var(--spsd-orange);
-    stroke: var(--spsd-orange);
+    color: var(--status-active);
+    stroke: var(--status-active);
+}
+
+/* Row = select button + separate heart button (no nested controls) */
+.dropdown-sheet-row {
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+}
+
+.dropdown-sheet-row:last-child {
+    border-bottom: none;
+}
+
+.dropdown-sheet-row[hidden] {
+    display: none;
+}
+
+.dropdown-sheet-row .dropdown-sheet-option {
+    flex: 1;
+    min-width: 0;
+    border-bottom: none;
+}
+
+.dropdown-sheet-row .favorite-btn {
+    padding: 12px 16px;
+    min-width: 44px;
+    min-height: 44px;
 }
