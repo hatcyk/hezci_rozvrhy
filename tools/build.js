@@ -31,6 +31,10 @@ const CSS_ORDER = [
     'outage.css',
     'footer.css',
     'favorites.css',
+    // phase 2 views; print.css last so its @media print rules win
+    'views.css',
+    'kiosk.css',
+    'print.css',
 ];
 
 function hashFile(file) {
@@ -93,6 +97,14 @@ async function main() {
     const kb = (f) => (fs.statSync(f).size / 1024).toFixed(1) + ' KB';
     console.log(`✅ css/app.css  ${kb(cssOut)}  (v=${cssHash})`);
     console.log(`✅ js/app.js    ${kb(jsOut)}  (v=${jsHash})`);
+
+    // The CSP of vercel.json allows the inline <script>s of index.html by their
+    // sha256 hash; any edit of them would block them in production until the
+    // hashes are recomputed - so every build keeps them in sync.
+    const cspTool = path.join(__dirname, 'csp-hashes.js');
+    if (fs.existsSync(cspTool)) {
+        require('child_process').execFileSync(process.execPath, [cspTool, '--write'], { stdio: 'inherit' });
+    }
 }
 
 main().catch((err) => {
