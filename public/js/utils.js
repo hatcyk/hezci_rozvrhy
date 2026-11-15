@@ -73,8 +73,10 @@ export function lessonStatusIcon(lesson) {
  * Give a lesson button its name for screen readers: one sentence that says
  * the same as the screen (rozvrh-core.js lessonSentence / slotSentence). The
  * visible parts (abbreviation, room, status word) are hidden from assistive
- * tech, otherwise the subject, teacher and room would be read twice and the
- * abbreviation would be spelled out before the full name.
+ * tech, otherwise the subject, teacher and room would be read twice. The
+ * sentence itself carries every visible text in the form it is shown in
+ * ("Matematika (MAT)", "vyučující M. Cvičná"), so the name still contains
+ * what the user sees (WCAG 2.5.3 Label in Name; test/e2e/label-in-name.spec.js).
  * @param {Element} el
  * @param {string} sentence
  */

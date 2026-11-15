@@ -54,7 +54,7 @@ test.describe('Přehled: dělená hodina', () => {
     await expect(first.locator('.a')).toHaveText('FYZ');
     await expect(first.locator('.r')).toHaveText('2. sk U11');
     // Čtečka: nejdřív skupina, která hodinu má, potom odpadlá
-    await expect(first).toHaveAccessibleName(/^1\. hodina, 8:00–8:45, dělená hodina: Fyzika, 2\. sk, vyučující Libor Návrhový, učebna U11; .+, 1\. sk, .*odpadá, nemoc vyučujícího$/);
+    await expect(first).toHaveAccessibleName(/^1\. hodina, teď, 8:00–8:45, dělená hodina: Fyzika \(FYZ\), 2\. sk, vyučující Libor Návrhový, učebna U11; .+, 1\. sk, .*odpadá, nemoc vyučujícího$/);
   });
 
   test('skupiny s různými předměty: každý předmět má svou skupinu', async ({ page, app, isMobile }) => {
@@ -366,7 +366,7 @@ test.describe('Názvy hodin pro čtečku', () => {
     await app.timetableReady();
     if (isMobile) {
       const strip = page.locator('#ovStrip .ov-h');
-      await expect(strip.nth(2)).toHaveAccessibleName(/^3\. hodina, 9:45–10:30, Matematika, vyučující Adam Šablonový, učebna U15, suplování, původně /);
+      await expect(strip.nth(2)).toHaveAccessibleName(/^3\. hodina, 9:45–10:30, Matematika \(MAT\), vyučující Adam Šablonový, učebna U15, suplování, původně /);
       await expect(strip.nth(3)).toHaveAccessibleName(/, jiná učebna/);
       await expect(strip.nth(4)).toHaveAccessibleName(/, odpadá, nemoc vyučujícího$/);
       await app.openDay(isMobile);

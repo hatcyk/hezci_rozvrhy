@@ -375,7 +375,7 @@ function stripHtml(st, now) {
         const places = uniq(shown.map(it => [partial ? groupText(it.lesson.group) : '', placeOf(it.lesson)].filter(Boolean).join(' ')));
         const past = e != null && m >= e;
         const k = KINDS[kind];
-        model.stripRefs.push({ items, hour });
+        model.stripRefs.push({ items, hour, cur: !!cur });
         html += `<li><button type="button" class="ov-h lesson${cur ? ' cur' : ''}${cancelled ? ' is-cancelled' : ''}${past ? ' is-past' : ''}${split ? ' is-split' : ''}" data-strip="${ref++}"${first.changed || cancelled || partial ? ' data-changed="true"' : ''}>
             <span class="t">${cur ? 'Teď' : fmtMin(s)}</span>
             <span class="a">${esc(subjects.join(' / '))}</span>
@@ -565,11 +565,12 @@ function renderAll(st, now, { keepScroll = true } = {}) {
     const card = $('nowCard');
     if (card) { card.innerHTML = nowCardHtml(st, now); card.hidden = false; }
 
-    // Název hodiny pro čtečku: jedna věta se stejnými slovy jako obrazovka;
+    // Název hodiny pro čtečku: jedna věta se stejnými slovy jako obrazovka
+    // (i se zkratkou předmětu a „teď“, které jsou na tlačítku vidět);
     // u dělené hodiny nejdřív skupiny, které ji mají, pak ty, kterým odpadá
     ov.querySelectorAll('.ov-h[data-strip]').forEach(btn => {
         const ref = model.stripRefs[Number(btn.dataset.strip)];
-        if (ref && ref.items[0]) addLessonDescription(btn, slotSentence(ref.items));
+        if (ref && ref.items[0]) addLessonDescription(btn, slotSentence(ref.items, { shorts: true, now: ref.cur }));
     });
 
     // Pás hodin: aktuální hodina vidět (nebo poslední pozice)
