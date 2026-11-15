@@ -235,3 +235,54 @@ test('upomínky přeskočí den volna, i kdyby snímek ten den nějakou hodinu m
         restore();
     }
 });
+
+test('upomínky jen z rozvrhů, které je mají zapnuté; skupiny se filtrují', async () => {
+    const restore = quiet();
+    const OTHER = 'anon-1c8e7d2f-9b2e-4d4c-8a3f-2b3c4d5e6f70';
+    try {
+        // Watches a room for changes only (listed first) and the own class with reminders.
+        db._store.set(`users/${OTHER}`, {
+            tokens: ['fcm-2'],
+            hasReminders: true,
+            watchedKeys: ['Room_A104_Actual', 'Class_ZZ_Actual'],
+            preferences: {
+                watchedTimetables: [
+                    { type: 'Room', id: 'A104', scheduleType: 'Actual', groupFilters: [],
+                        notificationTypes: { changes: { room_change: true }, reminders: { next_lesson_room: false } } },
+                    { type: 'Class', id: 'ZZ', scheduleType: 'Actual', groupFilters: ['2.sk'],
+                        notificationTypes: { reminders: { next_lesson_room: true } } },
+                ],
+            },
+        });
+        const D = '2026-11-13'; // Friday
+        db._store.set('timetables/Room_A104_Actual', { weekStart: '2026-11-09', data: [
+            { day: 4, hour: 2, subject: 'Chemie', teacher: 'L. Nová', room: 'A104', group: '', date: D },
+            { day: 4, hour: 3, subject: 'Chemie', teacher: 'L. Nová', room: 'A104', group: '', date: D },
+        ] });
+        db._store.set('timetables/Class_ZZ_Actual', { weekStart: '2026-11-09', data: [
+            { day: 4, hour: 3, subject: 'Dějepis', teacher: 'M. Dlouhá', room: 'D4', group: '', date: D },
+            { day: 4, hour: 4, subject: 'Angličtina', teacher: 'A. První', room: 'E1', group: '1.sk', date: D },
+            { day: 4, hour: 4, subject: 'Němčina', teacher: 'B. Druhá', room: 'E2', group: '2.sk', date: D },
+        ] });
+        const mine = () => sent.filter(m => m.tokens.includes('fcm-2'));
+
+        // 2nd hour (8:50): the class is free, another class has Chemie in the watched room.
+        await sendLessonReminders({ mockTime: new Date('2026-11-13T07:46:00Z') });
+        assert.deepEqual(mine(), [], 'used to send "Za 4 minuty: CHE" from the room timetable');
+        assert.equal(db._get(`lesson_notifications_sent/${OTHER}_${D}_2`), undefined);
+
+        // 3rd hour (9:45): both have a lesson → the reminder is about the class.
+        await sendLessonReminders({ mockTime: new Date('2026-11-13T08:40:00Z') });
+        assert.equal(mine().length, 1);
+        assert.equal(mine()[0].data.subject, 'Dějepis');
+        assert.equal(db._get(`lesson_notifications_sent/${OTHER}_${D}_3`).timetableId, 'Class_ZZ_Actual');
+
+        // 4th hour (10:50): divided lesson → only the user's group.
+        await sendLessonReminders({ mockTime: new Date('2026-11-13T09:45:00Z') });
+        assert.equal(mine().length, 2);
+        assert.equal(mine()[1].data.subject, 'Němčina');
+    } finally {
+        db._store.delete(`users/${OTHER}`);
+        restore();
+    }
+});

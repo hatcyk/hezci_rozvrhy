@@ -123,6 +123,12 @@ function abbreviateSubject(subjectName) {
     return subjectName;
 }
 
+/** Is at least one lesson reminder switched on for this watched timetable? */
+function hasRemindersEnabled(watchedTimetable) {
+    const reminders = watchedTimetable?.notificationTypes?.reminders || {};
+    return !!(reminders.next_lesson_room || reminders.next_lesson_teacher || reminders.next_lesson_subject);
+}
+
 /**
  * Get all users who have lesson reminders enabled
  * @returns {Promise<Array>} Array of { userId, tokens, watchedTimetables }
@@ -151,10 +157,7 @@ async function getUsersWithLessonReminders() {
 
             // Check if user has any lesson reminders enabled in any watched timetable
             const watchedTimetables = preferences?.watchedTimetables || [];
-            const hasAnyReminders = watchedTimetables.some(timetable => {
-                const reminders = timetable.notificationTypes?.reminders || {};
-                return reminders.next_lesson_room || reminders.next_lesson_teacher || reminders.next_lesson_subject;
-            });
+            const hasAnyReminders = watchedTimetables.some(hasRemindersEnabled);
 
             if (hasAnyReminders && userData.tokens && userData.tokens.length > 0) {
                 usersWithReminders.push({
@@ -303,14 +306,23 @@ function formatLessonNotification(lesson, startTime, minutesUntilLesson) {
 }
 
 /**
- * Lessons of one user in one hour slot, across all their watched timetables,
- * after removing cancelled lessons, other groups and girls' PE.
+ * Lessons of one user in one hour slot, across the watched timetables that
+ * have reminders switched on (a room watched only for its changes used to
+ * remind about other classes' lessons in it), after removing cancelled
+ * lessons, other groups and girls' PE. Class timetables come first: the
+ * caller sends the first lesson found, and the user's own class is the one
+ * the reminder should be about.
  * @returns {Promise<Array<{lesson: Object, source: Object}>>}
  */
 async function findUserLessonsInSlot(user, dayIndex, hour, timetableCache, todayDate = null) {
     const userLessons = [];
+    const withReminders = user.watchedTimetables.filter(hasRemindersEnabled);
+    const ordered = [
+        ...withReminders.filter(t => t.type === 'Class'),
+        ...withReminders.filter(t => t.type !== 'Class'),
+    ];
 
-    for (const watchedTimetable of user.watchedTimetables) {
+    for (const watchedTimetable of ordered) {
         const todaysLessons = await getTodaysTimetableForUser(watchedTimetable, dayIndex, timetableCache, todayDate);
         // Lessons carry their date since S2. When the stored "Actual" week is
         // not this week yet (prefetch late on a Monday morning), day index 0
