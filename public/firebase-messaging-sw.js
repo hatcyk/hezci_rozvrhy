@@ -194,9 +194,17 @@ self.addEventListener('notificationclick', (event) => {
 
 /* ────────────────────────────────────────────────────────────────────
  * App-shell caching (offline support)
- * Bump SHELL_CACHE version whenever the precache list changes.
+ * The cache name carries the hashes of the bundles (tools/build.js), so a
+ * deploy that changes them installs into a new cache.
  * ──────────────────────────────────────────────────────────────────── */
 const SHELL_CACHE = 'bakalari-shell-6473f0482f-fdf19e6961';
+
+// The app shell (index.html) is kept under this single key, whatever address
+// it was opened with (deep links, /index.html).
+const SHELL_URL = '/';
+
+// How long a navigation waits for the network before the cached shell is used.
+const NAVIGATION_TIMEOUT_MS = 3000;
 
 // Cross-origin scripts the app needs to boot. Cached as opaque responses
 // (status 0) so that offline loads still have the Firebase SDK available.
@@ -206,42 +214,50 @@ const CROSS_ORIGIN_PRECACHE = [
     'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js',
     'https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js',
 ];
+
+// Only what the shell needs to start offline (test/client-sw-cache.test.js
+// compares the list with index.html). Install icons and screenshots are
+// fetched by the browser itself when the app is installed.
 const PRECACHE_URLS = [
-    '/',
-    '/index.html',
+    SHELL_URL,
     '/manifest.webmanifest',
     '/favicon.png',
-    '/icon-180.png',
     '/icon-192.png',
-    '/icon-512.png',
-    '/icon-maskable-512.png',
     '/badge-96.png',
-    '/spsd_logo_dark.png',
     '/spsd_logo_white.png',
-    '/spsd_long_dark.png',
-    '/spsd_long_white.png',
     '/icons.svg',
     '/css/app.css?v=6473f0482f',
     '/js/app.js?v=fdf19e6961',
 ];
+
+/**
+ * Bundles with a content hash (?v=) never change under their address, so the
+ * copy the page has just downloaded may be reused from the HTTP cache. The
+ * rest has no version and is revalidated with the server.
+ */
+function precacheRequest(url) {
+    return url.includes('?v=') ? new Request(url) : new Request(url, { cache: 'no-cache' });
+}
 
 self.addEventListener('install', (event) => {
     console.log('[firebase-messaging-sw.js] Install — precaching app shell');
     event.waitUntil((async () => {
         const cache = await caches.open(SHELL_CACHE);
 
-        // Same-origin precache (atomic, forces fresh network fetch)
-        try {
-            await cache.addAll(PRECACHE_URLS.map((url) => new Request(url, { cache: 'reload' })));
-        } catch (err) {
-            console.warn('[sw] Same-origin precache failed:', err);
-        }
+        // Same-origin precache. Atomic, and a failure must fail the install:
+        // the previous worker then keeps serving its own complete cache and
+        // the browser retries the install on the next visit. Swallowing the
+        // error would activate this worker with an empty cache and delete the
+        // working one.
+        await cache.addAll(PRECACHE_URLS.map(precacheRequest));
 
         // Cross-origin precache (Firebase SDK). no-cors yields opaque responses
-        // which cache.addAll rejects, so we put them one-by-one.
+        // which cache.addAll rejects, so we put them one-by-one. Best effort:
+        // without them the app still starts from localStorage. The address
+        // carries the SDK version, so the HTTP cache may answer.
         await Promise.all(CROSS_ORIGIN_PRECACHE.map(async (url) => {
             try {
-                const response = await fetch(url, { mode: 'no-cors', cache: 'reload' });
+                const response = await fetch(url, { mode: 'no-cors' });
                 await cache.put(url, response);
             } catch (err) {
                 console.warn(`[sw] Cross-origin precache failed for ${url}:`, err);
@@ -252,6 +268,8 @@ self.addEventListener('install', (event) => {
     })());
 });
 
+// Runs only after a successful install, so older caches are removed only once
+// this version has its own complete one.
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then((names) => Promise.all(
@@ -261,6 +279,40 @@ self.addEventListener('activate', (event) => {
         )).then(() => self.clients.claim())
     );
 });
+
+/** Navigations that load the app (deep links are in the query string). */
+function isShellNavigation(url) {
+    return url.pathname === '/' || url.pathname === '/index.html';
+}
+
+/**
+ * Network-first with a time limit: a fresh deploy is picked up on the very
+ * next load, but a server that is down (5xx), unreachable or silent for
+ * NAVIGATION_TIMEOUT_MS does not keep the user from the cached shell.
+ * @param {Promise<Response>} network  the navigation request, already started
+ */
+async function shellResponse(network) {
+    const TIMED_OUT = {};
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(resolve, NAVIGATION_TIMEOUT_MS, TIMED_OUT); });
+
+    let response = null; // null = network error
+    try {
+        response = await Promise.race([network, timeout]);
+    } catch (_) { /* offline */ }
+    clearTimeout(timer);
+
+    // Anything the server really answered (also 3xx and 4xx) goes through.
+    if (response && response !== TIMED_OUT && !(response.status >= 500)) return response;
+
+    const cache = await caches.open(SHELL_CACHE);
+    const cached = await cache.match(SHELL_URL);
+    if (cached) return cached;
+
+    // Nothing cached (first visit): the network is all there is.
+    if (response === TIMED_OUT) return network.catch(() => Response.error());
+    return response || Response.error();
+}
 
 self.addEventListener('fetch', (event) => {
     const { request } = event;
@@ -292,25 +344,20 @@ self.addEventListener('fetch', (event) => {
     // Don't intercept backend API calls (auth, status) — these must be live.
     if (url.pathname.startsWith('/api/')) return;
 
-    // Navigations (the app shell): network-first so a fresh deploy is picked up
-    // on the very next load; the cached shell is only used when offline. The
-    // query string (deep links like /?type=...&id=...) is ignored for the
-    // cache lookup so the shell is still served offline.
     if (request.mode === 'navigate') {
-        event.respondWith(
-            caches.open(SHELL_CACHE).then(async (cache) => {
-                try {
-                    const response = await fetch(request);
-                    if (response && response.status === 200 && response.type === 'basic') {
-                        cache.put(request, response.clone()).catch(() => { /* ignore quota errors */ });
-                    }
-                    return response;
-                } catch (err) {
-                    const cached = await cache.match(request, { ignoreSearch: true });
-                    return cached || Response.error();
-                }
-            })
-        );
+        // Other pages (/admin, /design.html) are not part of the offline shell.
+        if (!isShellNavigation(url)) return;
+
+        const network = fetch(request);
+        // Keep the shell fresh, also when the answer arrives after the time
+        // limit. Always under SHELL_URL: one copy, not one per deep link.
+        event.waitUntil(network.then(async (response) => {
+            if (response && response.status === 200 && response.type === 'basic' && !response.redirected) {
+                const cache = await caches.open(SHELL_CACHE);
+                await cache.put(SHELL_URL, response.clone());
+            }
+        }).catch(() => { /* offline or quota: the old copy stays */ }));
+        event.respondWith(shellResponse(network));
         return;
     }
 
