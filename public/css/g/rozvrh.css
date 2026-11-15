@@ -324,7 +324,9 @@
   .card-dot.active { width: 18px; background: var(--tx); }
 
   /* ---------- Jen změny ---------- */
-  .oc-wrapper { display: grid; gap: 12px; }
+  .oc-wrapper { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  /* kontejner pro úzké rozložení tabulky změn (@container v views.css), stejně jako .chg-class */
+  .oc-day { container-type: inline-size; min-width: 0; }
   .oc-title { font-size: var(--fs-title3); font-weight: 600; }
   .oc-day-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; font-size: var(--fs-em); font-weight: 600; }
   .oc-day-title .chg-count { font-size: var(--fs-foot); font-weight: 500; color: var(--tx-2); }

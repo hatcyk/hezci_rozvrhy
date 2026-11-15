@@ -204,9 +204,11 @@
   .wk-dot { width: 5px; height: 5px; border-radius: 50%; }
   .wk-dot.on { background: var(--tx-2); }
 
-  .pane { display: grid; gap: 10px; min-width: 0; }
+  /* jeden sloupec minmax(0, 1fr): široký potomek (ovládání, tabulka) nesmí roztáhnout celý panel */
+  .pane { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
   .pane-tools:empty { display: none; }
-  .tt-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* úzký telefon (320–360 px): „Jen změny“ se zalomí pod přepínač týdne, místo aby stránka přetekla */
+  .tt-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
   .pane-tools .tt-controls { justify-content: space-between; }
   .pane-tools .tt-sched > button { padding: 0 10px; }
   .tt-only { min-height: var(--tap); padding: 0 12px; }
