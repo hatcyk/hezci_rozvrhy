@@ -1,0 +1,124 @@
+/* ==========================================================================
+   Návrh G „Obloha“ — tokeny
+   Pozadí je obloha: světlý režim = ráno, tmavý = noc. Text je vždy bílý.
+   Tři vrstvy materiálu (Apple HIG Materials: Liquid Glass jen pro ovládání a navigaci):
+     obloha  … pozadí (body::before)
+     závoj   … obsah: moduly, seznamy, časová osa — tónovaná plocha BEZ rozostření
+     sklo    … navigace a ovládání: lišta, panel, přepínače, spodní panely — S rozostřením
+   Barvy závoje jsou naladěné tak, aby bez rozostření vypadaly jako sklo v mockupu
+   (průměrná odchylka 5,9 úrovně ráno a 2,4 v noci, měřeno 13. 11. 2026).
+   ========================================================================== */
+@layer reset, tokens, base, materials, components, shell, views, motion, print;
+
+@layer tokens {
+  :root { color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+
+  :root {
+    /* obloha */
+    --sky-1: light-dark(#14407D, #050A1A);
+    --sky-2: light-dark(#255A9F, #0B1430);
+    --sky-3: light-dark(#3769AA, #15224B);   /* ráno ztmaveno z #3A6EAF: tlumený text přímo na obloze 4,74 : 1 */
+    --glow: light-dark(rgb(255 200 120 / .22), rgb(150 165 255 / .12));
+
+    /* sklo (navigace a ovládání) */
+    --glass: light-dark(rgb(8 24 60 / .26), rgb(255 255 255 / .07));
+    --glass-strong: light-dark(rgb(8 24 60 / .36), rgb(255 255 255 / .10));
+    --glass-blur: blur(26px) saturate(170%);
+    /* spodní panely a dialogy: sklo, ale skoro neprůhledné, aby text nad obsahem zůstal čitelný */
+    --sheet: light-dark(rgb(18 52 104 / .86), rgb(18 26 56 / .88));
+    --backdrop: rgb(2 8 24 / .45);
+
+    /* závoj (obsah, bez rozostření) */
+    --veil: light-dark(rgb(0 55 200 / .38), rgb(60 85 210 / .25));
+    --veil-strong: light-dark(rgb(0 40 150 / .38), rgb(110 130 255 / .12));
+
+    /* plné náhrady (omezená průhlednost, prohlížeč bez backdrop-filter) */
+    --solid: light-dark(#1D4A85, #18213D);
+    --solid-strong: light-dark(#173E72, #1E2847);
+
+    /* okraje, linky, čipy */
+    --rim: rgb(255 255 255 / .20);
+    --hi: rgb(255 255 255 / .28);
+    --hair: rgb(255 255 255 / .16);
+    --chip: rgb(255 255 255 / .14);
+    --chip-hover: rgb(255 255 255 / .20);
+    --chip-press: rgb(255 255 255 / .26);
+    --hover: rgb(255 255 255 / .06);         /* najetí myší na řádek nebo blok */
+    --hover-strong: rgb(255 255 255 / .08);  /* najetí myší v navigaci na skle */
+    --track: rgb(255 255 255 / .22);         /* dráha pruhu průběhu */
+    --shadow-float: 0 10px 30px rgb(0 0 0 / .14);
+    --shadow-sheet: 0 -8px 40px rgb(0 0 0 / .28);
+
+    /* blok hodiny: plný, aby jím neprosvítaly čáry časové osy */
+    --blk: light-dark(#44669A, #3C4766);
+
+    /* text */
+    --tx: #FFFFFF;
+    --tx-2: rgb(255 255 255 / .88);
+
+    /* akcenty: barevné jsou jen ikony, proužky a body, slova zůstávají bílá */
+    --now: #FFD25E;      /* teď, dnešek */
+    --now-ink: #1A2340;  /* text na zlaté */
+    --sub: #7FF0D2;      /* suplování */
+    --room: #D4C4FF;     /* jiná učebna */
+    --cancel: #FFA394;   /* odpadá */
+    --extra: #9FD8FF;    /* akce, exkurze, přidaná hodina */
+
+    /* písmo: systémové (SF Pro na Apple, Roboto na Androidu, Segoe UI na Windows) */
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --fs-caption: 12px;  /* popisek */
+    --fs-foot: 13px;     /* poznámka */
+    --fs-body: 15px;     /* text */
+    --fs-em: 17px;       /* zvýrazněný text */
+    --fs-title3: 20px;   /* nadpis modulu */
+    --fs-title: 28px;    /* nadpis obrazovky */
+    --fs-large: 34px;    /* velký nadpis (počítač) */
+    --fs-hero: 96px;     /* učebna v přehledu */
+
+    /* tvary podle úrovně */
+    --r-panel: 26px;
+    --r-mod: 20px;
+    --r-card: 14px;
+    --r-block: 10px;
+    --r-small: 6px;
+    --r-pill: 999px;
+
+    /* rozměry */
+    --tap: 44px;
+    --tabbar-h: 62px;
+    --side-w: 280px;
+    --gap: 16px;
+    --page-max: 1600px;
+
+    /* pohyb */
+    --ease: cubic-bezier(.2, .8, .2, 1);
+    --ease-out: cubic-bezier(.16, 1, .3, 1);
+    --t-fast: .15s;
+    --t: .25s;
+    --t-slow: .35s;
+
+    /* vrstvy */
+    --z-sticky: 20;
+    --z-tabbar: 50;
+    --z-banner: 60;
+    --z-sheet: 100;
+    --z-toast: 150;
+  }
+
+  /* omezená průhlednost: systémem (Chrome/Edge 118+, Samsung 25+) i přepínačem v nastavení (Safari media query nemá) */
+  @media (prefers-reduced-transparency: reduce) {
+    :root:not([data-transparency="normal"]) {
+      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-blur: none;
+      --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
+    }
+  }
+  :root[data-transparency="reduced"] {
+    --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-blur: none;
+    --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
+  }
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root { --glass: var(--solid); --glass-strong: var(--solid-strong); --sheet: var(--solid-strong); }
+  }
+}

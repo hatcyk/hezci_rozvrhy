@@ -1,0 +1,262 @@
+/* ==========================================================================
+   Návrh G — základ: reset, obloha, písmo, fokus, materiály a společné prvky.
+   Společné prvky mají předponu g- a používají je všechny pohledy.
+   Vzorník: /design.html
+   ========================================================================== */
+
+@layer reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body, h1, h2, h3, h4, p, figure, blockquote, dl, dd, ul, ol { margin: 0; }
+  ul[role="list"], ol[role="list"] { list-style: none; padding: 0; }
+  img, svg, video { display: block; max-width: 100%; }
+  input, button, select, textarea { font: inherit; color: inherit; }
+  button { background: none; border: 0; padding: 0; cursor: pointer; }
+  a { color: inherit; }
+  [hidden] { display: none !important; }
+  dialog { color: inherit; }
+}
+
+@layer base {
+  html { min-height: 100%; background: var(--sky-1); }
+  body {
+    min-height: 100vh; min-height: 100dvh;
+    color: var(--tx);
+    font: 400 var(--fs-body)/1.35 var(--font);
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+    background: transparent;
+    overflow-x: clip;
+  }
+  /* obloha: pevná vrstva pod vším (ne background-attachment: fixed, které na iOS nefunguje) */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(120% 60% at 85% -8%, var(--glow), transparent 60%),
+      linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 48%, var(--sky-3) 100%);
+  }
+  h1, h2, h3, h4 { font-weight: 700; line-height: 1.15; letter-spacing: -.01em; }
+  a { text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  ::selection { background: rgb(255 210 94 / .45); color: var(--tx); }
+
+  /* fokus: zlatý obrys, kontrastní na ranní i noční obloze, na skle i na blocích */
+  :focus-visible { outline: 3px solid var(--now); outline-offset: 2px; }
+  :focus:not(:focus-visible) { outline: none; }
+
+  /* ikony ze spritu: <svg class="i"><use href="icons.svg#name"></use></svg> */
+  svg.i { width: var(--is, 20px); height: var(--is, 20px); flex: none; }
+
+  .vh, .sr-only, .visually-hidden {
+    position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+  }
+  .hidden { display: none !important; }
+
+  /* odkaz „Přeskočit na obsah“ */
+  .skip-link {
+    position: fixed; left: 12px; top: 12px; z-index: 1000; padding: 10px 16px; border-radius: var(--r-pill);
+    background: var(--now); color: var(--now-ink); font-weight: 700; text-decoration: none;
+    transform: translateY(-200%);
+  }
+  .skip-link:focus-visible { transform: none; }
+}
+
+/* ---------- materiály ---------- */
+@layer materials {
+  /* sklo: navigace a ovládání */
+  .g-glass {
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-blur);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--rim);
+    box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
+  }
+  .g-glass-strong { background: var(--glass-strong); }
+  /* závoj: obsah (moduly, seznamy, časová osa) — bez rozostření */
+  .g-veil {
+    background: var(--veil);
+    border: 1px solid var(--rim);
+    box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
+  }
+  .g-veil-strong { background: var(--veil-strong); }
+}
+
+/* ---------- společné prvky ---------- */
+@layer components {
+  /* modul obsahu (jako modul v Počasí) */
+  .g-mod { border-radius: var(--r-mod); padding: 12px 14px 14px; }
+  .g-mod-head {
+    display: flex; align-items: center; gap: 6px; min-height: 20px;
+    font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2); --is: 15px;
+  }
+  .g-mod-head + * { margin-top: 8px; }
+  .g-sep { height: 1px; background: var(--hair); border: 0; margin: 10px 0; }
+
+  /* nadpisy obrazovek */
+  .g-title { font-size: var(--fs-title); font-weight: 700; letter-spacing: -.01em; }
+  .g-sub { font-size: var(--fs-body); font-weight: 500; color: var(--tx-2); }
+
+  /* tlačítka */
+  .g-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: var(--tap); padding: 0 18px; border-radius: var(--r-pill);
+    background: var(--chip); color: var(--tx); font-size: var(--fs-body); font-weight: 600;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .16); text-decoration: none; white-space: nowrap;
+    --is: 18px;
+  }
+  .g-btn:hover { background: var(--chip-hover); }
+  .g-btn:active { background: var(--chip-press); }
+  .g-btn[disabled], .g-btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+  .g-btn--primary { background: var(--now); color: var(--now-ink); box-shadow: none; }
+  .g-btn--primary:hover { background: #FFDC7A; }
+  .g-btn--quiet { background: transparent; box-shadow: none; }
+  .g-btn--quiet:hover { background: var(--chip); }
+  .g-btn--small { min-height: 36px; padding: 0 14px; font-size: 14px; --is: 16px; }
+
+  /* kulaté tlačítko (ikona) */
+  .g-circle {
+    display: inline-grid; place-items: center; flex: none;
+    width: var(--tap); height: var(--tap); border-radius: 50%;
+    color: var(--tx); --is: 20px;
+  }
+  .g-circle:not(.g-glass) { background: var(--chip); }
+  .g-circle:not(.g-glass):hover { background: var(--chip-hover); }
+
+  /* segmentový přepínač: <div class="g-seg g-glass" role="group"><button aria-pressed="true">… */
+  .g-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: var(--r-card); }
+  .g-seg > button, .g-seg > a {
+    min-height: 36px; padding: 0 14px; border-radius: 11px;
+    font-size: 14px; font-weight: 500; color: var(--tx-2); text-decoration: none;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+  }
+  .g-seg > [aria-pressed="true"], .g-seg > [aria-selected="true"], .g-seg > [aria-current], .g-seg > .active {
+    background: var(--chip); color: var(--tx); font-weight: 600; box-shadow: inset 0 1px 0 rgb(255 255 255 / .16);
+  }
+  .g-seg > button:not([aria-pressed="true"]):not([aria-selected="true"]):not(.active):hover { color: var(--tx); }
+
+  /* čip (přepínač filtru) */
+  .g-chip {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
+    border-radius: var(--r-pill); background: var(--chip); color: var(--tx);
+    font-size: 14px; font-weight: 600; --is: 16px; white-space: nowrap;
+  }
+  .g-chip:hover { background: var(--chip-hover); }
+  .g-chip[aria-pressed="true"] { background: var(--tx); color: var(--now-ink); }
+
+  /* počet (zlatá kapka) */
+  .g-count {
+    display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px; background: var(--now); color: var(--now-ink); font-size: 11px; font-weight: 700; line-height: 1;
+  }
+
+  /* pole formuláře */
+  .g-field { display: grid; gap: 6px; font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2); }
+  .g-input, .g-select, .g-field select, .g-field input {
+    min-height: var(--tap); width: 100%; padding: 0 14px; border-radius: 12px;
+    background: var(--chip); color: var(--tx); border: 1px solid var(--rim);
+    font-size: var(--fs-body); font-weight: 500;
+  }
+  .g-select, .g-field select {
+    appearance: none; -webkit-appearance: none; padding-right: 38px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  .g-field select option { color: #10243A; background: #fff; }
+  .g-input::placeholder { color: var(--tx-2); opacity: 1; }
+
+  /* seskupený seznam (iOS) */
+  .g-list { border-radius: var(--r-card); overflow: hidden; }
+  .g-list > * + * { border-top: 1px solid var(--hair); }
+  .g-row {
+    display: flex; align-items: center; gap: 12px; min-height: var(--tap); padding: 10px 14px;
+    color: var(--tx); text-decoration: none; width: 100%; text-align: left; --is: 18px;
+  }
+  button.g-row:hover, a.g-row:hover { background: var(--hover); }
+  .g-row .g-row-end { margin-left: auto; color: var(--tx-2); display: inline-flex; align-items: center; gap: 6px; }
+
+  /* stav hodiny: vždy ikona + slovo; barevná je jen ikona */
+  .g-st { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-foot); font-weight: 600; color: var(--tx); --is: 15px; }
+  .g-st--sub svg { color: var(--sub); }
+  .g-st--room svg { color: var(--room); }
+  .g-st--cancel svg { color: var(--cancel); }
+  .g-st--now svg { color: var(--now); }
+  .g-st--extra svg { color: var(--extra); }
+
+  /* proužek stavu na bloku/řádku: nastav --bar */
+  .g-bar { position: relative; }
+  .g-bar::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--bar, rgb(255 255 255 / .55)); border-radius: 4px 0 0 4px; }
+  .g-bar--now { --bar: var(--now); }
+  .g-bar--sub { --bar: var(--sub); }
+  .g-bar--room { --bar: var(--room); }
+  .g-bar--cancel { --bar: var(--cancel); }
+  .g-bar--extra { --bar: var(--extra); }
+
+  /* prázdný stav: směr, ne nálada */
+  .g-empty { display: grid; justify-items: center; gap: 8px; padding: 28px 16px; text-align: center; color: var(--tx-2); --is: 28px; }
+  .g-empty strong { color: var(--tx); font-size: var(--fs-em); font-weight: 600; }
+
+  /* hláška (kapsle) */
+  .g-banner {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; border-radius: var(--r-card);
+    font-size: 14px; font-weight: 500; --is: 18px;
+  }
+  .g-banner .g-btn { margin-left: auto; }
+  .g-banner--warn svg:first-child { color: var(--now); }
+  .g-banner--error svg:first-child { color: var(--cancel); }
+
+  /* zástupné bloky při načítání (bez blikání) */
+  .g-skel { border-radius: var(--r-block); background: rgb(255 255 255 / .10); }
+
+  /* spodní panel / dialog: <dialog class="g-sheet"> */
+  .g-sheet {
+    border: 1px solid var(--rim); border-radius: var(--r-panel); padding: 0; color: var(--tx);
+    background: var(--sheet); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    box-shadow: inset 0 1px 0 var(--hi), var(--shadow-sheet);
+    max-width: min(560px, calc(100vw - 24px)); max-height: min(86dvh, 820px); overflow: auto;
+  }
+  .g-sheet::backdrop { background: var(--backdrop); }
+  .g-sheet-handle { width: 40px; height: 5px; border-radius: 3px; background: rgb(255 255 255 / .35); margin: 8px auto 0; }
+  .g-sheet-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 8px; }
+  .g-sheet-head h2 { font-size: var(--fs-title3); font-weight: 700; }
+  .g-sheet-head .g-circle { margin-left: auto; width: 36px; height: 36px; --is: 18px; }
+  .g-sheet-body { padding: 4px 16px 20px; }
+  @media (max-width: 1079px) {
+    dialog.g-sheet:modal { margin: auto 0 0; width: 100%; max-width: 100%; border-radius: var(--r-panel) var(--r-panel) 0 0; border-bottom: 0; padding-bottom: env(safe-area-inset-bottom); }
+  }
+
+  /* toast nad spodní lištou */
+  .g-toast {
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: var(--r-pill);
+    font-size: 14px; font-weight: 600; --is: 18px;
+  }
+}
+
+/* ---------- pohyb ---------- */
+@layer motion {
+  @media (prefers-reduced-motion: no-preference) {
+    .g-btn, .g-circle, .g-chip, .g-seg > button, .g-row { transition: background-color var(--t-fast) ease, transform var(--t-fast) ease, color var(--t-fast) ease; }
+    .g-btn:active, .g-circle:active, .g-chip:active { transform: scale(.96); }
+    dialog.g-sheet[open] { animation: g-sheet-in var(--t-slow) var(--ease-out); }
+    dialog.g-sheet[open]::backdrop { animation: g-fade-in var(--t) ease; }
+    @keyframes g-sheet-in { from { transform: translateY(24px); opacity: 0; } }
+    @keyframes g-fade-in { from { opacity: 0; } }
+    ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-slow); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    /* přechody úplně vypnout (0s): „.01ms“ by zapnulo mikropřechod VŠECH vlastností na každém prvku
+       a čtení stylu hned po změně by vracelo starou hodnotu; JS má pro omezený pohyb vlastní větev a pojistné časovače */
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
+  }
+  /* vysoký kontrast: systémové barvy, žádná obloha ani sklo */
+  @media (forced-colors: active) {
+    body::before { display: none; }
+    .g-glass, .g-veil, .g-sheet, .g-btn, .g-chip, .g-seg, .g-circle, .g-input, .g-select { border: 1px solid CanvasText; background: Canvas; -webkit-backdrop-filter: none; backdrop-filter: none; }
+    /* vybrané položky: bez forced-color-adjust: none by Chrome pod text nakreslil podložku v barvě Canvas
+       a slovo by na zvýraznění zmizelo (ověřeno emulací 13. 11.) */
+    .g-seg > [aria-pressed="true"], .g-seg > [aria-selected="true"], .g-seg > [aria-current], .g-seg > .active,
+    .g-chip[aria-pressed="true"], [aria-current="page"], [aria-current="date"] {
+      forced-color-adjust: none; background: Highlight; color: HighlightText; border-color: Highlight;
+    }
+    .g-bar::before { background: CanvasText; }
+  }
+}
