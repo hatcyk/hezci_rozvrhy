@@ -15,6 +15,7 @@ import { loadFavorites } from './favorites.js';
 import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 import { initOfflineDetection, outageBannerText } from './offline.js';
+import { initUpdateNotice } from './sw-update.js';
 import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
 import { debug } from './debug.js';
 import { initNextLessonWidget, refreshNextLessonWidget } from './next-lesson.js';
@@ -228,6 +229,8 @@ async function init() {
 
         // Initialize Service Worker and Notifications
         registerServiceWorker().catch(err => console.error('Service Worker registration failed:', err));
+        // Offer a reload when a deploy replaces the version this page runs
+        initUpdateNotice();
         initializeMessaging().catch(err => console.error('Firebase Messaging initialization failed:', err));
 
         // Re-sync the FCM token for users who have lesson reminders enabled but

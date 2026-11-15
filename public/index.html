@@ -177,6 +177,11 @@
                 <svg class="i" aria-hidden="true"><use href="icons.svg#triangle-alert"></use></svg>
                 <span id="outageBannerText">Data z Bakalářů se teď nedaří aktualizovat – zobrazuji poslední stažená.</span>
             </div>
+            <div id="updateBanner" class="g-banner sh-banner hidden" role="status">
+                <svg class="i" aria-hidden="true"><use href="icons.svg#refresh-cw"></use></svg>
+                <span>Je k dispozici nová verze.</span>
+                <button type="button" class="g-btn g-btn--small" id="updateReload">Obnovit</button>
+            </div>
             <div class="g-banner g-banner--error sh-banner sh-banner--error" id="errorBox">
                 <svg class="i" aria-hidden="true"><use href="icons.svg#circle-alert"></use></svg>
                 <div id="error" class="error hidden" role="alert"></div>
@@ -636,6 +641,6 @@
         });
     </script>
 
-    <script type="module" src="js/app.js?v=fdf19e6961"></script>
+    <script type="module" src="js/app.js?v=7b01ab821f"></script>
 </body>
 </html>

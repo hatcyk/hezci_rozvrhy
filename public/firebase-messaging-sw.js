@@ -197,7 +197,7 @@ self.addEventListener('notificationclick', (event) => {
  * The cache name carries the hashes of the bundles (tools/build.js), so a
  * deploy that changes them installs into a new cache.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-6473f0482f-fdf19e6961';
+const SHELL_CACHE = 'bakalari-shell-6473f0482f-7b01ab821f';
 
 // The app shell (index.html) is kept under this single key, whatever address
 // it was opened with (deep links, /index.html).
@@ -227,7 +227,7 @@ const PRECACHE_URLS = [
     '/spsd_logo_white.png',
     '/icons.svg',
     '/css/app.css?v=6473f0482f',
-    '/js/app.js?v=fdf19e6961',
+    '/js/app.js?v=7b01ab821f',
 ];
 
 /**
