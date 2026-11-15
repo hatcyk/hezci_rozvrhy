@@ -61,6 +61,8 @@
             'závoj': over(color('veil'), sky3),
             'závoj silnější': over(color('veil-strong'), sky3),
             'sklo': over(color('glass'), sky3),
+            // spodní lišta, kulaté hledání a toast plují nad obsahem: nejhorší je bílá plocha pod nimi
+            'plovoucí sklo nad bílou': over(color('glass-float'), white),
             'spodní panel': over(color('sheet'), sky3),
             'blok hodiny': color('blk').c,
         };
