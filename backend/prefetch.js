@@ -9,6 +9,7 @@ const { getFirestore } = require('./firebase-admin-init');
 const { detectTimetableChanges, selectComparisonBaseline } = require('./change-detector');
 const { parseTimetablePage, standardizeGroupName, addRemovedLessonsFromPermanent } = require('./bakalari-parser');
 const { buildChangesAggregate, buildFreeRoomsAggregate, sameAggregateContent, stableStringify } = require('./aggregates');
+const { formatPragueTime } = require('./timezone-manager');
 
 // Configuration
 const BAKALARI_BASE_URL = 'https://mot-spsd.bakalari.cz';
@@ -22,6 +23,9 @@ const DEFAULT_RETRY_DELAY_MS = process.env.VERCEL ? 2000 : 1000;
 const MAX_RETRY_DELAY_MS = 30000;
 const SCHEDULE_TYPES = ['Actual', 'Permanent', 'Next'];
 const AGGREGATE_COLLECTION = 'aggregates';
+// { date: 'YYYY-MM-DD' (Prague) of the last daily re-check of the permanent
+//   schedules, checkedAt, pending: [docKey] that failed and are retried }
+const PERMANENT_REFRESH_DOC = ['system', 'permanentRefresh'];
 
 // Browser-like by default (unchanged behaviour); an operator can identify the
 // bot honestly with BAKALARI_USER_AGENT (see ZMENY.md for the reasoning).
@@ -574,13 +578,29 @@ async function prefetchAllData(options = {}) {
             { type: 'Room', entities: definitions.rooms },
         ];
 
-        // Check if we should fetch permanent schedules
-        // Permanent schedules only change at start of school year (September)
+        // Permanent schedules change mostly at the start of the school year, so in
+        // September they are fetched in every run. They do change during the year
+        // as well (second term, a teacher leaving): a stale copy turned every
+        // lesson it no longer matched into a false "Hodina odpadla", week after
+        // week until September. So outside September each one is re-checked in
+        // the first run of every day (Prague time) - one extra request per
+        // timetable and DAY, ~0.5 % on top of the 96 daily runs - and the ones
+        // that failed are retried in the following runs.
         const isSeptember = now.getMonth() === 8; // 0-11, where 8 = September
+        const today = formatPragueTime(now, 'yyyy-MM-dd');
+        const refreshRef = db.collection(PERMANENT_REFRESH_DOC[0]).doc(PERMANENT_REFRESH_DOC[1]);
+        let refreshState = null;
+        let pendingPermanent = new Set();
+        let dailyRefreshDue = false;
 
         // If not September, fetch existing permanent schedule IDs in one batch
         let existingPermanentIds = new Set();
         if (!isSeptember) {
+            const refreshDoc = await refreshRef.get();
+            refreshState = refreshDoc.exists ? (refreshDoc.data() || {}) : {};
+            dailyRefreshDue = refreshState.date !== today;
+            pendingPermanent = new Set(Array.isArray(refreshState.pending) ? refreshState.pending : []);
+
             const permanentDocs = await db.collection('timetables')
                 .where('scheduleType', '==', 'Permanent')
                 .select('lessonCount') // Only the count, not the full data
@@ -605,10 +625,11 @@ async function prefetchAllData(options = {}) {
                     // Skip permanent schedules if:
                     // 1. It's not September (new school year)
                     // 2. We already have the data in Firebase
-                    if (scheduleType === 'Permanent' && !isSeptember) {
+                    // 3. and they were re-checked today (and did not fail then)
+                    if (scheduleType === 'Permanent' && !isSeptember && !dailyRefreshDue) {
                         const docKey = `${group.type}_${entity.id}_Permanent`;
 
-                        if (existingPermanentIds.has(docKey)) {
+                        if (existingPermanentIds.has(docKey) && !pendingPermanent.has(docKey)) {
                             skippedPermanentCount++;
                             continue; // Skip this task
                         }
@@ -624,8 +645,15 @@ async function prefetchAllData(options = {}) {
         }
 
         if (skippedPermanentCount > 0) {
-            console.log(`⏭️  Skipping ${skippedPermanentCount} permanent schedules (not September, already cached)`);
+            console.log(`⏭️  Skipping ${skippedPermanentCount} permanent schedules (not September, checked today)`);
         }
+        if (dailyRefreshDue) console.log('🔄 First run of the day: re-checking the permanent schedules');
+
+        // Permanent first: the class Actual task adds the cancelled lessons from
+        // the permanent schedule and must see THIS run's copy. In one mixed batch
+        // it used last run's (in September: phantom cancellations for 15 minutes).
+        tasks.sort((a, b) => (b.scheduleType === 'Permanent') - (a.scheduleType === 'Permanent'));
+        const failedPermanent = [];
 
         const totalExpectedRequests = tasks.length;
 
@@ -799,15 +827,33 @@ async function prefetchAllData(options = {}) {
                 } catch (error) {
                     stats.errorCount++;
                     lastTaskError = error;
+                    if (task.scheduleType === 'Permanent') failedPermanent.push(`${task.type}_${task.entity.id}_Permanent`);
                     console.error(`${progress} ❌ ${label}: ${error.message}`);
                 }
             }));
         };
 
-        // Process in batches
-        for (let i = 0; i < tasks.length; i += CONCURRENT_REQUESTS) {
-            const batch = tasks.slice(i, i + CONCURRENT_REQUESTS);
-            await processBatch(batch);
+        // Process in batches; the Permanent tasks (sorted first) are finished
+        // before the first Actual/Next batch starts.
+        const permanentCount = tasks.filter(task => task.scheduleType === 'Permanent').length;
+        for (const part of [tasks.slice(0, permanentCount), tasks.slice(permanentCount)]) {
+            for (let i = 0; i < part.length; i += CONCURRENT_REQUESTS) {
+                await processBatch(part.slice(i, i + CONCURRENT_REQUESTS));
+            }
+        }
+
+        // Remember today's re-check and what is left to retry (written only
+        // when it changes: once a day, plus after a failure / its recovery).
+        if (!isSeptember) {
+            const pending = [...new Set(failedPermanent)].sort();
+            const before = [...pendingPermanent].sort();
+            if (dailyRefreshDue || stableStringify(pending) !== stableStringify(before)) {
+                await refreshRef.set({
+                    date: today,
+                    checkedAt: dailyRefreshDue ? new Date().toISOString() : (refreshState.checkedAt || null),
+                    pending,
+                });
+            }
         }
 
         // Step 4: aggregates (S3) from the snapshots in memory — no extra Bakaláři request

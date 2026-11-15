@@ -137,6 +137,8 @@ function initialStore({ withWeek = true } = {}) {
         'timetables/Room_R2_Permanent': storedDoc('Room', 'R2', 'Permanent', PERM.slice(0, 1), null),
         'timetables/Class_C1_Actual': storedDoc('Class', 'C1', 'Actual', A45, W45, { withWeek, permanent: permanentLessons }),
         'timetables/Class_C1_Next': storedDoc('Class', 'C1', 'Next', N46_OLD, W46, { withWeek }),
+        // permanent schedules already re-checked today (see the daily refresh tests)
+        'system/permanentRefresh': { date: '2026-11-09', checkedAt: '2026-11-09T00:05:00.000Z', pending: [] },
     };
 }
 
@@ -151,6 +153,10 @@ function defaultPages() {
         'Next/Room/R1': page(W47, [N47[0]]),
         'Actual/Room/R2': page(W46, []),
         'Next/Room/R2': page(W47, []),
+        'Permanent/Class/C1': page(null, PERM),
+        'Permanent/Teacher/T1': page(null, PERM),
+        'Permanent/Room/R1': page(null, PERM),
+        'Permanent/Room/R2': page(null, PERM.slice(0, 1)),
     };
 }
 
@@ -520,4 +526,76 @@ test('den volna: žádné „odpadlé“ hodiny ze stálého rozvrhu, žádné �
     assert.deepEqual(db.store.get('aggregates/changes_Actual').days[0].items, []);
     // the other snapshots carry an empty list, the permanent one too
     assert.deepEqual(db.store.get('timetables/Class_C1_Next').daysOff, []);
+});
+
+// ─── stálý rozvrh: denní obnova a pořadí zpracování ─────────────────────────
+
+const permanentCalls = (bak) => bak.calls.filter(c => c.url.includes('/Timetable/Public/Permanent/')).map(c => c.url.split('/Public/')[1]);
+
+test('listopad: změněný stálý rozvrh se při první běhu dne stáhne znovu → žádná falešná „Hodina odpadla“', async (t) => {
+    quiet(t);
+    // Mid-year change: Monday 1st lesson is Fyzika instead of Matematika, in the
+    // permanent schedule and (without any change flag) in the current week.
+    const NEW_PERM = [LESSON(0, 1, 'Fyzika', 'Mgr. Petr Novák', 'A101'), ...PERM.slice(1)];
+    const store = initialStore();
+    store['system/permanentRefresh'] = { date: '2026-11-08', checkedAt: '2026-11-08T00:05:00.000Z', pending: [] };
+    store['timetables/Class_C1_Next'] = storedDoc('Class', 'C1', 'Next', PERM, W46);
+    const pages = { ...defaultPages(), 'Actual/Class/C1': page(W46, NEW_PERM), 'Next/Class/C1': page(W47, NEW_PERM), 'Permanent/Class/C1': page(null, NEW_PERM) };
+    const bak = fakeBakalari(t, { pages });
+    const db = fakeFirestore(store);
+    const result = await run(db);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(permanentCalls(bak).sort(), ['Permanent/Class/C1', 'Permanent/Room/R1', 'Permanent/Room/R2', 'Permanent/Teacher/T1'],
+        'every permanent page once: 1 extra request per timetable and day');
+    assert.equal(db.store.get('timetables/Class_C1_Permanent').data[0].subject, 'Fyzika');
+    const actual = db.store.get('timetables/Class_C1_Actual');
+    assert.deepEqual(actual.data.filter(l => l.type === 'removed'), [], 'used to keep "Matematika / Hodina odpadla" until September');
+    assert.deepEqual(db.store.get('aggregates/changes_Actual').days[0].items, []);
+    assert.equal(db.store.get('system/permanentRefresh').date, '2026-11-09');
+    assert.deepEqual(db.store.get('system/permanentRefresh').pending, []);
+
+    // later the same day: nothing permanent is downloaded again
+    bak.calls.length = 0;
+    const again = await run(db, { now: new Date('2026-11-09T12:00:00Z') });
+    assert.equal(again.status, 'ok');
+    assert.deepEqual(permanentCalls(bak), []);
+    // the next day (Prague time): once more
+    bak.calls.length = 0;
+    await run(db, { now: new Date('2026-11-09T23:10:00Z') });
+    assert.equal(permanentCalls(bak).length, 4);
+});
+
+test('denní obnova: stálý rozvrh, který se nepodařilo stáhnout, se zkusí znovu v dalším běhu (jen on)', async (t) => {
+    quiet(t);
+    const store = initialStore();
+    store['system/permanentRefresh'] = { date: '2026-11-08', pending: [] };
+    const bak = fakeBakalari(t, { failures: { '/Timetable/Public/Permanent/Teacher/T1': { status: 503, remaining: 3 } } });
+    const db = fakeFirestore(store);
+    await run(db);
+    assert.deepEqual(db.store.get('system/permanentRefresh').pending, ['Teacher_T1_Permanent']);
+    assert.equal(db.store.get('system/permanentRefresh').date, '2026-11-09');
+
+    bak.calls.length = 0;
+    const second = await run(db, { now: new Date('2026-11-09T05:15:00Z') });
+    assert.deepEqual(permanentCalls(bak), ['Permanent/Teacher/T1']);
+    assert.equal(second.errorCount, 0);
+    assert.deepEqual(db.store.get('system/permanentRefresh').pending, []);
+});
+
+test('září: stálý rozvrh se zpracuje před aktuálním, takže Actual v témže běhu už počítá s novým', async (t) => {
+    quiet(t);
+    const NEW_PERM = [LESSON(0, 1, 'Fyzika', 'Mgr. Petr Novák', 'A101'), ...PERM.slice(1)];
+    const pages = {
+        ...defaultPages(),
+        'Actual/Class/C1': page('2026-09-07', NEW_PERM),
+        'Next/Class/C1': page('2026-09-14', NEW_PERM),
+        'Permanent/Class/C1': page(null, NEW_PERM),
+    };
+    fakeBakalari(t, { pages });
+    const db = fakeFirestore(initialStore()); // holds last year's permanent schedule (Matematika)
+    const result = await run(db, { now: new Date('2026-09-08T05:00:00Z') });
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(db.store.get('timetables/Class_C1_Actual').data.filter(l => l.type === 'removed'), [],
+        'used to get "Matematika / Hodina odpadla" from the permanent schedule of the previous run');
 });
