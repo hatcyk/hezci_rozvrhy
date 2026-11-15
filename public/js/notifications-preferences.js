@@ -17,7 +17,8 @@ export const NOTIFICATION_TYPES = {
         options: {
             lesson_removed: {
                 label: 'Odpadlé hodiny',
-                description: 'Když hodina odpadne nebo je zrušená',
+                // Also lets through lesson_restored and lesson_replaced (backend/fcm.js)
+                description: 'Když hodina odpadne, když se odpadlá hodina vrátí do rozvrhu a když ji nahradí jiná hodina',
                 default: true
             },
             substitution: {

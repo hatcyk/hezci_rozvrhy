@@ -41,4 +41,17 @@ test.describe('Offline', () => {
     await expect(page.locator('#outageBanner')).toBeVisible();
     await expect(page.locator('#outageBannerText')).toHaveText(/data jsou z dnes v 7:30 \(před 1 h\)/);
   });
+
+  test('částečný sběr: banner řekne, že část rozvrhů může být starší, a po úplném sběru zmizí', async ({ page, app }) => {
+    await app.open('/', { status: { isHealthy: true, lastStatus: 'partial', lastSuccessAt: '2026-11-04T07:00:00.000Z', dataAgeMin: 20 } });
+    await app.timetableReady();
+    await expect(page.locator('#outageBanner')).toBeVisible();
+    await expect(page.locator('#outageBannerText')).toHaveText('Část rozvrhů se z Bakalářů nepodařilo aktualizovat – některé mohou být starší. Všechny byly naposledy staženy dnes v 8:00 (před 20 min).');
+  });
+
+  test('úplný sběr (ok): žádný banner', async ({ page, app }) => {
+    await app.open('/', { status: { isHealthy: true, lastStatus: 'ok', lastSuccessAt: '2026-11-04T07:15:00.000Z', dataAgeMin: 5 } });
+    await app.timetableReady();
+    await expect(page.locator('#outageBanner')).toBeHidden();
+  });
 });

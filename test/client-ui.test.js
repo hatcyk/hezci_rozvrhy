@@ -59,6 +59,29 @@ test('outage banner text shows how old the data are (S4: dataAgeMin, lastSuccess
     assert.equal(outageBannerText({ dataAgeMin: null, lastSuccessAt: 'nonsense' }, now), outageBannerText({}, now));
 });
 
+test('partial prefetch: the banner says that only a part of the timetables is older', async () => {
+    const { outageBannerText } = await import('../public/js/offline.js');
+    const now = new Date(2026, 10, 4, 10, 0);
+    const today = new Date(2026, 10, 4, 9, 30).toISOString();
+    assert.equal(outageBannerText({ isHealthy: true, lastStatus: 'partial', dataAgeMin: 30, lastSuccessAt: today }, now),
+        'Část rozvrhů se z Bakalářů nepodařilo aktualizovat – některé mohou být starší. Všechny byly naposledy staženy dnes v 9:30 (před 30 min).');
+    assert.equal(outageBannerText({ lastStatus: 'partial' }, now),
+        'Část rozvrhů se z Bakalářů nepodařilo aktualizovat – některé mohou být starší.');
+    // every other status keeps the text of a full outage
+    assert.match(outageBannerText({ lastStatus: 'network', dataAgeMin: 150, lastSuccessAt: today }, now), /^Data z Bakalářů se teď nedaří aktualizovat/);
+});
+
+test('notification switches: "Odpadlé hodiny" says it also covers a restored and a replaced lesson', async () => {
+    const { NOTIFICATION_TYPES, getDefaultPreferences } = await import('../public/js/notifications-preferences.js');
+    const { lesson_removed: removed } = NOTIFICATION_TYPES.changes.options;
+    assert.match(removed.description, /odpadne/);
+    assert.match(removed.description, /vrátí/, 'lesson_restored goes through this switch');
+    assert.match(removed.description, /nahradí/, 'lesson_replaced goes through this switch');
+    // the server maps the new types to the existing switches: no new keys in stored preferences
+    assert.deepEqual(Object.keys(getDefaultPreferences().changes).sort(),
+        ['lesson_added', 'lesson_removed', 'room_change', 'subject_change', 'substitution']);
+});
+
 test('first visit follows prefers-color-scheme, a saved choice wins', async () => {
     const { resolveInitialTheme } = await import('../public/js/theme.js');
     assert.equal(resolveInitialTheme(null, true), 'light');

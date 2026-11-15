@@ -129,12 +129,14 @@ async function cleanupOldServiceWorkers() {
 
 /**
  * Show or hide the "data are stale" banner from /api/status (contract S4:
- * isHealthy + dataAgeMin + lastSuccessAt). An older backend without those
+ * isHealthy + dataAgeMin + lastSuccessAt, lastStatus). An older backend without those
  * fields falls back to the metadata/lastPrefetch timestamp in Firestore.
  */
 async function applyBackendStatus(status) {
     if (!dom.outageBanner) return;
-    if (status.isHealthy) {
+    // A partial prefetch keeps the data "fresh" for a while, but a part of the
+    // timetables was not refreshed: say so instead of showing nothing.
+    if (status.isHealthy && status.lastStatus !== 'partial') {
         if (!dom.outageBanner.classList.contains('hidden')) console.log('✅ Data are fresh again - hiding outage banner');
         dom.outageBanner.classList.add('hidden');
         return;
