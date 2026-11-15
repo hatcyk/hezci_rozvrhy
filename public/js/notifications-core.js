@@ -408,6 +408,17 @@ export async function ensureTokenRegistered() {
     }
 }
 
+let startupPreferences = null;
+
+/**
+ * Preferences at app start: the token reconcile and the bell both need them,
+ * one request serves both. Later reads (opening the sheet) ask the server again.
+ */
+export function loadStartupNotificationPreferences() {
+    if (!startupPreferences) startupPreferences = loadNotificationPreferences();
+    return startupPreferences;
+}
+
 /**
  * Boot-time reconcile. A user with notifications on but no token stored on the
  * server gets the token registered again (see below). Beyond that, lesson
@@ -422,7 +433,7 @@ export async function ensureTokenRegistered() {
  */
 export async function reconcileLessonReminderToken() {
     try {
-        const data = await loadNotificationPreferences();
+        const data = await loadStartupNotificationPreferences();
         if (!data) return;
 
         // The user switched notifications off; leave them off. Reminders staying
