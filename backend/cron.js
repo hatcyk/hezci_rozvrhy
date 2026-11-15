@@ -324,6 +324,11 @@ async function runPrefetchJob({ trigger } = {}) {
     return { run, result, error };
 }
 
+/** Is an in-process prefetch (HTTP cron route) running right now? */
+function isPrefetchRunning() {
+    return isRunning;
+}
+
 /**
  * In-process prefetch (HTTP cron route). Skips when one is already running in
  * this process; across processes the GitHub `concurrency` group serializes.
@@ -368,5 +373,6 @@ module.exports = {
     computeStatus,
     getStatus,
     runPrefetchJob,
+    isPrefetchRunning,
     triggerManualPrefetch,
 };
