@@ -95,7 +95,8 @@ async function pulseChangedLessons() {
 
 /**
  * Apply a deep link: select the timetable + schedule + day and load it.
- * @param {{ type, id, schedule, day, highlight }} link
+ * @param {{ type, id, schedule, day, highlight, fromView? }} link
+ *   fromView: opened from another view of the app (view-router.js openTimetable)
  */
 export async function applyDeepLink(link) {
     if (!link || !link.type || !link.id) return;
@@ -135,7 +136,7 @@ export async function applyDeepLink(link) {
     // Phones: a link to a day (or to a change) opens that day, not the overview
     if (link.day !== null && link.day !== undefined || link.highlight) {
         const { showDayScreen } = await import('./shell.js');
-        showDayScreen();
+        showDayScreen({ fromView: !!link.fromView });
     }
 
     if (link.highlight) await pulseChangedLessons();

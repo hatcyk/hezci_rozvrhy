@@ -103,6 +103,16 @@ function lessonParts(item) {
     return { subject, short: abbreviateSubject(subject), place, who, group, note };
 }
 
+/**
+ * Co blok ukazuje zkráceně: název pro čtečku tyto podoby obsahuje, aby šlo
+ * tlačítko hlasem oslovit tím, co je vidět (WCAG 2.5.3 Label in Name).
+ */
+function shownParts(item) {
+    const p = lessonParts(item);
+    const teacher = state.selectedType !== 'Teacher' ? p.who : '';
+    return { short: p.short, teacher, note: p.note };
+}
+
 /** Třídy a atributy bloku: proužek stavu, odpadlá hodina, čas (lesson-status.js). */
 function lessonAttrs(item, day, base) {
     const l = item.lesson;
@@ -184,7 +194,8 @@ function bindLessons(root) {
     root.querySelectorAll('.lesson[data-ref]').forEach((btn) => {
         const lesson = lessonRefs[Number(btn.dataset.ref)];
         if (!lesson) return;
-        addLessonDescription(btn, lessonSentence(itemRefs[Number(btn.dataset.ref)] || { lesson, kind: '', before: null }));
+        const item = itemRefs[Number(btn.dataset.ref)] || { lesson, kind: '', before: null };
+        addLessonDescription(btn, lessonSentence(item, shownParts(item)));
     });
     root.addEventListener('click', (e) => {
         const btn = e.target.closest && e.target.closest('.lesson[data-ref]');

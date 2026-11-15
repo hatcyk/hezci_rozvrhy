@@ -22,25 +22,31 @@ function formatAge(ageMs) {
  * Text of the "data are stale" banner from /api/status (contract S4).
  * Says how old the data are instead of a vague "outage": the backend now
  * reports when the last successful download happened.
- * @param {{ dataAgeMin?: number|null, lastSuccessAt?: string|null }} status
+ * After a partial prefetch (lastStatus 'partial') only a part of the
+ * timetables is older; the time is that of the last complete download.
+ * @param {{ dataAgeMin?: number|null, lastSuccessAt?: string|null, lastStatus?: string|null }} status
  * @param {Date} [now]
  * @returns {string}
  */
 export function outageBannerText(status = {}, now = new Date()) {
-    const base = 'Data z Bakalářů se teď nedaří aktualizovat';
+    const partial = status.lastStatus === 'partial';
+    const base = partial
+        ? 'Část rozvrhů se z Bakalářů nepodařilo aktualizovat – některé mohou být starší.'
+        : 'Data z Bakalářů se teď nedaří aktualizovat';
     const ageMin = Number.isFinite(status.dataAgeMin) ? status.dataAgeMin : null;
     const at = status.lastSuccessAt ? new Date(status.lastSuccessAt) : null;
     const validAt = at && !Number.isNaN(at.getTime()) ? at : null;
 
     if (ageMin === null && !validAt) {
-        return `${base} – zobrazuji poslední stažená.`;
+        return partial ? base : `${base} – zobrazuji poslední stažená.`;
     }
     const ageText = formatAge((ageMin !== null ? ageMin : Math.max(0, Math.floor((now - validAt) / 60000))) * 60000);
-    if (!validAt) return `${base} – zobrazená data jsou stažena ${ageText}.`;
+    if (!validAt) return partial ? `${base} Všechny byly naposledy staženy ${ageText}.` : `${base} – zobrazená data jsou stažena ${ageText}.`;
 
     const hhmm = `${validAt.getHours()}:${String(validAt.getMinutes()).padStart(2, '0')}`;
     const sameDay = validAt.toDateString() === now.toDateString();
     const when = sameDay ? `dnes v ${hhmm}` : `${validAt.getDate()}. ${validAt.getMonth() + 1}. v ${hhmm}`;
+    if (partial) return `${base} Všechny byly naposledy staženy ${when} (${ageText}).`;
     return `${base} – zobrazená data jsou z ${when} (${ageText}).`;
 }
 

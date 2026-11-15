@@ -54,7 +54,7 @@ test.describe('Přehled: dělená hodina', () => {
     await expect(first.locator('.a')).toHaveText('FYZ');
     await expect(first.locator('.r')).toHaveText('2. sk U11');
     // Čtečka: nejdřív skupina, která hodinu má, potom odpadlá
-    await expect(first).toHaveAccessibleName(/^1\. hodina, 8:00–8:45, dělená hodina: Fyzika, 2\. sk, vyučující Libor Návrhový, učebna U11; .+, 1\. sk, .*odpadá, nemoc vyučujícího$/);
+    await expect(first).toHaveAccessibleName(/^1\. hodina, teď, 8:00–8:45, dělená hodina: Fyzika \(FYZ\), 2\. sk, vyučující Libor Návrhový, učebna U11; .+, 1\. sk, .*odpadá, nemoc vyučujícího$/);
   });
 
   test('skupiny s různými předměty: každý předmět má svou skupinu', async ({ page, app, isMobile }) => {
@@ -94,6 +94,37 @@ test.describe('Přehled: data z jiného týdne', () => {
       await expect(page.locator('#timetable .today')).toHaveCount(0);
       await expect(page.locator('#timetable .nowline')).toHaveCount(0);
       await expect(page.locator('#daySelector [aria-current="date"]')).toHaveCount(0);
+    }
+  });
+
+  // Pondělí 16. 11.: Actual je z 2.–6. 11. (o dva týdny zpět), Next z 9.–13. 11.
+  const TWO_WEEKS_LATER = '2026-11-16T08:20:00+01:00';
+
+  test('data stará dva týdny nejsou „z minulého týdne“, uvede se jejich týden', async ({ page, app, isMobile }) => {
+    await app.open('/', { time: TWO_WEEKS_LATER, docs: { 'timetables/Class_C2A_Next': null } });
+    await app.timetableReady();
+    const now = page.locator(isMobile ? '#ovHero' : '#nowCard');
+    await expect(now).toContainText(/rozvrh není aktuální/i);
+    await expect(now).toContainText('Data jsou z týdne 2.–6. listopadu');
+    await expect(now).not.toContainText(/minul/i);
+    if (isMobile) {
+      await expect(page.locator('.ov-tile').first()).toContainText('v týdnu 2.–6. 11.');
+      await expect(page.locator('.ov-tile').first()).not.toContainText(/minul/i);
+    }
+  });
+
+  test('Next existuje, ale také není z tohoto týdne: nevydává se za aktuální', async ({ page, app, isMobile }) => {
+    await app.open('/', { time: TWO_WEEKS_LATER });
+    await app.timetableReady();
+    const now = page.locator(isMobile ? '#ovHero' : '#nowCard');
+    await expect(now).toContainText(/rozvrh není aktuální/i);
+    await expect(now).toContainText('Data jsou z týdne 2.–6. listopadu');
+    await expect(now).not.toContainText(/teď, \d+\. hodina/i);
+    await expect(page.locator('#navChangesCount')).toBeHidden();
+    if (isMobile) {
+      await expect(page.locator('#ovWeekTitle')).toHaveText('Týden 2.–6. listopadu');
+      await expect(page.locator('.ov-weekrows .wr.today')).toHaveCount(0);
+      await expect(page.locator('#ovStrip')).toHaveCount(0);
     }
   });
 
@@ -279,7 +310,7 @@ test.describe('Historie Dne (mobil)', () => {
     await expect(page.locator('#ovHero')).toBeVisible();
   });
 
-  test('„Rozvrh“ u třídy ve Změnách: Zpět vrátí na Přehled a pak do Změn', async ({ page, app }) => {
+  test('„Rozvrh“ u třídy ve Změnách: Zpět vrátí jedním krokem do Změn', async ({ page, app }) => {
     await app.open('/?view=changes');
     const link = page.locator('#changesView a[data-open-class]').first();
     await link.click();
@@ -287,10 +318,27 @@ test.describe('Historie Dne (mobil)', () => {
     await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
     expect(await histScreen(page)).toBe('day');
     await page.goBack();
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'changes');
+    // Vpřed: zpátky na Den té třídy
+    await page.goForward();
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'timetable');
+    await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
+  });
+
+  test('učebna z Volných učeben: „‹“ ukáže Přehled učebny na místě, Zpět pak vrátí do Volných učeben', async ({ page, app }) => {
+    await app.open('/?view=rooms');
+    const link = page.locator('#roomsResult .room-link').first();
+    const name = (await link.innerText()).trim();
+    await link.click();
+    await app.timetableReady(name);
+    await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
+    await page.locator('#backBtn').click();
     await expect(page.locator('html')).toHaveAttribute('data-screen', 'overview');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'timetable');
+    // Obrazovka a záznam historie se shodují
+    expect(await histScreen(page)).toBe(null);
     await page.goBack();
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'changes');
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'rooms');
   });
 
   test('rychlé Zpět po klepnutí na řádek týdne nenechá Den bez záznamu v historii', async ({ page, app }) => {
@@ -318,7 +366,7 @@ test.describe('Názvy hodin pro čtečku', () => {
     await app.timetableReady();
     if (isMobile) {
       const strip = page.locator('#ovStrip .ov-h');
-      await expect(strip.nth(2)).toHaveAccessibleName(/^3\. hodina, 9:45–10:30, Matematika, vyučující Adam Šablonový, učebna U15, suplování, původně /);
+      await expect(strip.nth(2)).toHaveAccessibleName(/^3\. hodina, 9:45–10:30, Matematika \(MAT\), vyučující Adam Šablonový, učebna U15, suplování, původně /);
       await expect(strip.nth(3)).toHaveAccessibleName(/, jiná učebna/);
       await expect(strip.nth(4)).toHaveAccessibleName(/, odpadá, nemoc vyučujícího$/);
       await app.openDay(isMobile);

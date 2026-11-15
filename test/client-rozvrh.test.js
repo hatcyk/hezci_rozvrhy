@@ -265,4 +265,13 @@ test('název hodiny pro čtečku říká totéž co obrazovka', async () => {
     ]);
     assert.equal(slotSentence(split),
         '1. hodina, 8:00–8:45, dělená hodina: Fyzika, 2. sk, vyučující Libor Návrhový, učebna U11; Matematika, 1. sk, vyučující Mgr. Marta Cvičná, učebna A101, odpadá');
+    // WCAG 2.5.3: věta obsahuje i to, co je na tlačítku vidět zkráceně
+    assert.equal(lessonSentence(one([WED[2], WED[3]]), { short: 'MAT', teacher: 'A. Šablonový', note: 'původně PRG, J. Ukázková' }),
+        '3. hodina, 9:45–10:30, Matematika (MAT), vyučující A. Šablonový, učebna U15, suplování, původně PRG, J. Ukázková');
+    assert.equal(lessonSentence(one([WED[0]]), { short: 'Matematika', teacher: '', note: '' }),
+        '1. hodina, 8:00–8:45, Matematika, vyučující Mgr. Marta Cvičná, učebna A101', 'nezkrácený předmět se neopakuje');
+    assert.doesNotMatch(lessonSentence(one([WED[0]]), { short: 'Základy elektrotech...' }), /\(/);
+    assert.equal(slotSentence(split, { shorts: true, now: true }),
+        '1. hodina, teď, 8:00–8:45, dělená hodina: Fyzika (FYZ), 2. sk, vyučující Libor Návrhový, učebna U11; Matematika (MAT), 1. sk, vyučující Mgr. Marta Cvičná, učebna A101, odpadá');
+    assert.match(slotSentence([one([WED[0]])], { shorts: true }), /^1\. hodina, 8:00–8:45, Matematika \(MAT\), vyučující Mgr\. Marta Cvičná, učebna A101$/);
 });

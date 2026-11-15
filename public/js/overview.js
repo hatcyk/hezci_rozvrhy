@@ -32,7 +32,7 @@ const model = {
     dataKey: '',      // type|id, kterému patří data v `actual` (i když se mají načíst znovu)
     actual: null,     // lekce aktuálního týdne
     sched: 'actual',  // ze kterého dokumentu `actual` je (po výpadku sběru může být tento týden v Next)
-    stale: '',        // '' | 'past' | 'other': data nejsou z tohoto týdne
+    stale: '',        // '' | 'past' (minulý týden) | 'old' (starší) | 'other': data nejsou z tohoto týdne
     next: null,       // lekce příštího týdne (když je potřeba)
     loading: null,    // Promise načítání
     signature: '',    // co je teď / další (změna → překreslit pás a týden)
@@ -77,7 +77,7 @@ async function loadData(force = false) {
                     actual = other;
                     sched = 'next';
                 } else {
-                    stale = offset < 0 ? 'past' : 'other';
+                    stale = offset === -1 ? 'past' : offset < -1 ? 'old' : 'other';
                 }
             } else {
                 const st = nowState(actual);
@@ -189,11 +189,25 @@ function whoLine(items) {
     return '';
 }
 
-/** Ze kterého týdne zastaralá data jsou („z minulého týdne (2.–6. listopadu)“). */
+/**
+ * Ze kterého týdne zastaralá data jsou: „z minulého týdne (2.–6. listopadu)“,
+ * u starších jen datum týdne („z týdne 2.–6. listopadu“).
+ */
 function staleText() {
     const mon = weekMonday(model.actual, null);
-    const range = mon ? ` (${weekTitle(mon).replace(/^Týden /, '')})` : '';
-    return `${model.stale === 'past' ? 'z minulého týdne' : 'z jiného týdne'}${range}`;
+    const range = mon ? weekTitle(mon).replace(/^Týden /, '') : '';
+    if (model.stale === 'old' && range) return `z týdne ${range}`;
+    return `${model.stale === 'past' ? 'z minulého týdne' : 'z jiného týdne'}${range ? ` (${range})` : ''}`;
+}
+
+/** Popisek dlaždice Změn u zastaralých dat: „minulý týden“, „v týdnu 2.–6. 11.“. */
+function staleWeekLabel() {
+    if (model.stale === 'past') return 'minulý týden';
+    const mon = model.stale === 'old' ? weekMonday(model.actual, null) : null;
+    if (!mon) return 'v zobrazeném týdnu';
+    const fri = addDays(mon, 4);
+    const from = mon.getMonth() === fri.getMonth() ? `${mon.getDate()}.` : `${mon.getDate()}. ${mon.getMonth() + 1}.`;
+    return `v týdnu ${from}–${fri.getDate()}. ${fri.getMonth() + 1}.`;
 }
 
 /** Stav místo nowState, když data nejsou z tohoto týdne: žádné „teď“ ani „dnes“. */
@@ -361,7 +375,7 @@ function stripHtml(st, now) {
         const places = uniq(shown.map(it => [partial ? groupText(it.lesson.group) : '', placeOf(it.lesson)].filter(Boolean).join(' ')));
         const past = e != null && m >= e;
         const k = KINDS[kind];
-        model.stripRefs.push({ items, hour });
+        model.stripRefs.push({ items, hour, cur: !!cur });
         html += `<li><button type="button" class="ov-h lesson${cur ? ' cur' : ''}${cancelled ? ' is-cancelled' : ''}${past ? ' is-past' : ''}${split ? ' is-split' : ''}" data-strip="${ref++}"${first.changed || cancelled || partial ? ' data-changed="true"' : ''}>
             <span class="t">${cur ? 'Teď' : fmtMin(s)}</span>
             <span class="a">${esc(subjects.join(' / '))}</span>
@@ -460,7 +474,7 @@ function weekChanges(now = new Date()) {
     const data = (upcoming ? model.next : model.actual) || [];
     let count = 0;
     for (let d = 0; d < 5; d++) count += dayChangeEntries(data.filter(l => l.day === d)).length;
-    const label = model.stale ? (model.stale === 'past' ? 'minulý týden' : 'v zobrazeném týdnu') : (upcoming ? 'příští týden' : 'tento týden');
+    const label = model.stale ? staleWeekLabel() : (upcoming ? 'příští týden' : 'tento týden');
     return { data, count, label, stale: !!model.stale };
 }
 
@@ -551,11 +565,12 @@ function renderAll(st, now, { keepScroll = true } = {}) {
     const card = $('nowCard');
     if (card) { card.innerHTML = nowCardHtml(st, now); card.hidden = false; }
 
-    // Název hodiny pro čtečku: jedna věta se stejnými slovy jako obrazovka;
+    // Název hodiny pro čtečku: jedna věta se stejnými slovy jako obrazovka
+    // (i se zkratkou předmětu a „teď“, které jsou na tlačítku vidět);
     // u dělené hodiny nejdřív skupiny, které ji mají, pak ty, kterým odpadá
     ov.querySelectorAll('.ov-h[data-strip]').forEach(btn => {
         const ref = model.stripRefs[Number(btn.dataset.strip)];
-        if (ref && ref.items[0]) addLessonDescription(btn, slotSentence(ref.items));
+        if (ref && ref.items[0]) addLessonDescription(btn, slotSentence(ref.items, { shorts: true, now: ref.cur }));
     });
 
     // Pás hodin: aktuální hodina vidět (nebo poslední pozice)

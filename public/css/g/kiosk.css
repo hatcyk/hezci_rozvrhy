@@ -14,7 +14,9 @@
     --k: clamp(16px, min(2.5vh, 1.42vw), 80px);
     position: fixed; inset: 0; z-index: 1;
     display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .7em;
-    padding: 1.1em 1.5em .9em;
+    padding:
+      max(1.1em, env(safe-area-inset-top)) max(1.5em, env(safe-area-inset-right))
+      max(.9em, env(safe-area-inset-bottom)) max(1.5em, env(safe-area-inset-left));
     font-size: var(--k); line-height: 1.3; color: var(--tx);
   }
 

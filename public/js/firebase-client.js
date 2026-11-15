@@ -145,12 +145,14 @@ async function signIn(force = false) {
         const { token, userId, migratedFrom } = await response.json();
         if (!token || !userId) throw new Error('Auth response is missing token or userId');
 
-        // Save the server-issued userId (it changes once when an old ID is migrated)
-        localStorage.setItem('userId', userId);
-        if (migratedFrom) console.log(`🔁 User ID migrated from ${migratedFrom}`);
-
         // Sign in with custom token
         await auth.signInWithCustomToken(token);
+
+        // Save the server-issued userId (it changes once when an old ID is
+        // migrated) only now: while the sign-in fails, the old ID and its
+        // session stay together and the next start can prove the ID again.
+        localStorage.setItem('userId', userId);
+        if (migratedFrom) console.log(`🔁 User ID migrated from ${migratedFrom}`);
 
         isAuthenticated = true;
         console.log('✅ Authenticated with Firebase');

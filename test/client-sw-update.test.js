@@ -19,7 +19,7 @@ function page({ cacheNames = [OWN], css = 'css/app.css?v=aaaaaaaaaa', js = 'js/a
     const listeners = { sw: {}, doc: {}, button: {} };
     const hidden = new Set(['hidden']);
     const env = { cacheNames, reloads: 0, updates: 0, time: 0, visibilityState: 'visible' };
-    const banner = { classList: { remove: (c) => hidden.delete(c), contains: (c) => hidden.has(c) } };
+    const banner = { classList: { add: (c) => hidden.add(c), remove: (c) => hidden.delete(c), contains: (c) => hidden.has(c) } };
     const button = { addEventListener: (type, fn) => { listeners.button[type] = fn; } };
     const attr = (value) => (value ? { getAttribute: () => value } : null);
     const doc = {
@@ -130,6 +130,49 @@ test('a page resumed from the background notices the update and asks for a newer
     await new Promise((r) => setImmediate(r));
     assert.equal(p.shown(), false);
     await p.becomeVisible();
+    assert.equal(p.shown(), true);
+});
+
+test('a page that already runs the new version under the old worker: no notice, also after the takeover', async () => {
+    const { initUpdateNotice } = await import('../public/js/sw-update.js');
+    // HTML of the new deploy came from the network; the old worker still
+    // controls the page and the new one is only installing.
+    const p = page({ cacheNames: [NEWER] });
+    initUpdateNotice(p.options);
+    await p.becomeVisible();
+    assert.equal(p.shown(), false, 'the cache of this page never existed: nothing newer replaced it');
+    // the worker of this page finishes its install and takes over
+    p.env.cacheNames = [NEWER, OWN];
+    const takeover = await p.controllerChange({ state: 'activating' });
+    await takeover.activate(() => { p.env.cacheNames = [OWN]; });
+    await p.becomeVisible();
+    assert.equal(p.shown(), false);
+});
+
+test('a page newer than its worker is still told when an even newer worker takes over', async () => {
+    const { initUpdateNotice } = await import('../public/js/sw-update.js');
+    const p = page({ cacheNames: ['bakalari-shell-0000000000-1111111111'] });
+    initUpdateNotice(p.options);
+    await p.becomeVisible();
+    assert.equal(p.shown(), false);
+    p.env.cacheNames = [NEWER];
+    await p.controllerChange();
+    assert.equal(p.shown(), true);
+});
+
+test('the notice goes away once the version of the page is the active one again', async () => {
+    const { initUpdateNotice } = await import('../public/js/sw-update.js');
+    const p = page();
+    initUpdateNotice(p.options);
+    p.env.cacheNames = [NEWER];
+    await p.becomeVisible();
+    assert.equal(p.shown(), true);
+    // the deploy was rolled back: the worker of this page is active again
+    p.env.cacheNames = [OWN];
+    await p.becomeVisible();
+    assert.equal(p.shown(), false);
+    p.env.cacheNames = [NEWER];
+    await p.controllerChange();
     assert.equal(p.shown(), true);
 });
 

@@ -277,7 +277,9 @@ export function clearSessionCache() {
  * Ask our backend how fresh the timetable data is (contract S4).
  * Unreachable backend → treated as healthy: the offline banner covers that
  * case, and a false outage alarm would only confuse.
- * @returns {Promise<{ isHealthy: boolean, dataAgeMin: number|null, lastSuccessAt: string|null }>}
+ * `lastStatus` is the result of the last prefetch run; 'partial' means a part
+ * of the timetables was not refreshed.
+ * @returns {Promise<{ isHealthy: boolean, dataAgeMin: number|null, lastSuccessAt: string|null, lastStatus: string|null }>}
  */
 export async function fetchBackendStatus() {
     try {
@@ -296,6 +298,7 @@ export async function fetchBackendStatus() {
             isHealthy: data.isHealthy !== false,
             dataAgeMin: Number.isFinite(data.dataAgeMin) ? data.dataAgeMin : null,
             lastSuccessAt: data.lastSuccessAt || null,
+            lastStatus: typeof data.lastStatus === 'string' ? data.lastStatus : null,
         };
     } catch (error) {
         console.error('⚠️ Backend status check failed:', error.message);

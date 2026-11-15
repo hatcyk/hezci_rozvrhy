@@ -58,8 +58,10 @@ const CHANGES_ONLY = [{
 }];
 const subscribes = () => calls.filter(c => c.url === '/api/fcm/subscribe');
 
+let starts = 0;
+/** One app start: a fresh module instance (the start-up preferences are read once per start). */
 async function reconcile(prefs) {
-    const core = await import('../public/js/notifications-core.js');
+    const core = await import(`../public/js/notifications-core.js?start=${++starts}`);
     const { state } = await import('../public/js/state.js');
     preferences = prefs;
     calls.length = 0;
@@ -94,4 +96,17 @@ test('bez povolení prohlížeče se token nežádá (žádný dialog)', async (
     } finally {
         globalThis.Notification = { permission: 'granted' };
     }
+});
+
+test('při startu se nastavení upozornění načte jedním požadavkem pro kontrolu tokenu i pro zvonek', async () => {
+    const core = await import(`../public/js/notifications-core.js?start=${++starts}`);
+    preferences = { watchedTimetables: CHANGES_ONLY, hasTokens: true, notificationsEnabled: true };
+    calls.length = 0;
+    const [, data] = await Promise.all([core.reconcileLessonReminderToken(), core.loadStartupNotificationPreferences()]);
+    await core.loadStartupNotificationPreferences();
+    assert.equal(calls.filter(c => c.url.startsWith('/api/fcm/preferences/')).length, 1);
+    assert.equal(data.hasTokens, true);
+    // otevření panelu se ptá serveru znovu
+    await core.loadNotificationPreferences();
+    assert.equal(calls.filter(c => c.url.startsWith('/api/fcm/preferences/')).length, 2);
 });

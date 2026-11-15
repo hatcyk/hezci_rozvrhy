@@ -5,7 +5,7 @@
 
 import { state, updateState } from './state.js';
 import { dom } from './dom.js';
-import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences } from './notifications-core.js';
+import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences, loadStartupNotificationPreferences } from './notifications-core.js';
 import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes } from './notifications-multiselect.js';
 import { renderSelectedTimetablesPreferences, renderTimetablePreferencesView } from './notifications-preferences.js';
 import { debug } from './debug.js';
@@ -147,6 +147,9 @@ async function initializeModal() {
 
     // Populate dropdown options
     populateMultiselectOptions();
+
+    // Check debug mode and show/hide debug section
+    updateDebugSectionVisibility();
 
     // Load preferences from server
     await loadNotificationPreferences();
@@ -418,12 +421,17 @@ async function simulateTimetableChange() {
     }
 }
 
+let debugStatusChecked = false;
+
 /**
- * Show/hide debug section based on DEBUG mode
+ * Show/hide debug section based on DEBUG mode. The section lives in this
+ * sheet, so the server is asked when the sheet opens for the first time,
+ * not at every app start.
  */
 function updateDebugSectionVisibility() {
     const debugSection = document.getElementById('debugSimulateSection');
-    if (!debugSection) return;
+    if (!debugSection || debugStatusChecked) return;
+    debugStatusChecked = true;
 
     // Check if in debug mode by checking debug status endpoint
     fetch('/api/debug/status')
@@ -433,8 +441,9 @@ function updateDebugSectionVisibility() {
             if (data.debugMode) populateDebugTimetableSelect();
         })
         .catch(() => {
-            // Network error or other issue - hide debug section
+            // Network error or other issue - hide debug section, ask again next time
             debugSection.hidden = true;
+            debugStatusChecked = false;
         });
 }
 
@@ -463,10 +472,7 @@ export async function initNotificationButton() {
         debugButton.addEventListener('click', simulateTimetableChange);
     }
 
-    // Check debug mode and show/hide debug section
-    updateDebugSectionVisibility();
-
     // Load notification preferences and update bell UI on startup
-    await loadNotificationPreferences();
+    await loadStartupNotificationPreferences();
     updateNotificationBellUI();
 }

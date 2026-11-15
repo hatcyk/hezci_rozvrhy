@@ -10,7 +10,7 @@
  */
 
 import { lessonTimes } from './constants.js';
-import { esc, standardizeGroupName, abbreviateTeacherName } from './utils.js';
+import { esc, standardizeGroupName, abbreviateTeacherName, abbreviateSubject } from './utils.js';
 import { mergeChangeItems, czPlural, originalFromDescription, classifyPair, removalReason } from './changes-core.js';
 
 /* ── ikony ze spritu ────────────────────────────────────────────────────── */
@@ -330,48 +330,64 @@ function changeNoteText(item) {
     return '';
 }
 
-/** Části věty o jedné hodině bez pořadí a času. */
-function sentenceParts(item) {
+/**
+ * Části věty o jedné hodině bez pořadí a času. Věta obsahuje i to, co je na
+ * tlačítku vidět, ve stejné podobě (WCAG 2.5.3 Label in Name): zkratku předmětu
+ * za jeho názvem, jméno vyučujícího a poznámku tak, jak je tlačítko ukazuje.
+ * @param {Object} item - položka slotLessons
+ * @param {{ short?: string, teacher?: string, note?: string }} [shown] - viditelné podoby
+ */
+function sentenceParts(item, shown = {}) {
     const l = item.lesson;
-    const parts = [l.subject || 'Neznámý předmět'];
+    const subject = l.subject || 'Neznámý předmět';
+    // zkrácený dlouhý název („Základy elektrotech...“) není zkratka k vyslovení
+    const short = shown.short && shown.short !== subject && !shown.short.endsWith('...') ? ` (${shown.short})` : '';
+    const parts = [`${subject}${short}`];
     const cls = classOf(l);
     if (cls) parts.push(`třída ${cls}`);
     const group = groupText(l.group);
     if (group) parts.push(group);
-    if (l.teacher) parts.push(`vyučující ${l.teacher}`);
+    if (l.teacher) parts.push(`vyučující ${shown.teacher || l.teacher}`);
     if (l.room) parts.push(`učebna ${l.room}`);
     const k = KINDS[item.kind];
     if (k) parts.push(k.word);
-    const note = changeNoteText(item);
+    const note = shown.note !== undefined ? shown.note : changeNoteText(item);
     if (note) parts.push(note);
     return parts;
 }
 
-const hourLead = (hour) => [`${hour}. hodina`, hourRange(hour)].filter(Boolean);
+/** „3. hodina, 9:45–10:30“; probíhající hodina, u které je vidět „Teď“: „3. hodina, teď, 9:45–10:30“. */
+const hourLead = (hour, now = false) => [`${hour}. hodina`, now ? 'teď' : '', hourRange(hour)].filter(Boolean);
 
 /**
- * Celý název hodiny pro čtečku: „3. hodina, 9:45–10:30, Matematika,
- * vyučující …, učebna U15, suplování, původně Programování, …“. Stav říká
- * stejným slovem jako obrazovka (KINDS), ne obecným „změna“.
+ * Celý název hodiny pro čtečku: „3. hodina, 9:45–10:30, Matematika (MAT),
+ * vyučující A. Šablonový, učebna U15, suplování, původně PRG, J. Ukázková“.
+ * Stav říká stejným slovem jako obrazovka (KINDS), ne obecným „změna“.
  * @param {{ lesson: Object, kind: string, before: Object|null }} item - položka slotLessons
+ * @param {{ short?: string, teacher?: string, note?: string }} [shown] - co z hodiny tlačítko
+ *   ukazuje zkráceně; bez toho plné znění
  */
-export function lessonSentence(item) {
+export function lessonSentence(item, shown = {}) {
     if (!item || !item.lesson) return '';
-    return [...hourLead(item.lesson.hour), ...sentenceParts(item)].join(', ');
+    return [...hourLead(item.lesson.hour), ...sentenceParts(item, shown)].join(', ');
 }
 
 /**
  * Název celého slotu (pás hodin v přehledu). U dělené hodiny nejdřív skupiny,
  * které hodinu mají, potom ty, kterým odpadá.
  * @param {Array} items - slotLessons jednoho slotu
+ * @param {{ shorts?: boolean, now?: boolean }} [shown] - pás ukazuje zkratky
+ *   předmětů a u probíhající hodiny „Teď“ místo času
  */
-export function slotSentence(items) {
+export function slotSentence(items, { shorts = false, now = false } = {}) {
     const list = (items || []).filter(it => it && it.lesson);
     if (!list.length) return '';
-    if (list.length === 1) return lessonSentence(list[0]);
+    const parts = (it) => sentenceParts(it, shorts ? { short: abbreviateSubject(it.lesson.subject) } : {});
+    const lead = hourLead(list[0].lesson.hour, now).join(', ');
+    if (list.length === 1) return `${lead}, ${parts(list[0]).join(', ')}`;
     const off = (it) => it.kind === 'cancel' || it.lesson.type === 'absent';
     const ordered = [...list.filter(it => !off(it)), ...list.filter(off)];
-    return `${hourLead(list[0].lesson.hour).join(', ')}, dělená hodina: ${ordered.map(it => sentenceParts(it).join(', ')).join('; ')}`;
+    return `${lead}, dělená hodina: ${ordered.map(it => parts(it).join(', ')).join('; ')}`;
 }
 
 export { isCancelled };
