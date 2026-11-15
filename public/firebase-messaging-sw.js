@@ -239,6 +239,18 @@ function precacheRequest(url) {
     return url.includes('?v=') ? new Request(url) : new Request(url, { cache: 'no-cache' });
 }
 
+// The bundles as index.html names them (css/app.css?v=…, js/app.js?v=…).
+const SHELL_BUNDLES = PRECACHE_URLS.filter((url) => url.includes('?v=')).map((url) => url.slice(1));
+
+/**
+ * The cached shell must load exactly the bundles of this cache. HTML of
+ * another deploy would start offline with bundles that were never stored
+ * here; the worker of that deploy precaches its own shell.
+ */
+function isOwnShell(html) {
+    return SHELL_BUNDLES.every((bundle) => html.includes(bundle));
+}
+
 self.addEventListener('install', (event) => {
     console.log('[firebase-messaging-sw.js] Install — precaching app shell');
     event.waitUntil((async () => {
@@ -250,6 +262,15 @@ self.addEventListener('install', (event) => {
         // error would activate this worker with an empty cache and delete the
         // working one.
         await cache.addAll(PRECACHE_URLS.map(precacheRequest));
+
+        // A deploy in the middle of the install: the shell just downloaded
+        // belongs to other bundles. Fail as well; the next visit installs the
+        // worker of that deploy.
+        const shell = await cache.match(SHELL_URL);
+        if (!shell || !isOwnShell(await shell.text())) {
+            await caches.delete(SHELL_CACHE);
+            throw new Error('[sw] index.html does not load the bundles of this worker');
+        }
 
         // Cross-origin precache (Firebase SDK). no-cors yields opaque responses
         // which cache.addAll rejects, so we put them one-by-one. Best effort:
@@ -349,13 +370,17 @@ self.addEventListener('fetch', (event) => {
         if (!isShellNavigation(url)) return;
 
         const network = fetch(request);
-        // Keep the shell fresh, also when the answer arrives after the time
-        // limit. Always under SHELL_URL: one copy, not one per deep link.
+        // Keep the shell fresh (index.html can change without the bundles),
+        // also when the answer arrives after the time limit. Always under
+        // SHELL_URL: one copy, not one per deep link. HTML of another deploy
+        // is not stored, see isOwnShell.
         event.waitUntil(network.then(async (response) => {
-            if (response && response.status === 200 && response.type === 'basic' && !response.redirected) {
-                const cache = await caches.open(SHELL_CACHE);
-                await cache.put(SHELL_URL, response.clone());
-            }
+            if (!response || response.status !== 200 || response.type !== 'basic' || response.redirected) return;
+            // Cloned before anything is awaited: the page reads the original
+            const copy = response.clone();
+            if (!isOwnShell(await copy.clone().text())) return;
+            const cache = await caches.open(SHELL_CACHE);
+            await cache.put(SHELL_URL, copy);
         }).catch(() => { /* offline or quota: the old copy stays */ }));
         event.respondWith(shellResponse(network));
         return;

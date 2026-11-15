@@ -28,9 +28,23 @@ const abs = (u) => new URL(typeof u === 'string' ? u : u.url, ORIGIN).href;
 const noSearch = (u) => { const x = new URL(u); x.search = ''; return x.href; };
 
 /** Minimal stand-in for a fetch Response (same-origin responses are "basic"). */
-function res(body, { status = 200, type = 'basic' } = {}) {
-    return { body, status, type, ok: status >= 200 && status < 300, redirected: false, clone() { return res(body, { status, type }); } };
+function res(body, { status = 200, type = 'basic', redirected = false } = {}) {
+    return {
+        body, status, type, ok: status >= 200 && status < 300, redirected,
+        clone() { return res(body, { status, type, redirected }); },
+        async text() { return String(body); },
+    };
 }
+
+/** The bundles this worker precaches, as index.html names them. */
+const OWN_BUNDLES = [...SW_CODE.matchAll(/'\/((?:css\/app\.css|js\/app\.js)\?v=[a-f0-9]+)'/g)].map((m) => m[1]);
+/** index.html of the deploy this worker belongs to (`label` tells the copies apart). */
+const html = (label, bundles = OWN_BUNDLES) => `${label} <link href="${bundles[0]}"><script src="${bundles[1]}"></script>`;
+/** index.html of the next deploy: other bundles. */
+const NEXT_BUNDLES = ['css/app.css?v=bbbbbbbbbb', 'js/app.js?v=bbbbbbbbbb'];
+const isShellPath = (p) => p === '/' || p.startsWith('/?') || p.startsWith('/index.html');
+/** The server of this deploy: index.html for the app addresses, a label for files. */
+const net = (r, label = 'net') => res(isShellPath(r.path) ? html(`${label}:${r.path}`) : `${label}:${r.path}`);
 
 /** Promise that the test settles by hand. */
 function deferred() {
@@ -46,7 +60,7 @@ function deferred() {
  * @param {(req: {url: string, path: string, cache?: string, mode?: string}) => any} [o.respond]
  *   network: return a response, a promise, or throw for a network error
  */
-function loadSW({ caches: initial = {}, respond = (r) => res(`net:${r.path}`), clientList = [] } = {}) {
+function loadSW({ caches: initial = {}, respond = net, clientList = [] } = {}) {
     const listeners = {};
     const store = new Map();
     const fetches = [];
@@ -169,7 +183,7 @@ test('install: precaches the shell, the Firebase SDK and takes over', async () =
     const keys = sw.shell().keys();
     for (const url of sw.constant('PRECACHE_URLS')) assert.ok(keys.includes(abs(url)), `${url} precached`);
     for (const url of sw.constant('CROSS_ORIGIN_PRECACHE')) assert.ok(keys.includes(url), `${url} precached`);
-    assert.equal((await sw.shell().match('/')).body, 'net:/');
+    assert.equal((await sw.shell().match('/')).body, html('net:/'));
     assert.equal(sw.calls.skipWaiting, 1);
 });
 
@@ -177,7 +191,7 @@ test('install: one failed file fails the install, the old cache stays usable', a
     for (const failure of [() => res('down', { status: 503 }), () => { throw new TypeError('Failed to fetch'); }]) {
         const sw = loadSW({
             caches: { [CACHE_1X]: { '/': 'old shell', '/js/app.js?v=a1716c3854': 'old js' } },
-            respond: (r) => (r.path === '/icons.svg' ? failure() : res(`net:${r.path}`)),
+            respond: (r) => (r.path === '/icons.svg' ? failure() : net(r)),
         });
         await assert.rejects(sw.install(), 'the install promise must reject');
         assert.equal(sw.calls.skipWaiting, 0, 'a broken worker must not take over');
@@ -190,10 +204,10 @@ test('install: one failed file fails the install, the old cache stays usable', a
 });
 
 test('install: a failed Firebase SDK download does not block the install', async () => {
-    const sw = loadSW({ respond: (r) => { if (r.url.startsWith(GSTATIC)) throw new TypeError('blocked'); return res(`net:${r.path}`); } });
+    const sw = loadSW({ respond: (r) => { if (r.url.startsWith(GSTATIC)) throw new TypeError('blocked'); return net(r); } });
     await sw.install();
     assert.equal(sw.calls.skipWaiting, 1);
-    assert.equal((await sw.shell().match('/')).body, 'net:/');
+    assert.equal((await sw.shell().match('/')).body, html('net:/'));
 });
 
 test('install leaves older caches alone; only activate removes them', async () => {
@@ -251,20 +265,20 @@ test('activate: removes older shell caches (1.x and 2.0 names), keeps its own an
     await sw.install();
     await sw.activate();
     assert.deepEqual([...sw.store.keys()].sort(), ['firebase-messaging-database', sw.SHELL_CACHE].sort());
-    assert.equal((await sw.shell().match('/')).body, 'net:/', 'own cache is intact');
+    assert.equal((await sw.shell().match('/')).body, html('net:/'), 'own cache is intact');
     assert.equal(sw.calls.claim, 1);
 });
 
 /* ────────────────────────── navigations ────────────────────────── */
 
 test('navigation online: the network answer wins over the cached shell and replaces it', async () => {
-    const sw = loadSW({ respond: (r) => res(`fresh:${r.path}`) });
+    const sw = loadSW({ respond: (r) => net(r, 'fresh') });
     await (await sw.sandbox.caches.open(sw.SHELL_CACHE)).put('/', res('stale shell'));
     const nav = sw.navigate('/');
     assert.ok(nav.intercepted);
-    assert.equal((await nav.response).body, 'fresh:/', 'a new deploy must be picked up on the next load');
+    assert.equal((await nav.response).body, html('fresh:/'), 'a new deploy must be picked up on the next load');
     await nav.settled();
-    assert.equal((await sw.shell().match('/')).body, 'fresh:/');
+    assert.equal((await sw.shell().match('/')).body, html('fresh:/'));
 });
 
 test('navigation: deep links and /index.html are stored under the single key "/"', async () => {
@@ -275,21 +289,21 @@ test('navigation: deep links and /index.html are stored under the single key "/"
         '/?type=Teacher&id=UXYZ&schedule=Next&hl=change', '/index.html', '/index.html?kiosk=changes'];
     for (const link of links) {
         const nav = sw.navigate(link);
-        assert.equal((await nav.response).body, `net:${link}`);
+        assert.equal((await nav.response).body, html(`net:${link}`));
         await nav.settled();
     }
     assert.equal(sw.shell().keys().length, before, 'no extra copy of index.html per address');
-    assert.equal((await sw.shell().match('/')).body, `net:${links.at(-1)}`, 'the shell is refreshed in place');
+    assert.equal((await sw.shell().match('/')).body, html(`net:${links.at(-1)}`), 'the shell is refreshed in place');
 });
 
 test('navigation offline: the cached shell is served for every app address', async () => {
     let online = true;
-    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return res(`net:${r.path}`); } });
+    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return net(r); } });
     await sw.install();
     online = false;
     for (const link of ['/', '/index.html', '/?view=changes', '/?type=Class&id=ZL&schedule=Actual&hl=change']) {
         const nav = sw.navigate(link);
-        assert.equal((await nav.response).body, 'net:/', link);
+        assert.equal((await nav.response).body, html('net:/'), link);
         await nav.settled();
     }
 });
@@ -304,7 +318,7 @@ test('navigation offline without a cached shell: a network error, not an excepti
 test('navigation: a server that does not answer gets about 3 s, then the cached shell', async () => {
     const pending = deferred();
     let hang = false;
-    const sw = loadSW({ respond: (r) => (hang ? pending.promise : res(`net:${r.path}`)) });
+    const sw = loadSW({ respond: (r) => (hang ? pending.promise : net(r)) });
     await sw.install();
     hang = true;
 
@@ -318,12 +332,77 @@ test('navigation: a server that does not answer gets about 3 s, then the cached 
     assert.ok(limits[0].ms >= 2000 && limits[0].ms <= 4000, `limit of about 3 s, got ${limits[0].ms} ms`);
 
     sw.runTimers();
-    assert.equal((await nav.response).body, 'net:/', 'shell from the cache after the limit');
+    assert.equal((await nav.response).body, html('net:/'), 'shell from the cache after the limit');
 
     // the late answer still refreshes the cached shell
-    pending.resolve(res('late but fresh'));
+    pending.resolve(res(html('late but fresh')));
     await nav.settled();
-    assert.equal((await sw.shell().match('/')).body, 'late but fresh');
+    assert.equal((await sw.shell().match('/')).body, html('late but fresh'));
+});
+
+test('navigation: index.html of another deploy is served, but never stored in this cache', async () => {
+    // in time, and after the time limit (the late answer)
+    for (const late of [false, true]) {
+        const pending = deferred();
+        let phase = 'this deploy';
+        const sw = loadSW({
+            respond: (r) => {
+                if (phase === 'offline') throw new TypeError('Failed to fetch');
+                if (phase === 'this deploy') return net(r);
+                if (!isShellPath(r.path)) return res(`next:${r.path}`);
+                return late ? pending.promise : res(html('next:/', NEXT_BUNDLES));
+            },
+        });
+        await sw.install();
+        const ownJs = sw.constant('PRECACHE_URLS').find((u) => u.startsWith('/js/app.js'));
+
+        phase = 'next deploy';
+        const nav = sw.navigate('/');
+        if (late) {
+            await tick();
+            sw.runTimers();
+            assert.equal((await nav.response).body, html('net:/'), 'own shell after the limit');
+            pending.resolve(res(html('next:/', NEXT_BUNDLES)));
+        } else {
+            assert.equal((await nav.response).body, html('next:/', NEXT_BUNDLES), 'the page gets the new deploy');
+        }
+        await nav.settled();
+        assert.equal((await sw.shell().match('/')).body, html('net:/'), `late=${late}: the cached shell stays the one of this cache`);
+
+        // The new worker never finished its install; the next start is offline
+        phase = 'offline';
+        const offline = sw.navigate('/');
+        const shell = (await offline.response).body;
+        await offline.settled();
+        assert.equal(shell, html('net:/'));
+        for (const bundle of [...shell.matchAll(/(?:href|src)="([^"]+)"/g)].map((m) => `/${m[1]}`)) {
+            const file = await sw.request(bundle).response;
+            assert.ok(file, `late=${late}: ${bundle} named by the offline shell is in the cache`);
+        }
+        assert.equal((await sw.request(ownJs).response).body, `net:${ownJs}`);
+    }
+});
+
+test('navigation: a redirected answer is not stored as the shell', async () => {
+    let redirected = false;
+    const sw = loadSW({ respond: (r) => (redirected ? res(html('redirected'), { redirected: true }) : net(r)) });
+    await sw.install();
+    redirected = true;
+    const nav = sw.navigate('/');
+    assert.equal((await nav.response).body, html('redirected'), 'the page still gets the answer');
+    await nav.settled();
+    assert.equal((await sw.shell().match('/')).body, html('net:/'), 'a cached redirected response would fail later navigations');
+});
+
+test('install: index.html of another deploy fails the install, the old cache stays', async () => {
+    const sw = loadSW({
+        caches: { [CACHE_1X]: { '/': 'old shell' } },
+        respond: (r) => (isShellPath(r.path) ? res(html('next:/', NEXT_BUNDLES)) : net(r)),
+    });
+    await assert.rejects(sw.install());
+    assert.equal(sw.calls.skipWaiting, 0);
+    assert.equal((await sw.store.get(CACHE_1X).match('/')).body, 'old shell');
+    assert.ok(!sw.shell(), 'no cache with a foreign shell is left behind');
 });
 
 test('navigation: a fast answer cancels the time limit', async () => {
@@ -349,15 +428,15 @@ test('navigation timeout without a cached shell: keeps waiting for the network',
 test('navigation: a 5xx answer serves the cached shell and does not overwrite it', async () => {
     for (const status of [500, 502, 503, 504]) {
         let down = false;
-        const sw = loadSW({ respond: (r) => (down ? res('Service Unavailable', { status }) : res(`net:${r.path}`)) });
+        const sw = loadSW({ respond: (r) => (down ? res('Service Unavailable', { status }) : net(r)) });
         await sw.install();
         down = true;
         const nav = sw.navigate('/?view=rooms');
         const response = await nav.response;
         assert.equal(response.status, 200, `HTTP ${status}`);
-        assert.equal(response.body, 'net:/');
+        assert.equal(response.body, html('net:/'));
         await nav.settled();
-        assert.equal((await sw.shell().match('/')).body, 'net:/', 'the error page is never cached');
+        assert.equal((await sw.shell().match('/')).body, html('net:/'), 'the error page is never cached');
     }
 });
 
@@ -398,7 +477,7 @@ test('static files: cached copy at once, refreshed from the network in the backg
 
 test('static files: not cached yet → network, then stored; offline → cached copy', async () => {
     let online = true;
-    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return res(`net:${r.path}`); } });
+    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return net(r); } });
     assert.equal((await sw.request('/screenshots/mobil-rozvrh.png').response).body, 'net:/screenshots/mobil-rozvrh.png');
     await tick();
     online = false;
@@ -426,7 +505,7 @@ test('API calls, other methods and foreign origins are never intercepted', () =>
 
 test('Firebase SDK from gstatic: cache-first, so the app boots offline', async () => {
     let online = true;
-    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return r.url.startsWith(GSTATIC) ? res(`net:${r.path}`, { type: 'opaque', status: 0 }) : res(`net:${r.path}`); } });
+    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return r.url.startsWith(GSTATIC) ? res(`net:${r.path}`, { type: 'opaque', status: 0 }) : net(r); } });
     await sw.install();
     sw.fetches.length = 0;
     assert.equal((await sw.request(`${GSTATIC}firebase-auth-compat.js`).response).body, `net:${GSTATIC}firebase-auth-compat.js`);
