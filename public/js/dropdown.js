@@ -224,8 +224,12 @@ export function renderSideFavorites() {
  * @param {'Class'|'Teacher'|'Room'} type
  * @param {string} id
  */
-export function selectTimetable(type, id) {
+export async function selectTimetable(type, id) {
     if (!TYPES[type] || !id) return;
+    // Hledání a oblíbené jsou vidět ve všech pohledech: vybraný rozvrh se ukáže
+    // v pohledu Rozvrh (stejně jako oblíbené z nabídky „⋯“), ne ve skrytém
+    const { getCurrentView, showView } = await import('./view-router.js');
+    if (getCurrentView() && getCurrentView() !== 'timetable') await showView('timetable', {}, { focus: false });
     const item = findItem(type, id);
     updateState('selectedType', type);
     setDropdownValue(id, item ? item.name : id);
