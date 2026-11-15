@@ -158,7 +158,7 @@ export function closeBottomSheet(id) {
         cleanup(sheet, id);
     };
 
-    if (prefersReducedMotion() || document.body.classList.contains('no-transitions')) {
+    if (prefersReducedMotion() || document.body.classList.contains('no-transitions') || !hasCloseTransition(sheet)) {
         finish();
         return;
     }
@@ -175,11 +175,22 @@ export function closeBottomSheet(id) {
     }, 450);
 }
 
+/** Does the closing state ([data-closing]) animate anything? Else close at once. */
+function hasCloseTransition(sheet) {
+    try {
+        const cs = getComputedStyle(sheet);
+        const longest = (list) => Math.max(0, ...String(list || '0s').split(',').map(v => parseFloat(v) * (/ms$/.test(v.trim()) ? 1 : 1000) || 0));
+        return longest(cs.transitionDuration) > 0;
+    } catch {
+        return true;
+    }
+}
+
 /**
  * Initialize swipe-down-to-dismiss gesture
  */
 function initSheetSwipe(sheet, id) {
-    const handle = sheet.querySelector('.bottom-sheet-handle');
+    const handle = sheet.querySelector('.bottom-sheet-handle, .g-sheet-handle');
     const dragTarget = handle || sheet;
 
     if (dragTarget._sheetAbortController) {

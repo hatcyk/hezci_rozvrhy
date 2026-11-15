@@ -13,8 +13,11 @@ const NOW = '2026-11-04T08:20:00+01:00';
 const HEALTHY = { isHealthy: true, lastSuccessAt: '2026-11-04T07:15:00.000Z', dataAgeMin: 5 };
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost']);
 const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
-/** Karty hodin ve všech pěti rozvrženích. */
-const LESSON = '.lesson-card, .card-lesson-half, .compact-lesson-item:not(.compact-empty-lesson):not(.compact-lesson-split), .compact-lesson-half, .agenda-row[data-lesson-id]';
+/**
+ * Hodiny ve všech rozvrženích návrhu G (Den, Týden, Seznam, Karty) i v pásu
+ * hodin přehledu: každá je nativní <button class="lesson">.
+ */
+const LESSON = '.lesson';
 
 /** Odpověď atrapy backendu; cokoli neznámého je 404, aby se nic neočekávaného neschovalo. */
 function apiResponse(method, pathname, status) {
@@ -69,10 +72,19 @@ const test = base.extend({
         await page.addInitScript(installFakeFirebase, { docs: { ...school.docs, ...docs }, storage: seed, offline, userId: USER_ID });
         await page.goto(url, { waitUntil: 'domcontentloaded' });
       },
-      /** Počká, až je vykreslený rozvrh s daným názvem v roletce. */
+      /** Počká, až je vykreslený rozvrh s daným názvem (popisek tlačítka hledání). */
       async timetableReady(label = '2.A') {
         await expect(page.locator('#valueDropdownLabel')).toHaveText(label);
-        await expect(page.locator(LESSON).filter({ visible: true }).first()).toBeVisible();
+        await expect(page.locator('html')).not.toHaveAttribute('data-loading', 'true');
+        await expect(page.locator(LESSON).first()).toBeAttached();
+      },
+      /** Mobil: z přehledu otevře Den (dnešní řádek týdne); na počítači nic. */
+      async openDay(isMobile) {
+        if (!isMobile) return;
+        const today = page.locator('#overview .wr.today');
+        await (await today.count() ? today : page.locator('#overview .wr').first()).click();
+        await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
+        await expect(page.locator('#ttTitle')).toBeFocused(); // přechod doběhl
       },
       setStatus(next) { status = next; },
     };

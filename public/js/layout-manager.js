@@ -4,7 +4,10 @@
  */
 
 import { state, updateState } from './state.js';
-import { LAYOUT_REGISTRY, getLayoutById, layoutExists } from './layout-registry.js';
+import { LAYOUT_REGISTRY, getLayoutById, layoutExists, migrateLayoutId } from './layout-registry.js';
+
+/** All "<id>-mode" classes a layout can leave on the container. */
+const MODE_CLASSES = [...Object.keys(LAYOUT_REGISTRY).map(id => `${id}-mode`), 'only-changes-mode'];
 
 /**
  * Initialize layout system
@@ -12,16 +15,29 @@ import { LAYOUT_REGISTRY, getLayoutById, layoutExists } from './layout-registry.
  */
 export function initLayoutSystem() {
     // Load saved layout preference from localStorage
-    const savedLayout = localStorage.getItem('layoutMode');
-    const savedPreferences = localStorage.getItem('layoutPreferences');
+    let savedLayout = null;
+    let savedPreferences = null;
+    try {
+        savedLayout = localStorage.getItem('layoutMode');
+        savedPreferences = localStorage.getItem('layoutPreferences');
+    } catch { /* storage blocked: defaults */ }
+
+    // Version 2.0 had "agenda" and "single-day"; both became "day" (Den).
+    // The saved value is rewritten once, so Settings shows the new name.
+    const migrated = migrateLayoutId(savedLayout);
+    if (savedLayout && migrated && migrated !== savedLayout) {
+        console.log(`Migrating layoutMode ${savedLayout} → ${migrated}`);
+        try { localStorage.setItem('layoutMode', migrated); } catch { /* ignore */ }
+        savedLayout = migrated;
+    }
 
     // Set default layout mode
-    const platform = window.innerWidth <= 1079 ? 'mobile' : 'desktop';
+    const platform = getCurrentPlatform();
     if (savedLayout && layoutExists(savedLayout)) {
         const savedLayoutConfig = getLayoutById(savedLayout);
         // Only restore saved layout if it's supported on the current platform
         if (savedLayoutConfig.supportedOn.includes(platform)) {
-            updateState('layoutMode', savedLayout);
+            updateState('layoutMode', savedLayoutConfig.id);
         } else {
             updateState('layoutMode', getDefaultLayoutForPlatform(platform));
         }
@@ -31,16 +47,17 @@ export function initLayoutSystem() {
 
     // Set default layout preferences
     const defaultPreferences = {
-        'single-day': {},
+        'day': {},
         'week-view': {},
         'card-view': { cardIndex: 0 },
-        'compact-list': {},
-        'agenda': {}
+        'compact-list': {}
     };
 
     if (savedPreferences) {
         try {
             const parsed = JSON.parse(savedPreferences);
+            delete parsed.agenda;
+            delete parsed['single-day'];
             updateState('layoutPreferences', { ...defaultPreferences, ...parsed });
         } catch (e) {
             console.error('Failed to parse layout preferences:', e);
@@ -61,7 +78,7 @@ export function initLayoutSystem() {
  */
 function migrateOldShowWholeWeek() {
     // Check if showWholeWeek is true and we're on single-day mode
-    if (state.showWholeWeek === true && state.layoutMode === 'single-day') {
+    if (state.showWholeWeek === true && state.layoutMode === 'day' && getCurrentPlatform() === 'desktop') {
         console.log('Migrating showWholeWeek=true to layoutMode=week-view');
         updateState('layoutMode', 'week-view');
         saveLayoutPreference('week-view');
@@ -79,6 +96,7 @@ export async function switchLayout(layoutId) {
         console.error(`Invalid layout ID: ${layoutId}`);
         return;
     }
+    layoutId = layout.id;
 
     console.log(`Switching to layout: ${layoutId}`);
 
@@ -98,7 +116,7 @@ export async function switchLayout(layoutId) {
     cleanupLayoutEventListeners();
 
     // Reset scroll position when switching layouts
-    const container = document.querySelector('.timetable-container');
+    const container = document.getElementById('timetable');
     if (container) {
         container.scrollLeft = 0;
         container.scrollTop = 0;
@@ -117,8 +135,9 @@ export async function switchLayout(layoutId) {
 export async function applyLayout() {
     const layout = getLayoutById(state.layoutMode);
     const container = document.querySelector('.timetable-container');
+    const target = document.getElementById('timetable');
 
-    if (!container) {
+    if (!container || !target) {
         console.warn('Timetable container not found');
         return;
     }
@@ -126,64 +145,37 @@ export async function applyLayout() {
     console.log('Applying layout:', layout.id);
 
     // Remove all layout mode classes
-    container.classList.remove('single-day-mode', 'week-view-mode', 'card-view-mode', 'compact-list-mode', 'agenda-mode', 'only-changes-mode');
+    container.classList.remove(...MODE_CLASSES);
+    document.documentElement.dataset.layout = layout.id;
 
     // "Jen změny": a list of the week's changes replaces every layout, so all
     // the places that re-render (load, day switch, layout switch) respect it.
     const tools = await import('./timetable-tools.js');
     if (tools.onlyChangesActive()) {
         container.classList.add('only-changes-mode');
+        document.documentElement.dataset.layout = 'only-changes';
         const { cleanupLayoutEventListeners } = await import('./layout-renderers.js');
         cleanupLayoutEventListeners();
         const daySel = document.getElementById('daySelector');
         if (daySel) daySel.classList.add('hide-day-selector');
-        await tools.renderOnlyChanges(container);
+        await tools.renderOnlyChanges(target);
         tools.updateTimetableToolbar();
+        notifyLayoutApplied(layout);
         return;
     }
 
     // Add current layout class
     container.classList.add(`${layout.id}-mode`);
-    container.tabIndex = -1; // focus target of the view navigation only (see "Jen změny")
+    target.removeAttribute('tabindex'); // "Jen změny" made the list itself focusable
 
-    // Show/hide day selector based on layout
+    // Show/hide the week strip (day selector) based on layout
     const daySelector = document.getElementById('daySelector');
-    if (daySelector) {
-        if (layout.requiresDaySelector) {
-            daySelector.classList.remove('hide-day-selector');
-            daySelector.classList.remove('hiding');
-            daySelector.classList.add('showing');
-            setTimeout(() => {
-                daySelector.classList.remove('showing');
-            }, 300);
-        } else {
-            daySelector.classList.add('hiding');
-            setTimeout(() => {
-                daySelector.classList.add('hide-day-selector');
-                daySelector.classList.remove('hiding');
-            }, 300);
-        }
-    }
+    if (daySelector) daySelector.classList.toggle('hide-day-selector', !layout.requiresDaySelector);
 
     // Import and call appropriate renderer
     try {
-        const {
-            renderSingleDayLayout,
-            renderWeekLayout,
-            renderCardLayout,
-            renderCompactListLayout,
-            renderAgendaLayout
-        } = await import('./layout-renderers.js');
-
-        const rendererMap = {
-            'renderSingleDayLayout': renderSingleDayLayout,
-            'renderWeekLayout': renderWeekLayout,
-            'renderCardLayout': renderCardLayout,
-            'renderCompactListLayout': renderCompactListLayout,
-            'renderAgendaLayout': renderAgendaLayout
-        };
-
-        const renderer = rendererMap[layout.renderer];
+        const renderers = await import('./layout-renderers.js');
+        const renderer = renderers[layout.renderer];
 
         if (renderer) {
             await renderer();
@@ -194,6 +186,13 @@ export async function applyLayout() {
         console.error('Failed to apply layout:', error);
     }
     tools.updateTimetableToolbar();
+    notifyLayoutApplied(layout);
+}
+
+/** Shell (titles, Den / Týden switch, ‹ › buttons) follows every render. */
+function notifyLayoutApplied(layout) {
+    if (typeof document === 'undefined' || typeof CustomEvent === 'undefined') return;
+    document.dispatchEvent(new CustomEvent('layoutapplied', { detail: { layout: layout.id } }));
 }
 
 /**
@@ -252,7 +251,7 @@ export function requiresDaySelector() {
  * Get current platform based on window width
  * @returns {string} 'mobile' or 'desktop'
  */
-function getCurrentPlatform() {
+export function getCurrentPlatform() {
     return window.innerWidth <= 1079 ? 'mobile' : 'desktop';
 }
 
@@ -261,8 +260,8 @@ function getCurrentPlatform() {
  * @param {string} platform - 'mobile' or 'desktop'
  * @returns {string} Default layout ID
  */
-function getDefaultLayoutForPlatform(platform) {
-    return platform === 'mobile' ? 'agenda' : 'week-view';
+export function getDefaultLayoutForPlatform(platform) {
+    return platform === 'mobile' ? 'day' : 'week-view';
 }
 
 /**

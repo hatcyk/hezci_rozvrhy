@@ -31,6 +31,7 @@ test.describe('Vynucená CSP', () => {
     await page.locator(LESSON).filter({ visible: true }).first().click();
     await expect(page.locator('#lessonModal')).toHaveAttribute('open', '');
     await page.keyboard.press('Escape');
+    await page.click('#moreBtn');
     await page.click('#calendarBtn');
     await expect(page.locator('#calendarModal')).toHaveAttribute('open', '');
     await page.keyboard.press('Escape');

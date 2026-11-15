@@ -90,6 +90,16 @@ test('merge: a lone substitution row still says what it replaced (parsed from th
     assert.equal(other.note, 'Přesunuto', 'unknown change text is shown as it is');
 });
 
+test('merge: a lone room change is "jiná učebna" like in the timetable, not a generic change', async () => {
+    const { mergeChangeItems, kindFromNote } = await core();
+    const [e] = mergeChangeItems([{ hour: 4, group: null, kind: 'changed', subject: 'Český jazyk', teacher: 'Vzorový Petr', room: 'LAB2',
+        description: 'Změna místnosti: A101 → LAB2' }]);
+    assert.equal(e.kind, 'roomChange');
+    assert.equal(e.note, 'Změna místnosti: A101 → LAB2', 'the note with both rooms stays visible');
+    assert.equal(kindFromNote('Suplování: MAT, Modelová Irena (MAT, Modelová Irena)'), 'substitution', 'Bakaláři\'s own word wins');
+    assert.equal(kindFromNote('Přesunuto'), '');
+});
+
 test('merge: removed row without a group pairs with the only change of the slot', async () => {
     const { mergeChangeItems } = await core();
     const entries = mergeChangeItems([

@@ -9,9 +9,9 @@ import { renderSelectedTimetablesPreferences, getDefaultPreferences } from './no
 import { debug } from './debug.js';
 import { esc } from './utils.js';
 
-const GEAR_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>`;
+const GEAR_ICON = '<svg class="i" aria-hidden="true"><use href="icons.svg#settings"></use></svg>';
 
-const CHEVRON_ICON = `<svg class="flat-accordion-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+const CHEVRON_ICON = '<svg class="i flat-accordion-chevron" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>';
 
 /**
  * Populate flat list with accordion categories and toggle switches
@@ -32,7 +32,7 @@ export function populateFlatList() {
     }
 
     if (state.definitions.teachers && state.definitions.teachers.length > 0) {
-        html += renderAccordion('Teacher', 'Učitelé', state.definitions.teachers);
+        html += renderAccordion('Teacher', 'Vyučující', state.definitions.teachers);
     }
 
     container.innerHTML = html;
@@ -82,9 +82,7 @@ function setAccordionOpen(accordion, open) {
 
 function renderAccordion(type, label, items) {
     const watchedCount = items.filter(item => isItemWatched(type, item.id)).length;
-    const countBadge = watchedCount > 0
-        ? `<span class="flat-accordion-count">${watchedCount}</span>`
-        : `<span class="flat-accordion-count" style="display:none">0</span>`;
+    const countBadge = `<span class="flat-accordion-count g-count"${watchedCount > 0 ? '' : ' hidden'}>${watchedCount}</span>`;
 
     let itemsHtml = '';
     items.forEach(item => {
@@ -111,16 +109,13 @@ function renderToggleItem(type, id, name, isWatched) {
     return `
         <div class="flat-list-item" data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}">
             <span class="flat-item-name">${esc(name)}</span>
-            <button type="button" class="flat-item-settings${isWatched ? '' : ' hidden'}" aria-label="Nastavení notifikací: ${esc(name)}" title="Nastavení notifikací">
+            <button type="button" class="flat-item-settings${isWatched ? '' : ' hidden'}" aria-label="Nastavení upozornění: ${esc(name)}" title="Nastavení upozornění">
                 ${GEAR_ICON}
             </button>
-            <label class="flat-toggle">
-                <input type="checkbox" class="flat-toggle-input"
-                       data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}"
-                       aria-label="Sledovat ${esc(name)}"
-                       ${isWatched ? 'checked' : ''}>
-                <span class="flat-toggle-track" aria-hidden="true"></span>
-            </label>
+            <input type="checkbox" role="switch" class="flat-toggle-input g-switch"
+                   data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}"
+                   aria-label="Sledovat ${esc(name)}"
+                   ${isWatched ? 'checked' : ''}>
         </div>
     `;
 }
@@ -198,7 +193,7 @@ function updateAccordionCounts() {
 
         if (countBadge) {
             countBadge.textContent = watchedCount;
-            countBadge.style.display = watchedCount > 0 ? '' : 'none';
+            countBadge.hidden = watchedCount === 0;
         }
     });
 }

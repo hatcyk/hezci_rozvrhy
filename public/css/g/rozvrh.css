@@ -1,0 +1,422 @@
+/* ==========================================================================
+   Návrh G — rozvrh (agent R): Přehled (vzor Apple Počasí), Den a Týden
+   (vzor Kalendář), Seznam, Karty, detail hodiny, načítání.
+   Obsah je závoj (g-veil) bez rozostření; bloky hodin jsou plné (--blk),
+   stav nese ikona + slovo a barevný proužek (g-bar). Akcenty leží vždy na
+   bloku, závoji, skle nebo panelu, nikdy přímo na obloze.
+   ========================================================================== */
+@layer views {
+
+  .tt { display: block; min-width: 0; }
+  /* skrytý text pro čtečku (.vh, .sr-only) je absolutní: tlačítko ho musí držet,
+     jinak by v posouvaném pásu hodin rozšířil stránku */
+  .lesson, .ov-h, .wr, .wg-dh, .ov-tile { position: relative; }
+  .tt:focus { outline: none; }
+  .tt:focus-visible { outline: 3px solid var(--now); outline-offset: 4px; border-radius: var(--r-mod); }
+
+  /* mobil: Přehled, nebo Den; počítač: jen rozvržení */
+  #overview { display: grid; gap: 12px; }
+  @media (max-width: 1079px) {
+    :root[data-screen="overview"] #dayPane { display: none; }
+    :root[data-screen="day"] #overview { display: none; }
+  }
+  @media (min-width: 1080px) {
+    #overview { display: none; }
+  }
+
+  /* ---------- Přehled: hrdina ---------- */
+  .ov-hero {
+    display: grid; justify-items: center; text-align: center; padding: 8px 0 20px;
+    overflow-wrap: anywhere;
+  }
+  .ov-eyebrow { font-size: var(--fs-em); font-weight: 600; }
+  .ov-subj { margin-top: 4px; font-size: 30px; font-weight: 400; letter-spacing: .01em; line-height: 1.15; }
+  .ov-bigline { margin: 2px 0 4px; }
+  .ov-big {
+    display: block; font-size: min(var(--fs-hero), 26vw); font-weight: 200; line-height: 1.04;
+    letter-spacing: -.03em;
+  }
+  .ov-big--split { display: flex; justify-content: center; gap: 28px; }
+  .ov-big--split > span { display: grid; justify-items: center; }
+  .ov-big--split .ov-big-room { font-size: min(68px, 18vw); font-weight: 200; line-height: 1.04; letter-spacing: -.02em; }
+  .ov-big--split small { font-size: var(--fs-body); font-weight: 600; letter-spacing: 0; }
+  .ov-left { font-size: 20px; font-weight: 600; }
+  .ov-next { margin-top: 2px; font-size: var(--fs-em); font-weight: 500; color: var(--tx-2); max-width: 30ch; }
+  .ov-hero--skel { gap: 10px; padding-top: 18px; }
+  .ov-hero--skel .sk-line { height: 18px; }
+  .ov-skel-big { width: 52%; height: 88px; border-radius: 20px; }
+  .ov-skel { display: grid; gap: 10px; }
+  .ov-skel .sk-line { height: 14px; }
+  .ov-skel-strip { display: flex; gap: 8px; }
+  .ov-skel-strip .g-skel { flex: 1; height: 86px; border-radius: var(--r-card); }
+  .ov-error { border-radius: var(--r-mod); }
+
+  /* ---------- Přehled: moduly ---------- */
+  .ov-mod { min-width: 0; }
+  .ov-sum {
+    display: flex; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--hair);
+    font-size: var(--fs-body); line-height: 1.35; --is: 17px;
+  }
+  .ov-sum svg { margin-top: 1px; color: var(--tx-2); }
+  .ov-sum:last-child { padding-bottom: 0; border-bottom: 0; }
+
+  /* pás hodin (jako hodinová předpověď) */
+  .ov-strip {
+    display: flex; gap: 2px; margin: 10px -6px 0; padding: 0 2px 2px;
+    overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; overscroll-behavior-x: contain;
+  }
+  .ov-strip::-webkit-scrollbar { display: none; }
+  .ov-strip > li { flex: none; scroll-snap-align: start; }
+  .ov-h {
+    display: grid; justify-items: center; align-content: start; gap: 6px; width: 64px; min-height: var(--tap);
+    padding: 6px 2px 6px; border-radius: 14px; text-align: center; color: var(--tx);
+  }
+  .ov-h:hover { background: var(--hover); }
+  .ov-h:focus-visible { outline-offset: -3px; }
+  .ov-h .t { font-size: 14px; font-weight: 600; color: var(--tx-2); }
+  .ov-h .a { font-size: 20px; font-weight: 600; line-height: 1.1; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ov-h .r { font-size: 14px; font-weight: 500; }
+  .ov-h .r--long { font-size: var(--fs-caption); }
+  .ov-h .s { display: grid; justify-items: center; min-height: 20px; --is: 20px; }
+  .ov-h.cur { background: var(--chip); }
+  .ov-h.cur .t { color: var(--tx); }
+  .ov-h.is-cancelled .a, .ov-h.is-cancelled .r { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .ico-sub { color: var(--sub); }
+  .ico-room { color: var(--room); }
+  .ico-cancel { color: var(--cancel); }
+  .ico-extra { color: var(--extra); }
+  .ico-now { color: var(--now); }
+
+  /* týden (jako 10denní předpověď) */
+  .ov-week .g-mod-head { padding-bottom: 8px; border-bottom: 1px solid var(--hair); }
+  .ov-week .g-mod-head + * { margin-top: 0; }
+  .ov-weekrows > li + li { border-top: 1px solid var(--hair); }
+  .wr {
+    display: grid; grid-template-columns: 52px 36px 44px minmax(0, 1fr) 44px; align-items: center; gap: 6px;
+    width: 100%; min-height: 50px; padding: 0; font-size: var(--fs-em); text-align: left; color: var(--tx);
+    border-radius: 8px;
+  }
+  .wr:hover { background: var(--hover); }
+  .wr:focus-visible { outline-offset: 1px; }
+  .wr-d { font-weight: 600; }
+  .wr-ic { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-foot); font-weight: 600; --is: 16px; }
+  .wr-ic svg { color: var(--sub); }
+  .wr-t1 { text-align: right; font-weight: 500; color: var(--tx-2); }
+  .wr-t2 { text-align: right; font-weight: 500; }
+  .wr-none { grid-column: 3 / -1; font-size: var(--fs-body); color: var(--tx-2); }
+  .wr-bar { position: relative; display: flex; gap: 2px; height: 6px; }
+  .wr-bar i { flex: 45; border-radius: 3px; background: rgb(255 255 255 / .62); }
+  .wr-bar i.k-sub { background: var(--sub); }
+  .wr-bar i.k-room { background: var(--room); }
+  .wr-bar i.k-extra { background: var(--extra); }
+  .wr-bar i.k-x { background: transparent; box-shadow: inset 0 0 0 1.5px var(--cancel); }
+  .wr-dot {
+    position: absolute; top: 50%; left: var(--at); width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+    background: var(--tx); box-shadow: 0 0 0 3px var(--sky-2), 0 0 0 4.5px var(--now);
+  }
+
+  /* dlaždice */
+  .ov-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ov-tile {
+    display: flex; flex-direction: column; aspect-ratio: 1; min-width: 0; padding: 12px 14px;
+    border-radius: var(--r-mod); color: var(--tx); text-decoration: none;
+  }
+  .ov-tile:hover { background: var(--veil-strong); }
+  @media (min-width: 600px) { .ov-tile { aspect-ratio: auto; min-height: 160px; } }
+  .ov-tile-big { margin-top: 6px; font-size: 46px; font-weight: 300; line-height: 1.05; }
+  .ov-tile-foot { margin-top: auto; font-size: 14px; font-weight: 500; color: var(--tx-2); line-height: 1.3; }
+
+  /* ---------- časová osa (Den) ---------- */
+  .tt-empty { border-radius: var(--r-mod); }
+  .tt-empty span { max-width: 36ch; }
+  .tl {
+    --pad: 14px;
+    position: relative; display: grid; grid-template-columns: 54px minmax(0, 1fr); padding-right: 10px;
+    border-radius: var(--r-mod);
+  }
+  .tl-axis, .tl-body {
+    position: relative; box-sizing: border-box;
+    height: calc(var(--range) * 1.35px + 2 * var(--pad));
+  }
+  .tl-hl, .wg-axis .tl-hl {
+    position: absolute; right: 8px; top: calc(var(--pad) + var(--m) / var(--range) * (100% - 2 * var(--pad)));
+    transform: translateY(-50%); font-size: var(--fs-caption); font-weight: 600; color: var(--tx-2);
+  }
+  .tl-gl {
+    position: absolute; left: 0; right: 0; top: calc(var(--pad) + var(--m) / var(--range) * (100% - 2 * var(--pad)));
+    border-top: 1px solid var(--hair); pointer-events: none;
+  }
+
+  /* blok hodiny */
+  .ev {
+    --gap: 6px;
+    position: absolute; overflow: hidden;
+    top: calc(var(--pad) + var(--m) / var(--range) * (100% - 2 * var(--pad)));
+    height: calc(var(--d) / var(--range) * (100% - 2 * var(--pad)));
+    left: calc(var(--i) * (100% + var(--gap)) / var(--n));
+    width: calc((100% - (var(--n) - 1) * var(--gap)) / var(--n));
+    display: flex; flex-direction: column; gap: 3px; padding: 6px 10px 0 12px;
+    border-radius: var(--r-block); background: var(--blk); color: var(--tx); text-align: left; z-index: 1;
+  }
+  .ev.g-bar::before { border-radius: var(--r-block) 0 0 var(--r-block); }
+  .ev:hover { filter: brightness(1.08); }
+  .ev:focus-visible { z-index: 3; outline-offset: 2px; }
+  .ev-l1 { display: flex; gap: 8px; min-width: 0; font-size: var(--fs-body); font-weight: 600; line-height: 1.2; }
+  .ev-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ev-r { margin-left: auto; flex: none; }
+  .ev-l2 {
+    display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap;
+    font-size: var(--fs-foot); color: var(--tx-2);
+  }
+  .ev-l2 .g-st { font-size: inherit; font-weight: 500; flex: none; }
+  .ev-g { font-weight: 600; color: var(--tx); flex: none; }
+  .ev-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ev-l3 { font-size: var(--fs-caption); color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tl .ev-l3 { display: none; }
+  .ev.is-split { padding-right: 8px; }
+  /* dělená hodina: místo vyučujícího stačí stav, když nějaký je */
+  .ev.is-split .g-st ~ .ev-w { display: none; }
+  .ev.is-split .ev-l2 { flex-wrap: wrap; row-gap: 2px; }
+  .ev.current-time { --bar: var(--now); }
+  .ev.is-cancelled { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cancel) 72%, transparent); }
+  .ev.is-cancelled .ev-s, .ev.is-cancelled .ev-r { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .ev.deep-highlight, .ls-row.deep-highlight, .card-main.deep-highlight, .card-half.deep-highlight {
+    box-shadow: 0 0 0 3px var(--now);
+  }
+
+  /* čára „teď“ */
+  /* čára vede POD bloky: přes text bloku by vypadala jako přeškrtnutí, které znamená „odpadá“.
+     Teď ukazuje zlatý proužek aktuálního bloku, štítek času na ose a čára v mezerách a přestávkách. */
+  .nowline {
+    position: absolute; left: 0; right: 0; z-index: 0; height: 0; pointer-events: none;
+    top: calc(var(--pad) + var(--m) / var(--range) * (100% - 2 * var(--pad)));
+    border-top: 2px solid var(--now);
+  }
+  .nowline::before {
+    content: ""; position: absolute; left: -5px; top: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--now);
+  }
+  .now-pill {
+    position: absolute; right: calc(100% + 8px); top: -11px; padding: 1px 6px; border-radius: 8px;
+    font-size: var(--fs-caption); font-weight: 700; color: var(--now-ink); background: var(--now); white-space: nowrap;
+  }
+  .axis-now { right: 6px; top: calc(var(--pad) + var(--m) / var(--range) * (100% - 2 * var(--pad))); transform: translateY(-50%); z-index: 3; }
+
+  /* ---------- Týden (počítač) ---------- */
+  .wg {
+    --pad: 14px;
+    display: grid; grid-template-rows: auto minmax(0, 1fr); border-radius: var(--r-panel); overflow: hidden;
+  }
+  .wg-head { display: grid; grid-template-columns: 64px repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--hair); }
+  .wg-dh {
+    display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 58px;
+    border-left: 1px solid var(--hair); font-size: var(--fs-body); font-weight: 600; color: var(--tx-2);
+  }
+  .wg-dh:hover { background: var(--hover); }
+  .wg-dh:focus-visible { outline-offset: -4px; }
+  .wg-date { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; font-size: var(--fs-em); color: var(--tx); }
+  .wg-dh.today { color: var(--tx); }
+  .wg-dh.today .wg-date { background: var(--now); color: var(--now-ink); }
+  .wg-chg { display: inline-flex; align-items: center; gap: 3px; font-size: var(--fs-caption); color: var(--tx); --is: 13px; }
+  .wg-chg svg { color: var(--sub); }
+  .wg-body { display: grid; grid-template-columns: 64px repeat(5, minmax(0, 1fr)); }
+  .wg-axis, .wg-col {
+    position: relative; box-sizing: border-box;
+    height: max(calc(var(--range) * 1.1px + 2 * var(--pad)), calc(100dvh - 216px));
+  }
+  .wg-col { border-left: 1px solid var(--hair); container-type: inline-size; }
+  /* úzký sloupec (malý notebook): zkratka předmětu místo celého názvu */
+  .ev-s .sh { display: none; }
+  @container (max-width: 150px) {
+    .ev-s .fl { display: none; }
+    .ev-s .sh { display: inline; }
+    .wg-col .ev:not(.is-split) .ev-s { -webkit-line-clamp: 1; }
+  }
+  .wg-col .ev.is-split .ev-l3 { display: none; }
+  .wg-col.today { background: rgb(255 255 255 / .05); }
+  .wg-col .ev {
+    --gap: 4px;
+    left: calc(6px + var(--i) * (100% - 12px + var(--gap)) / var(--n));
+    width: calc((100% - 12px - (var(--n) - 1) * var(--gap)) / var(--n));
+    padding: 7px 10px 0 13px;
+  }
+  .wg-col .ev.is-split { padding: 7px 6px 0 10px; }
+  .wg-col .ev-l1 { font-size: 14px; }
+  .wg-col .ev-l2 { font-size: var(--fs-caption); }
+  .wg-col .ev:not(.is-split) .ev-s { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .wg-col .nowline::before { left: -5px; }
+  .wg-free {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2);
+  }
+
+  /* Den na počítači: stejná osa, výška podle okna */
+  @media (min-width: 1080px) {
+    .tl { grid-template-columns: 64px minmax(0, 1fr); padding-right: 14px; border-radius: var(--r-panel); }
+    .tl-axis, .tl-body { height: max(calc(var(--range) * 1.15px + 2 * var(--pad)), calc(100dvh - 290px)); }
+    .tl .ev { padding: 8px 14px 0 16px; }
+    .tl .ev-l1 { font-size: var(--fs-em); }
+    .tl .ev-l2 { font-size: var(--fs-body); }
+    .tl .ev-l3 { display: block; font-size: var(--fs-foot); }
+    .tl .ev.is-split .ev-l1 { font-size: var(--fs-body); }
+  }
+
+  /* ---------- Seznam ---------- */
+  .ls { border-radius: var(--r-mod); padding: 4px 0; overflow: hidden; }
+  .ls-list > li + li { border-top: 1px solid var(--hair); }
+  .ls-row {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: start;
+    width: 100%; min-height: 62px; padding: 11px 14px 11px 18px; color: var(--tx); text-align: left;
+  }
+  .ls-row.g-bar::before { left: 6px; top: 12px; bottom: 12px; width: 4px; border-radius: 2px; }
+  button.ls-row:hover { background: var(--hover); }
+  .ls-row:focus-visible { outline-offset: -3px; border-radius: 12px; }
+  .ls-row.current-time { --bar: var(--now); background: rgb(255 255 255 / .06); }
+  .ls-time { display: grid; font-variant-numeric: tabular-nums; }
+  .ls-time > span { font-size: var(--fs-foot); color: var(--tx-2); }
+  .ls-time > .ls-t1 { font-size: var(--fs-body); font-weight: 600; color: var(--tx); }
+  .ls-time.is-cont { visibility: hidden; }
+  .ls-main { display: grid; gap: 3px; min-width: 0; }
+  .ls-l1 { display: flex; gap: 8px; font-size: var(--fs-em); font-weight: 600; line-height: 1.25; }
+  .ls-s { min-width: 0; }
+  .ls-r { margin-left: auto; flex: none; }
+  .ls-l2 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: var(--fs-foot); color: var(--tx-2); }
+  .ls-l3 { font-size: var(--fs-foot); color: var(--tx-2); }
+  .ls-row.is-cancelled .ls-s, .ls-row.is-cancelled .ls-r { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .ls-free .ls-s { font-weight: 500; color: var(--tx-2); font-size: var(--fs-body); }
+  .ls-free .ls-l2 { font-size: var(--fs-caption); }
+
+  /* ---------- Karty ---------- */
+  .cards { margin-inline: -16px; }
+  .cards-track {
+    display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none;
+    padding: 2px calc(16px + 6%) 4px; overscroll-behavior-x: contain;
+  }
+  .cards-track::-webkit-scrollbar { display: none; }
+  .card {
+    flex: 0 0 88%; scroll-snap-align: center; display: flex; flex-direction: column; gap: 10px;
+    min-height: 260px; padding: 14px; border-radius: var(--r-panel);
+    box-shadow: inset 0 1px 0 var(--hi); /* stín by posouvaný pás ořízl do obdélníku */
+  }
+  .card-head { display: flex; justify-content: space-between; gap: 10px; padding: 0 4px; font-size: var(--fs-body); font-weight: 600; }
+  .card-t { color: var(--tx-2); font-weight: 500; }
+  .card-main, .card-half {
+    flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0;
+    padding: 14px 14px 14px 18px; border-radius: var(--r-card); background: var(--blk); color: var(--tx); text-align: left;
+  }
+  .card-main.g-bar::before, .card-half.g-bar::before { border-radius: var(--r-card) 0 0 var(--r-card); }
+  .card-main.current-time, .card-half.current-time { --bar: var(--now); }
+  .card-g { font-size: var(--fs-foot); font-weight: 700; }
+  .card-s { font-size: 26px; font-weight: 700; line-height: 1.15; overflow-wrap: anywhere; }
+  .card-r { margin: 4px 0; font-size: 64px; font-weight: 200; line-height: 1; letter-spacing: -.02em; }
+  .card-w { font-size: var(--fs-em); font-weight: 500; }
+  .card-n { font-size: var(--fs-foot); color: var(--tx-2); }
+  .card-st { font-size: var(--fs-body); --is: 18px; }
+  .card-split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .card-half .card-s { font-size: 20px; }
+  .card-half .card-r { font-size: 40px; }
+  .card-main.is-cancelled, .card-half.is-cancelled { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cancel) 72%, transparent); }
+  .is-cancelled .card-s, .is-cancelled .card-r { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .card-main:focus-visible, .card-half:focus-visible { outline-offset: 2px; }
+  .card-free { flex: 1; display: grid; place-content: center; justify-items: center; gap: 8px; font-size: 20px; font-weight: 600; color: var(--tx-2); --is: 32px; }
+  .cards-nav { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 12px; }
+  .cards-dots { display: flex; align-items: center; gap: 6px; }
+  .card-dot { width: 6px; height: 6px; border-radius: 3px; background: rgb(255 255 255 / .4); }
+  .card-dot.active { width: 18px; background: var(--tx); }
+
+  /* ---------- Jen změny ---------- */
+  .oc-wrapper { display: grid; gap: 12px; }
+  .oc-title { font-size: var(--fs-title3); font-weight: 600; }
+  .oc-day-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; font-size: var(--fs-em); font-weight: 600; }
+  .oc-day-title .chg-count { font-size: var(--fs-foot); font-weight: 500; color: var(--tx-2); }
+  .oc-empty { border-radius: var(--r-mod); }
+
+  /* ---------- načítání ---------- */
+  .timetable-skeleton.hidden { display: none; }
+  .timetable-container { position: relative; min-width: 0; }
+  .sk-line { display: block; width: var(--w, 100%); height: 12px; border-radius: 6px; }
+  .sk-tl, .sk-list, .sk-card, .sk-cal { border-radius: var(--r-mod); padding: 14px; display: grid; gap: 12px; }
+  .sk-tl-row { display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: center; }
+  .sk-time { display: block; height: 12px; border-radius: 6px; }
+  .sk-block { display: block; width: var(--w, 90%); height: 52px; }
+  .sk-row { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; padding: 6px 0; }
+  .sk-lines { display: grid; gap: 8px; }
+  .sk-card { min-height: 360px; align-content: start; }
+  .sk-big { display: block; width: 50%; height: 64px; border-radius: 14px; }
+  .sk-cal { border-radius: var(--r-panel); }
+  .sk-cal-head, .sk-cal-body { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .sk-dh { display: block; height: 32px; border-radius: 16px; }
+  .sk-col { display: grid; gap: 12px; }
+  .sk-ev { display: block; height: 74px; }
+
+  /* ---------- detail hodiny ---------- */
+  .ld-head { align-items: flex-start; }
+  .ld-title { display: grid; gap: 6px; min-width: 0; padding-top: 4px; }
+  .ld-title h2 { font-size: 24px; line-height: 1.15; overflow-wrap: anywhere; }
+  .ld-status { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .ld-status[hidden] { display: none; }
+  .ld-status .g-st { font-size: var(--fs-body); --is: 18px; }
+  .ld-list { margin: 0; background: var(--veil-strong); }
+  .ld-row { display: grid; grid-template-columns: minmax(104px, auto) minmax(0, 1fr); align-items: center; gap: 12px; min-height: var(--tap); padding: 8px 14px; }
+  .ld-row[hidden] { display: none; }
+  .ld-row dt { display: flex; align-items: center; gap: 8px; color: var(--tx-2); font-size: var(--fs-body); --is: 17px; }
+  .ld-row dd { margin: 0; text-align: right; font-weight: 500; overflow-wrap: anywhere; }
+  .ld-none { color: var(--tx-2); }
+  .modal-link {
+    display: inline-flex; align-items: center; gap: 2px; min-height: var(--tap); color: var(--tx);
+    text-decoration: underline; text-decoration-color: rgb(255 255 255 / .45); text-underline-offset: 3px; --is: 16px;
+  }
+  .modal-link:hover { text-decoration-color: currentColor; }
+  .ld-go { color: var(--tx-2); }
+  .ld-mod { margin-top: 12px; padding: 12px 14px 14px; border-radius: var(--r-card); background: var(--veil-strong); }
+  .ld-mod.hidden { display: none; }
+  .ld-mod .g-mod-head + * { margin-top: 0; }
+  .ld-diff-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: start; margin-top: 8px; }
+  .ld-diff-arrow { margin-top: 18px; color: var(--tx-2); }
+  .ld-diff-col { display: grid; gap: 4px; min-width: 0; }
+  .ld-label { font-size: var(--fs-caption); font-weight: 600; color: var(--tx-2); }
+  .ld-value { font-size: var(--fs-body); line-height: 1.35; overflow-wrap: anywhere; }
+  .ld-value > .chg-kind { display: flex; width: fit-content; margin-bottom: 2px; }
+  #lessonModal .chg-subject { font-weight: 600; }
+  #lessonModal .chg-meta, #lessonModal .chg-note, #lessonModal .chg-none { display: block; color: var(--tx-2); font-size: var(--fs-foot); }
+  #lessonModal .chg-struck { text-decoration: line-through; text-decoration-thickness: 2px; }
+  .ld-changes { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 10px; }
+  .ld-changes > .g-mod-head { grid-column: 1 / -1; margin-bottom: 8px; }
+  .ld-changes-icon { --is: 20px; padding-top: 1px; }
+  .ld-changes-content { display: grid; gap: 4px; font-size: var(--fs-body); line-height: 1.35; }
+  .change-label { color: var(--tx-2); }
+  .change-value { overflow-wrap: anywhere; }
+
+  /* počítač: dialog vedle bloku (jako bublina v Kalendáři) */
+  @media (min-width: 1080px) {
+    .lesson-sheet { width: min(420px, calc(100vw - 32px)); }
+    .lesson-sheet.is-anchored { position: fixed; inset: auto; margin: 0; max-height: calc(100dvh - 32px); }
+    .lesson-sheet.is-anchored::backdrop { opacity: .4; }
+  }
+
+  /* ---------- varování „světlý režim v noci“ ---------- */
+  @media (min-width: 1080px) { .theme-warning { width: min(420px, calc(100vw - 32px)); } }
+  .theme-warning-head { gap: 12px; padding-top: 18px; }
+  .theme-warning-icon { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--chip); color: var(--now); --is: 20px; }
+  .theme-warning-body p { color: var(--tx-2); line-height: 1.4; }
+  .theme-warning-actions { display: flex; gap: 10px; padding: 8px 16px 20px; }
+  .theme-warning-actions .g-btn { flex: 1; padding: 0 12px; white-space: normal; line-height: 1.2; }
+  @media (min-width: 1080px) { .theme-warning .g-sheet-handle { display: none; } }
+}
+
+@layer motion {
+  @media (prefers-reduced-motion: no-preference) {
+    .ev, .ls-row, .ov-h, .wr, .wg-dh, .ov-tile, .card-main, .card-half { transition: background-color var(--t-fast) ease, filter var(--t-fast) ease, transform var(--t-fast) ease; }
+    .ev:active, .ov-h:active, .card-main:active, .card-half:active { transform: scale(.98); }
+    .nowline::before { animation: rz-breathe 2.8s ease-in-out infinite; }
+    @keyframes rz-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--now) 25%, transparent); } }
+    .ev.deep-highlight, .ls-row.deep-highlight, .card-main.deep-highlight, .card-half.deep-highlight { animation: rz-pulse 1.4s ease-in-out 3; }
+    @keyframes rz-pulse { 50% { box-shadow: 0 0 0 6px var(--now); } }
+  }
+  @media (forced-colors: active) {
+    .ev, .ls-row, .card-main, .card-half, .ov-h, .wr { border: 1px solid CanvasText; forced-color-adjust: auto; }
+    .nowline { border-top-color: Highlight; }
+    .nowline::before, .now-pill, .wr-dot { background: Highlight; color: HighlightText; }
+    .wr-bar i { background: CanvasText; }
+    .wr-bar i.k-x { background: Canvas; box-shadow: inset 0 0 0 1.5px CanvasText; }
+  }
+}

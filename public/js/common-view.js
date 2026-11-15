@@ -9,10 +9,11 @@ import { fetchTimetable } from './api.js';
 import { commonFreeSlots, freeRanges, rangeLabel, parseEntityList, formatEntityList, MIN_ENTITIES, MAX_ENTITIES } from './common-free-core.js';
 import { state } from './state.js';
 import { esc, setPressed, abbreviateTeacherName, getMondayOfWeek } from './utils.js';
-import { days, lessonTimes } from './constants.js';
+import { days, daysShort, lessonTimes } from './constants.js';
 import { updateViewParams } from './view-router.js';
 import { shareLink } from './share.js';
 import { czPlural } from './changes-core.js';
+import { icon } from './changes-render.js';
 
 const WEEK_TEXT = { actual: 'tento týden', next: 'příští týden', permanent: 'podle stálého rozvrhu' };
 
@@ -85,7 +86,7 @@ function fillPicker() {
     const opt = (type, x) => (taken.has(`${type}:${x.id}`) ? '' : `<option value="${esc(type)}:${esc(x.id)}">${esc(x.name)}</option>`);
     const teachers = [...(state.definitions.teachers || [])].sort((a, b) => a.name.localeCompare(b.name, 'cs'));
     const classes = [...(state.definitions.classes || [])].sort((a, b) => a.name.localeCompare(b.name, 'cs', { numeric: true }));
-    $('commonPick').innerHTML = '<option value="">Vyberte vyučujícího nebo třídu…</option>'
+    $('commonPick').innerHTML = '<option value="">Vyberte ze seznamu…</option>'
         + `<optgroup label="Vyučující">${teachers.map(t => opt('Teacher', t)).join('')}</optgroup>`
         + `<optgroup label="Třídy">${classes.map(c => opt('Class', c)).join('')}</optgroup>`;
     const full = selection.length >= MAX_ENTITIES;
@@ -97,7 +98,7 @@ function update() {
     fillPicker();
     $('commonChosen').innerHTML = selection.map(s => {
         const { full } = labels(s);
-        return `<li class="chip"><span>${esc(full)}</span><button type="button" class="chip-remove" data-key="${esc(`${s.type}:${s.id}`)}" aria-label="Odebrat ${esc(full)}"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></li>`;
+        return `<li class="chip">${icon(s.type === 'Teacher' ? 'user' : 'users')}<span class="chip-name">${esc(full)}</span><button type="button" class="chip-remove" data-key="${esc(`${s.type}:${s.id}`)}" aria-label="Odebrat ${esc(full)}">${icon('x')}</button></li>`;
     }).join('');
     $('commonChosen').hidden = selection.length === 0;
     setPressed($('commonWeek').querySelectorAll('button'), b => b.dataset.week === week);
@@ -113,11 +114,15 @@ async function compute() {
         status.textContent = selection.length === 0
             ? `Vyberte aspoň ${MIN_ENTITIES} vyučující nebo třídy (nejvýš ${MAX_ENTITIES}).`
             : 'Přidejte ještě aspoň jednoho vyučujícího nebo třídu.';
-        result.innerHTML = '';
+        result.innerHTML = selection.length === 0
+            ? `<div class="g-empty g-veil common-empty">${icon('users')}<strong>Kdo se má sejít?</strong>`
+                + '<span>Třeba vyučující a třída na konzultaci, nebo několik vyučujících na poradu. Ukážeme hodiny, kdy mají všichni volno.</span></div>'
+            : '';
         return;
     }
     status.textContent = 'Počítám společné volno…';
     result.setAttribute('aria-busy', 'true');
+    if (!result.firstElementChild) result.innerHTML = '<div class="g-veil g-mod common-skel" aria-hidden="true"><div class="g-skel"></div><div class="g-skel"></div><div class="g-skel"></div></div>';
     const monday = getMondayOfWeek(0).toISOString().split('T')[0];
     const loaded = await Promise.all(selection.map(async (s) => {
         try {
@@ -152,30 +157,43 @@ function summaryHtml(ranges) {
     const items = ranges.map(({ day, ranges: rs }) => {
         const text = rs.length === 0
             ? '<span class="common-none">žádné společné volno</span>'
-            : rs.map(r => `<span class="common-range${r.ideal ? ' is-ideal' : ''}">${esc(rangeLabel(r))}${r.ideal ? ' – všichni ve škole' : ' – někdo z vybraných nemá okolo výuku'}</span>`).join('; ');
-        return `<li><strong>${esc(days[day])}:</strong> ${text}</li>`;
+            : rs.map(r => `<span class="common-range${r.ideal ? ' is-ideal' : ''}">${icon(r.ideal ? 'circle-check' : 'circle-alert')}<span>${esc(rangeLabel(r))}${r.ideal ? ', všichni ve škole' : ', někdo z vybraných okolo nemá výuku'}</span></span>`).join('');
+        return `<li><strong class="common-day">${esc(days[day])}</strong><span class="common-ranges">${text}</span></li>`;
     }).join('');
-    return `<h3 class="common-subtitle">Kdy mají všichni volno</h3><ul class="common-summary">${items}</ul>`;
+    return `<section class="g-veil g-mod common-mod" aria-labelledby="commonSumTitle">
+        <h3 class="common-subtitle g-mod-head" id="commonSumTitle">${icon('calendar-range')}Kdy mají všichni volno</h3>
+        <ul class="common-summary" role="list">${items}</ul>
+    </section>`;
 }
 
+/** Week grid: hours down, days across (like the week view); free = filled + word, busy = muted. */
 function gridHtml(res) {
-    const head = res.hours.map(h => {
+    const head = res.days.map(d => `<th scope="col"><span aria-hidden="true">${esc(daysShort[d])}</span><span class="vh">${esc(days[d])}</span></th>`).join('');
+    const byDay = new Map(res.rows.map(r => [r.day, r]));
+    const rows = res.hours.map((h, i) => {
         const t = lessonTimes.find(x => x.hour === h);
-        return `<th scope="col"><span class="cg-hour">${h}.</span><span class="cg-time">${t ? esc(t.label.replace('-', '–')) : ''}</span></th>`;
+        const cells = res.days.map(d => {
+            const c = byDay.get(d).cells[i];
+            if (c.ideal) return `<td class="cg-cell is-ideal">${icon('check')}<span>volno</span></td>`;
+            if (c.free) return `<td class="cg-cell is-free"><span>volno*</span><span class="vh"> (mimo výuku: ${esc(c.away.join(', '))})</span></td>`;
+            return `<td class="cg-cell is-busy"><span class="vh">Obsazeno: </span><span class="cg-busy">${esc(c.busy.join(', '))}</span><span class="cg-busy-n" aria-hidden="true">${icon('user')}${c.busy.length}</span></td>`;
+        }).join('');
+        const [from, to] = t ? t.label.split('-') : ['', ''];
+        const time = t ? `<span class="cg-t1">${esc(from)}</span><span class="cg-dash">–</span><span class="cg-t2">${esc(to)}</span>` : '';
+        return `<tr><th scope="row"><span class="cg-hour">${h}.</span><span class="cg-time">${time}</span></th>${cells}</tr>`;
     }).join('');
-    const rows = res.rows.map(row => `<tr><th scope="row">${esc(days[row.day])}</th>${row.cells.map(c => {
-        if (c.ideal) return '<td class="cg-cell is-ideal"><span class="cg-mark" aria-hidden="true">✓</span> Volno</td>';
-        if (c.free) return `<td class="cg-cell is-free">Volno*<span class="sr-only"> (mimo výuku: ${esc(c.away.join(', '))})</span></td>`;
-        return `<td class="cg-cell is-busy"><span class="sr-only">Obsazeno: </span><span class="cg-busy">${esc(c.busy.join(', '))}</span></td>`;
-    }).join('')}</tr>`).join('');
-    return `<h3 class="common-subtitle" id="commonGridTitle">Týden po hodinách</h3>
+    return `<section class="g-veil g-mod common-mod" aria-labelledby="commonGridTitle">
+        <h3 class="common-subtitle g-mod-head" id="commonGridTitle">${icon('calendar-days')}Týden po hodinách</h3>
         <div class="table-scroll" role="region" aria-labelledby="commonGridTitle" tabindex="0">
-            <table class="common-grid" aria-labelledby="commonGridTitle">
-                <thead><tr><th scope="col">Den</th>${head}</tr></thead>
+            <table class="common-grid">
+                <thead><tr><th scope="col"><span class="vh">Hodina</span></th>${head}</tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>
-        <p class="common-legend"><strong>Volno</strong> – nikdo z vybraných nemá výuku a všichni ji mají před touto hodinou i po ní, jsou tedy ve škole.
-        <strong>Volno*</strong> – nikdo nemá výuku, ale někdo z vybraných ten den v tuto dobu podle rozvrhu ve škole být nemusí.
-        V buňkách s výukou jsou vypsáni ti, kdo učí nebo se učí. Zrušená hodina se počítá jako volno, akce třídy nebo nepřítomnost učitele jako obsazeno.</p>`;
+        <ul class="common-legend" role="list">
+            <li><span class="cg-sample is-ideal" aria-hidden="true">volno</span><span><strong>Volno</strong>: nikdo z vybraných nemá výuku a všichni jsou ten den ve škole před touto hodinou i po ní.</span></li>
+            <li><span class="cg-sample is-free" aria-hidden="true">volno*</span><span><strong>Volno*</strong>: nikdo nemá výuku, ale někdo z vybraných v tu dobu ve škole být nemusí.</span></li>
+            <li><span class="cg-sample is-busy" aria-hidden="true">obsazeno</span><span><strong>Obsazeno</strong>: někdo z vybraných učí nebo se učí. V buňce jsou jejich jména, na úzké obrazovce jen jejich počet. Zrušená hodina se počítá jako volno, akce třídy nebo nepřítomnost učitele jako obsazeno.</span></li>
+        </ul>
+    </section>`;
 }

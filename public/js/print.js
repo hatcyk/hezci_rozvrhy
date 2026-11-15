@@ -1,5 +1,5 @@
 /**
- * Printable week grid (A4 landscape, see css/print.css). Built as a plain
+ * Printable week grid (A4 landscape, see css/g/print.css). Built as a plain
  * <table> from the loaded lessons, independent of the on-screen layout - a
  * phone in the agenda layout prints the whole week as well.
  * Changes are marked with words and line styles, not colour only, so they
@@ -10,6 +10,7 @@ import { esc, abbreviateSubject, abbreviateTeacherName, standardizeGroupName, pa
 import { days, lessonTimes } from './constants.js';
 
 const FLAG = { changed: 'změna', removed: 'odpadá', absent: 'nekoná se' };
+const FLAG_ICON = { changed: 'repeat-2', removed: 'ban', absent: 'flag' };
 
 function flagOf(lesson) {
     if (lesson.type === 'removed') return 'removed';
@@ -33,9 +34,11 @@ function lessonHtml(lesson, type, abbrMap) {
             : [teacher, lesson.room];
     const group = type === 'Class' && lesson.group ? standardizeGroupName(lesson.group) : '';
     const body = `<span class="pl-subject">${subject}</span>${group ? ` <span class="pl-group">${esc(group)}</span>` : ''}`
-        + `<span class="pl-meta">${meta.filter(Boolean).map(esc).join(' · ')}</span>`;
-    return `<div class="pl${flag ? ` pl--${flag}` : ''}">${flag === 'removed' ? `<s>${body}</s>` : body}`
-        + `${flag ? `<span class="pl-flag">${FLAG[flag]}</span>` : ''}</div>`;
+        + `<span class="pl-meta">${meta.filter(Boolean).map(m => `<span>${esc(m)}</span>`).join(' ')}</span>`;
+    const state = flag
+        ? `<span class="pl-state"><svg class="i" aria-hidden="true"><use href="icons.svg#${FLAG_ICON[flag]}"></use></svg><span class="pl-flag">${FLAG[flag]}</span></span>`
+        : '';
+    return `<div class="pl${flag ? ` pl--${flag}` : ''}">${flag === 'removed' ? `<s>${body}</s>` : body}${state}</div>`;
 }
 
 /**
@@ -73,5 +76,5 @@ export function printSheetHtml(lessons, { title, subtitle = '', type = 'Class', 
             <thead><tr><th scope="col">Den</th>${head}</tr></thead>
             <tbody>${rows}</tbody>
         </table>
-        ${anyChange ? '<p class="pg-legend"><span class="pl pl--changed pl-sample">změna</span> suplování nebo jiná změna · <span class="pl pl--removed pl-sample"><s>předmět</s> odpadá</span> hodina se nekoná</p>' : ''}`;
+        ${anyChange ? '<p class="pg-legend"><span class="pg-legend-item"><span class="pl pl--changed pl-sample">změna</span> suplování nebo jiná změna</span> <span class="pg-legend-item"><span class="pl pl--removed pl-sample"><s>předmět</s> odpadá</span> hodina se nekoná</span></p>' : ''}`;
 }

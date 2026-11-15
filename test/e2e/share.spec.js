@@ -8,6 +8,7 @@ test.describe('Sdílení', () => {
     await app.open('/');
     await app.timetableReady();
 
+    await page.click('#moreBtn');
     await page.click('#shareBtn');
     await expect(page.locator('.toast-title')).toHaveText(/zkopírován/);
     const clip = await page.evaluate(() => navigator.clipboard.readText());
@@ -26,6 +27,7 @@ test.describe('Sdílení', () => {
     await app.open('/');
     await app.timetableReady();
 
+    await page.click('#moreBtn');
     await page.click('#shareBtn');
     await expect.poll(() => page.evaluate(() => window.__shared.length)).toBe(1);
     const [call] = await page.evaluate(() => window.__shared);

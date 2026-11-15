@@ -78,7 +78,8 @@ test('index.html: zoom allowed, theme-color per scheme, early theme script', () 
 
 test('index.html: sheets are native dialogs with a name and labelled close buttons', () => {
     const dialogs = [...html.matchAll(/<dialog\b[^>]*>/g)].map(m => m[0]);
-    assert.equal(dialogs.length, 4);
+    // detail hodiny, hledání (návrh G), upozornění, nastavení, oblíbené
+    assert.equal(dialogs.length, 5);
     for (const d of dialogs) {
         assert.match(d, /aria-labelledby="[^"]+"/, d);
         assert.ok(!/role="dialog"|aria-modal/.test(d), 'native modal dialogs need no role/aria-modal');
@@ -86,17 +87,25 @@ test('index.html: sheets are native dialogs with a name and labelled close butto
         assert.ok(html.includes(`id="${id}"`), `label element #${id} exists`);
     }
     assert.ok(!/<div class="bottom-sheet[ "]/.test(html), 'no div-based sheets left');
-    const closeButtons = [...html.matchAll(/<button\b[^>]*class="modal-close"[^>]*>/g)].map(m => m[0]);
+    // Design G: the close button is also a g-circle ("modal-close g-circle")
+    const closeButtons = [...html.matchAll(/<button\b[^>]*class="[^"]*\bmodal-close\b[^"]*"[^>]*>/g)].map(m => m[0]);
     assert.ok(closeButtons.length >= 4);
     for (const b of closeButtons) assert.match(b, /aria-label="[^"]+"/, b);
 });
 
 test('index.html: segmented controls expose their state (aria-pressed)', () => {
-    for (const cls of ['schedule-type-btn', 'type-btn']) {
-        const btns = [...html.matchAll(new RegExp(`<button\\b[^>]*class="${cls}[^"]*"[^>]*>`, 'g'))].map(m => m[0]);
-        assert.equal(btns.length, 3);
-        assert.equal(btns.filter(b => /aria-pressed="true"/.test(b)).length, 1);
-        assert.equal(btns.filter(b => /aria-pressed="false"/.test(b)).length, 2);
-    }
-    assert.match(html, /id="valueDropdownMenu"[^>]*\binert\b/, 'closed menu is inert');
+    // Návrh G: typové záložky Třídy / Učitelé / Učebny nahradilo hledání;
+    // zůstává Stálý / Aktuální / Příští a na počítači Den / Týden
+    const sched = [...html.matchAll(/<button\b[^>]*class="schedule-type-btn[^"]*"[^>]*>/g)].map(m => m[0]);
+    assert.equal(sched.length, 3);
+    assert.equal(sched.filter(b => /aria-pressed="true"/.test(b)).length, 1);
+    assert.equal(sched.filter(b => /aria-pressed="false"/.test(b)).length, 2);
+    const layout = [...html.matchAll(/<button\b[^>]*data-layout="[^"]+"[^>]*>/g)].map(m => m[0]);
+    assert.equal(layout.length, 2);
+    assert.ok(layout.every(b => /aria-pressed="(true|false)"/.test(b)));
+    assert.ok(!/class="type-btn/.test(html), 'type tabs are gone (search covers all kinds)');
+    // Hledání: pole má jméno, výsledky jsou bez dotazu skryté, popisek rozvrhu zůstává
+    assert.match(html, /<input\b[^>]*id="searchInput"[^>]*aria-label="[^"]+"/);
+    assert.match(html, /id="searchResults"[^>]*\bhidden\b/, 'closed results are hidden');
+    assert.match(html, /id="valueDropdownLabel"/);
 });

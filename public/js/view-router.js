@@ -19,10 +19,19 @@ const SECTION_IDS = {
 let current = null;
 let currentParams = {};
 const enterHandlers = {};
+const reselectHandlers = {};
 
 /** Register what a view does when it is shown: (params) => void|Promise. */
 export function onViewEnter(view, handler) {
     enterHandlers[view] = handler;
+}
+
+/**
+ * What a second tap on the already active view does (phones: the "Rozvrh"
+ * tab returns from a day to the overview, like a tab bar on iOS).
+ */
+export function onViewReselect(view, handler) {
+    reselectHandlers[view] = handler;
 }
 
 export function getCurrentView() {
@@ -108,6 +117,10 @@ export function initViewRouter() {
             if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
             e.preventDefault();
             const view = a.dataset.view;
+            if (view === current && reselectHandlers[view]) {
+                reselectHandlers[view]();
+                return;
+            }
             // Same view again: keep its filters
             showView(view, view === current ? currentParams : {});
         });

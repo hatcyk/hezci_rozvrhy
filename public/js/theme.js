@@ -2,7 +2,7 @@ import { dom } from './dom.js';
 import { isNightTime } from './suntime.js';
 
 /** Browser UI colour (status bar, task switcher) per theme = --bg-color. */
-export const THEME_COLORS = { dark: '#071422', light: '#F8FAFC' };
+export const THEME_COLORS = { dark: '#050A1A', light: '#14407D' };
 
 /**
  * Theme for this visit: the user's saved choice, otherwise the system setting
@@ -57,42 +57,33 @@ export function setTheme(theme, { persist = true } = {}) {
 }
 
 /**
- * "Switch to light at night?" confirmation. A native modal <dialog>: focus
- * starts on the safe choice (Zrušit), Esc cancels, the page behind is inert.
+ * "Switch to light at night?" confirmation. A native modal <dialog> styled as
+ * a g-sheet (bottom sheet on phones, small dialog on desktop): focus starts on
+ * the safe choice, Esc and a tap outside keep the dark theme, the page behind
+ * is inert. The buttons say what happens.
  */
 function showNightWarning(callback) {
     const dialog = document.createElement('dialog');
-    dialog.className = 'theme-warning-overlay';
+    dialog.className = 'g-sheet theme-warning';
     dialog.setAttribute('aria-labelledby', 'themeWarningTitle');
     dialog.setAttribute('aria-describedby', 'themeWarningBody');
     dialog.innerHTML = `
-        <div class="theme-warning-dialog">
-            <div class="theme-warning-header">
-                <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <line x1="12" y1="8" x2="12" y2="12"/>
-                    <line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                <h3 id="themeWarningTitle">Přepnout na světlý režim?</h3>
-            </div>
-            <div class="theme-warning-body" id="themeWarningBody">
-                <p>Venku je tma. Tmavý režim je šetrnější k očím a baterii.</p>
-                <p>Opravdu chcete přepnout na světlý režim?</p>
-            </div>
-            <div class="theme-warning-actions">
-                <button type="button" class="theme-warning-btn theme-warning-cancel" autofocus>Zrušit</button>
-                <button type="button" class="theme-warning-btn theme-warning-confirm">Přepnout</button>
-            </div>
+        <div class="g-sheet-handle" aria-hidden="true"></div>
+        <div class="g-sheet-head theme-warning-head">
+            <span class="theme-warning-icon" aria-hidden="true"><svg class="i"><use href="icons.svg#moon"></use></svg></span>
+            <h2 id="themeWarningTitle">Přepnout na světlý režim?</h2>
+        </div>
+        <div class="g-sheet-body theme-warning-body" id="themeWarningBody">
+            <p>Venku je tma. Noční obloha je šetrnější k očím i k baterii.</p>
+        </div>
+        <div class="theme-warning-actions">
+            <button type="button" class="g-btn theme-warning-cancel" autofocus>Nechat tmavý</button>
+            <button type="button" class="g-btn g-btn--primary theme-warning-confirm">Přepnout na světlý</button>
         </div>
     `;
 
     document.body.appendChild(dialog);
     dialog.showModal();
-
-    // Fade in
-    requestAnimationFrame(() => {
-        dialog.classList.add('visible');
-    });
 
     const confirmBtn = dialog.querySelector('.theme-warning-confirm');
     const cancelBtn = dialog.querySelector('.theme-warning-cancel');
@@ -102,15 +93,17 @@ function showNightWarning(callback) {
         if (closed) return;
         closed = true;
         dialog.setAttribute('data-closing', '');
-        dialog.classList.add('closing');
-        dialog.classList.remove('visible');
 
         const finish = () => {
             if (dialog.open) dialog.close();
             dialog.remove();
         };
-        dialog.addEventListener('animationend', finish, { once: true });
-        setTimeout(finish, 700); // safety net (reduced motion, no animation)
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduce) finish();
+        else {
+            dialog.addEventListener('transitionend', (e) => { if (e.target === dialog) finish(); });
+            setTimeout(finish, 400); // safety net (no transition)
+        }
 
         if (confirmed) {
             callback();
@@ -121,9 +114,11 @@ function showNightWarning(callback) {
     cancelBtn.addEventListener('click', () => closeDialog(false));
     dialog.addEventListener('cancel', (e) => { e.preventDefault(); closeDialog(false); });
     dialog.addEventListener('close', () => { if (!closed) { closed = true; dialog.remove(); } });
-    // Click on the dimmed area outside the box
+    // Tap on the dimmed area outside the sheet
     dialog.addEventListener('click', (e) => {
-        if (e.target === dialog) closeDialog(false);
+        if (e.target !== dialog) return;
+        const r = dialog.getBoundingClientRect();
+        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) closeDialog(false);
     });
 }
 
@@ -145,4 +140,34 @@ export function initThemeToggle() {
     if (dom.themeToggle) {
         dom.themeToggle.addEventListener('click', toggleTheme);
     }
+}
+
+// agent V: režim vzhledu v Nastavení (Systém / Světlý / Tmavý), používá settings.js
+
+/** Appearance mode: the saved 'light' / 'dark', or 'system' when nothing is saved. */
+export function getThemeMode() {
+    let saved = null;
+    try { saved = localStorage.getItem('theme'); } catch { /* storage blocked */ }
+    return saved === 'light' || saved === 'dark' ? saved : 'system';
+}
+
+/**
+ * Set the appearance mode. 'system' forgets the saved choice and follows
+ * prefers-color-scheme again; switching to light at night asks first (the same
+ * warning as the old header toggle) and changes nothing when cancelled.
+ * @param {'system'|'light'|'dark'} mode
+ */
+export function setThemeMode(mode) {
+    if (mode === 'system') {
+        try { localStorage.removeItem('theme'); } catch { /* storage blocked */ }
+        setTheme(systemPrefersLight() ? 'light' : 'dark', { persist: false });
+        return;
+    }
+    if (mode !== 'light' && mode !== 'dark') return;
+    const current = document.documentElement.getAttribute('data-theme');
+    if (mode === 'light' && current !== 'light' && isNightTime()) {
+        showNightWarning(() => setTheme('light'));
+        return;
+    }
+    setTheme(mode);
 }

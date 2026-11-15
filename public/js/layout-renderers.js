@@ -1,69 +1,522 @@
 /**
- * Layout Renderers
- * Rendering functions for each timetable layout
+ * Layout Renderers (návrh G „Obloha“)
+ *
+ *  - Den: časová osa ve skutečném měřítku (lessonTimes), přestávky jsou
+ *    mezery, zlatá čára „teď“, dělené hodiny vedle sebe (vzor den.html);
+ *  - Týden: pět sloupců s časovou osou od první použité hodiny (desktop.html);
+ *  - Seznam: řádky hodin (čas, předmět, vyučující, učebna, stav);
+ *  - Karty: jedna hodina na kartu, vodorovné scroll-snap listování.
+ *
+ * Každá hodina je nativní <button class="lesson"> (Enter i mezerník otevřou
+ * detail, čtečka slyší celý popis). Bloky jsou plné (--blk), stav nese ikona
+ * + slovo a barevný proužek; obsah leží na závoji (g-veil), bez rozostření.
  */
 
 import { state } from './state.js';
-import { dom } from './dom.js';
-import { days, lessonTimes } from './constants.js';
 import { showLessonModal } from './modal.js';
 import { updateLayoutPreference } from './layout-manager.js';
-import { renderTimetable } from './timetable.js';
-import { abbreviateSubject, abbreviateTeacherName, getLessonTimeClass, esc, makeActivatable, addLessonDescription, lessonStatusIcon } from './utils.js';
-
-/**
- * Time-based highlight for a rendered slot: the class to add now plus the
- * data attributes lesson-status.js uses to keep it in sync afterwards.
- * @param {Number} day
- * @param {Number} hour
- * @param {Boolean} tracksTime - false for removed lessons / non-actual schedules
- * @param {String} [variant] - key of TIME_STATUS_CLASSES ('' or 'agenda')
- */
-function timeStatus(day, hour, tracksTime, variant = '') {
-    if (!tracksTime) return { cls: '', attrs: '' };
-    const timeClass = getLessonTimeClass(day, hour, new Date(), variant);
-    return {
-        cls: timeClass ? ` ${timeClass}` : '',
-        attrs: ` data-day="${day}" data-hour="${hour}" data-time-status="${variant}"`,
-    };
-}
+import { esc, abbreviateSubject, addLessonDescription, getLessonTimeClass, getTodayIndex } from './utils.js';
+import {
+    icon, KINDS, statusHtml, daySlots, slotLessons, timeRange, axisHours, startMin, endMin, fmtMin, hourRange,
+    minutesOfDay, DAY_NAMES, DAY_SHORT, addDays, czDate, groupText, teacherShort, classOf, dayChangeEntries,
+} from './rozvrh-core.js';
+import { removalReason, czPlural } from './changes-core.js';
 
 // AbortControllers for cleanup of event listeners
 let swipeController = null;
 let navigationController = null;
 let daySwipeController = null;
+/** Lekce vykreslených tlačítek (data-ref = index). */
+let lessonRefs = [];
 
 /**
  * Cleanup all event listeners from previous layouts
  */
 export function cleanupLayoutEventListeners() {
-    if (swipeController) {
-        swipeController.abort();
-        swipeController = null;
+    for (const c of [swipeController, navigationController, daySwipeController]) if (c) c.abort();
+    swipeController = null;
+    navigationController = null;
+    daySwipeController = null;
+}
+
+/** Cíl vykreslení: #timetable uvnitř .timetable-container. */
+function target() {
+    if (typeof document === 'undefined') return null;
+    return document.getElementById('timetable') || document.querySelector('.timetable-container');
+}
+
+/** Pondělí zobrazeného týdne (bez importu timetable.js kvůli cyklu). */
+function mondayOfShown() {
+    if (state.selectedScheduleType === 'permanent') return null;
+    const dated = (state.currentTimetableData || []).find(l => l && l.date && /^\d{4}-\d{2}-\d{2}$/.test(l.date));
+    if (dated) {
+        const [y, m, d] = dated.date.split('-').map(Number);
+        return addDays(new Date(y, m - 1, d), -dated.day);
     }
-    if (navigationController) {
-        navigationController.abort();
-        navigationController = null;
+    const now = new Date();
+    const dow = now.getDay();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + (dow === 0 ? -6 : 1 - dow) + (state.selectedScheduleType === 'next' ? 7 : 0));
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+}
+
+const isToday = (day) => state.selectedScheduleType === 'actual' && day === getTodayIndex();
+const tracksTime = () => state.selectedScheduleType === 'actual';
+
+/* ── obsah bloku hodiny ────────────────────────────────────────────────── */
+
+/**
+ * Co se o hodině ukáže podle druhu rozvrhu: u třídy učebna a vyučující,
+ * u vyučujícího učebna a třída, u učebny třída a vyučující.
+ */
+function lessonParts(item) {
+    const l = item.lesson;
+    const type = state.selectedType;
+    const cls = classOf(l);
+    const teacher = teacherShort(l.teacher, state.teacherAbbreviationMap);
+    const subject = l.subject || 'Neznámý předmět';
+    let place = l.room || '';
+    let who = teacher;
+    if (type === 'Room') { place = cls; who = teacher; }
+    else if (type === 'Teacher') { who = cls; }
+    if (l.type === 'absent') { place = ''; who = ''; }
+    const group = groupText(l.group);
+    let note = '';
+    if (item.before && item.kind === 'sub') {
+        const b = item.before;
+        const sameSubject = (b.subject || '') === (l.subject || '');
+        const bt = teacherShort(b.teacher, state.teacherAbbreviationMap);
+        note = `původně ${[sameSubject ? '' : abbreviateSubject(b.subject), bt].filter(Boolean).join(', ')}`;
+    } else if (item.kind === 'cancel') {
+        const reason = removalReason((l.changeInfo && l.changeInfo.description) || '');
+        note = reason ? reason.charAt(0).toLowerCase() + reason.slice(1) : '';
+    } else if (item.kind === 'room') {
+        const m = /:\s*([^→]+?)\s*→\s*(.+)$/.exec((l.changeInfo && l.changeInfo.description) || '');
+        if (m && m[1].trim() !== m[2].trim()) note = `původně ${m[1].trim()}`;
     }
-    if (daySwipeController) {
-        daySwipeController.abort();
-        daySwipeController = null;
+    return { subject, short: abbreviateSubject(subject), place, who, group, note };
+}
+
+/** Třídy a atributy bloku: proužek stavu, odpadlá hodina, čas (lesson-status.js). */
+function lessonAttrs(item, day, base) {
+    const l = item.lesson;
+    const cancelled = item.kind === 'cancel' || item.kind === 'extra' && l.type === 'absent';
+    const cls = [base, 'lesson', 'g-bar'];
+    if (item.kind && KINDS[item.kind]) cls.push(`g-bar--${KINDS[item.kind].bar}`, `is-${item.kind}`);
+    if (cancelled) cls.push('is-cancelled');
+    let attrs = '';
+    if (!cancelled && tracksTime()) {
+        const timeClass = getLessonTimeClass(day, l.hour);
+        if (timeClass) cls.push(timeClass);
+        attrs += ` data-day="${day}" data-hour="${l.hour}" data-time-status=""`;
     }
+    if (l.changed || l.type === 'removed' || l.type === 'absent') attrs += ' data-changed="true"';
+    const ref = lessonRefs.push(l) - 1;
+    attrs += ` data-ref="${ref}"`;
+    return { cls: cls.join(' '), attrs };
+}
+
+/** Řádek se stavem: skupina, ikona + slovo, vyučující / třída. */
+function metaLine(item, p, { withStatus = true } = {}) {
+    const bits = [];
+    if (p.group) bits.push(`<span class="ev-g">${esc(p.group)}</span>`);
+    if (withStatus && item.kind) bits.push(statusHtml(item.kind));
+    if (p.who) bits.push(`<span class="ev-w">${esc(p.who)}</span>`);
+    return bits.join('');
+}
+
+/** Blok hodiny na časové ose (Den i Týden). */
+function eventHtml(item, day, range, i, n, { compact = false } = {}) {
+    const l = item.lesson;
+    const p = lessonParts(item);
+    const s = startMin(l.hour);
+    const e = endMin(l.hour);
+    const { cls, attrs } = lessonAttrs(item, day, 'ev');
+    const title = compact || n > 1 || p.short === p.subject
+        ? esc(n > 1 ? p.short : p.subject)
+        : `<span class="fl">${esc(p.subject)}</span><span class="sh">${esc(p.short)}</span>`;
+    const style = `--m:${s - range.start};--d:${e - s};--i:${i};--n:${n}`;
+    return `<button type="button" class="${cls}${n > 1 ? ' is-split' : ''}" style="${style}"${attrs}>`
+        + `<span class="ev-l1"><span class="ev-s">${title}</span>${p.place ? `<span class="ev-r">${esc(p.place)}</span>` : ''}</span>`
+        + `<span class="ev-l2">${metaLine(item, p)}</span>`
+        + (p.note ? `<span class="ev-l3">${esc(p.note)}</span>` : '')
+        + '</button>';
+}
+
+/** Bloky jednoho dne. */
+function dayEvents(slots, day, range, opts) {
+    let html = '';
+    for (const items of slots.values()) {
+        items.forEach((item, i) => { html += eventHtml(item, day, range, i, items.length, opts); });
+    }
+    return html;
+}
+
+const gridLines = (range) => axisHours(range)
+    .map(m => `<span class="tl-gl" style="--m:${m - range.start}" aria-hidden="true"></span>`).join('');
+
+/** Zlatá čára „teď“ (pozici drží updateNowLines). */
+const nowLine = (range, withPill) => `<span class="nowline" data-start="${range.start}" data-end="${range.end}" aria-hidden="true" hidden>${withPill ? '<span class="now-pill"></span>' : ''}</span>`;
+
+function emptyHtml(title, text) {
+    return `<div class="g-empty tt-empty g-veil">${icon('calendar')}<strong>${esc(title)}</strong><span>${esc(text)}</span></div>`;
+}
+
+function whoName() {
+    const el = typeof document !== 'undefined' ? document.getElementById('valueDropdownLabel') : null;
+    const name = el ? el.textContent.trim() : '';
+    return state.selectedType === 'Class' && name ? `Třída ${name}` : (name || 'Tento rozvrh');
+}
+
+/** Kliknutí na hodinu otevře detail (delegace, jeden posluchač na vykreslení). */
+function bindLessons(root) {
+    if (!root || !root.querySelectorAll) return;
+    if (navigationController) navigationController.abort();
+    navigationController = new AbortController();
+    const data = state.currentTimetableData;
+    root.querySelectorAll('.lesson[data-ref]').forEach((btn) => {
+        const lesson = lessonRefs[Number(btn.dataset.ref)];
+        if (!lesson) return;
+        addLessonDescription(btn, lesson);
+    });
+    root.addEventListener('click', (e) => {
+        const btn = e.target.closest && e.target.closest('.lesson[data-ref]');
+        if (!btn || !root.contains(btn)) return;
+        const lesson = lessonRefs[Number(btn.dataset.ref)];
+        if (lesson) showLessonModal(lesson, { data, anchor: btn });
+    }, { signal: navigationController.signal });
+}
+
+/* ── Den ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Render Day Layout: one day as a real-time-scale timeline.
+ */
+export function renderDayLayout() {
+    const root = target();
+    if (!root) return;
+    lessonRefs = [];
+
+    const day = state.selectedDayIndex ?? 0;
+    const slots = daySlots(state.currentTimetableData, day);
+    const monday = mondayOfShown();
+    const dayLabel = monday ? `${DAY_NAMES[day]} ${czDate(addDays(monday, day))}` : DAY_NAMES[day];
+
+    if (!slots.size) {
+        root.innerHTML = emptyHtml('Žádná výuka', `${whoName()} má ${monday ? `v den ${dayLabel}` : 'v tento den'} volno. Vyber jiný den v pásu nahoře.`);
+        initDaySwipeNavigation('horizontal');
+        return;
+    }
+
+    const range = timeRange([...slots.keys()]);
+    const today = isToday(day);
+    root.innerHTML = `<section class="tl g-veil${today ? ' is-today' : ''}" style="--range:${range.range}" aria-label="${esc(dayLabel)}">
+        <div class="tl-axis" aria-hidden="true">
+            ${axisHours(range).map(m => `<span class="tl-hl" style="--m:${m - range.start}">${fmtMin(m)}</span>`).join('')}
+        </div>
+        <div class="tl-body">
+            ${gridLines(range)}
+            ${dayEvents(slots, day, range)}
+            ${today ? nowLine(range, true) : ''}
+        </div>
+    </section>`;
+
+    bindLessons(root);
+    updateNowLines();
+    initDaySwipeNavigation('horizontal');
+}
+
+/** @deprecated Agenda and the single-day table became Den. */
+export const renderAgendaLayout = renderDayLayout;
+/** @deprecated */
+export const renderSingleDayLayout = renderDayLayout;
+
+/* ── Týden ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Render Week Layout: five columns with a shared time axis (from the first
+ * used lesson of the week, 0. hodina 7:10 included when used).
+ */
+export function renderWeekLayout() {
+    const root = target();
+    if (!root) return;
+    lessonRefs = [];
+
+    const data = state.currentTimetableData || [];
+    const perDay = [0, 1, 2, 3, 4].map(d => daySlots(data, d));
+    const hours = [...new Set(data.map(l => l.hour))];
+    const range = timeRange(hours);
+    if (!range) {
+        root.innerHTML = emptyHtml('Žádná výuka', `${whoName()} nemá v tomto týdnu žádné hodiny. Zkus příští týden nebo stálý rozvrh.`);
+        return;
+    }
+    const monday = mondayOfShown();
+
+    const heads = perDay.map((slots, d) => {
+        const date = monday ? addDays(monday, d) : null;
+        const changes = dayChangeEntries(data.filter(l => l.day === d)).length;
+        const today = isToday(d);
+        return `<button type="button" class="wg-dh${today ? ' today' : ''}" data-day="${d}" title="Otevřít den ${esc(DAY_NAMES[d].toLowerCase())}"${today ? ' aria-current="date"' : ''}>
+            <span class="wg-dn">${DAY_SHORT[d]}</span>${date ? `<span class="wg-date">${date.getDate()}</span>` : ''}
+            ${changes ? `<small class="wg-chg">${icon('repeat-2')}${changes}<span class="vh"> ${czPlural(changes, ['změna', 'změny', 'změn']).replace(/^\d+ /, '')}</span></small>` : ''}
+        </button>`;
+    }).join('');
+
+    const cols = perDay.map((slots, d) => {
+        const date = monday ? addDays(monday, d) : null;
+        const label = date ? `${DAY_NAMES[d]} ${czDate(date)}` : DAY_NAMES[d];
+        const today = isToday(d);
+        return `<section class="wg-col${today ? ' today' : ''}" aria-label="${esc(label)}">
+            ${gridLines(range)}
+            ${slots.size ? dayEvents(slots, d, range, { compact: false }) : '<p class="wg-free">volno</p>'}
+            ${today ? nowLine(range, false) : ''}
+        </section>`;
+    }).join('');
+
+    root.innerHTML = `<div class="wg g-veil" style="--range:${range.range}">
+        <div class="wg-head"><span class="wg-corner" aria-hidden="true"></span>${heads}</div>
+        <div class="wg-body">
+            <div class="wg-axis" aria-hidden="true">
+                ${axisHours(range).map(m => `<span class="tl-hl" style="--m:${m - range.start}">${fmtMin(m)}</span>`).join('')}
+                ${perDay.some((_, d) => isToday(d)) ? `<span class="now-pill axis-now" data-start="${range.start}" data-end="${range.end}" hidden></span>` : ''}
+            </div>
+            ${cols}
+        </div>
+    </div>`;
+
+    bindLessons(root);
+    // Hlavička dne otevře rozvržení Den pro ten den (jako v Kalendáři)
+    root.querySelectorAll('.wg-dh').forEach(btn => btn.addEventListener('click', async () => {
+        const d = Number(btn.dataset.day);
+        const { switchLayout } = await import('./layout-manager.js');
+        state.selectedDayIndex = d;
+        await switchLayout('day');
+        const { createDaySelector } = await import('./timetable.js');
+        createDaySelector();
+    }, { signal: navigationController.signal }));
+    updateNowLines();
+}
+
+/* ── teď ───────────────────────────────────────────────────────────────── */
+
+/**
+ * Zlatá čára „teď“ a štítek s časem na ose. Volá se po vykreslení a
+ * periodicky (next-lesson.js); mimo rozsah dne se čára schová.
+ */
+export function updateNowLines(now = new Date()) {
+    if (typeof document === 'undefined') return;
+    const m = minutesOfDay(now);
+    const label = fmtMin(Math.floor(m));
+    document.querySelectorAll('.nowline, .axis-now').forEach(el => {
+        const start = Number(el.dataset.start);
+        const end = Number(el.dataset.end);
+        const inside = m >= start && m <= end;
+        el.hidden = !inside;
+        if (!inside) return;
+        el.style.setProperty('--m', String(m - start));
+        const pill = el.classList.contains('axis-now') ? el : el.querySelector('.now-pill');
+        if (pill) pill.textContent = label;
+    });
+}
+
+/* ── Seznam ────────────────────────────────────────────────────────────── */
+
+function listRowHtml(item, day, showTime) {
+    const l = item.lesson;
+    const p = lessonParts(item);
+    const { cls, attrs } = lessonAttrs(item, day, 'ls-row');
+    const s = startMin(l.hour);
+    const e = endMin(l.hour);
+    return `<li class="ls-item"><button type="button" class="${cls}"${attrs}>
+        <span class="ls-time${showTime ? '' : ' is-cont'}"><span class="ls-t1">${s != null ? fmtMin(s) : `${l.hour}.`}</span><span>${e != null ? fmtMin(e) : ''}</span></span>
+        <span class="ls-main">
+            <span class="ls-l1"><span class="ls-s">${esc(p.subject)}</span>${p.place ? `<span class="ls-r">${esc(p.place)}</span>` : ''}</span>
+            <span class="ls-l2">${metaLine(item, p)}</span>
+            ${p.note ? `<span class="ls-l3">${esc(p.note)}</span>` : ''}
+        </span>
+    </button></li>`;
 }
 
 /**
- * Initialize day swipe navigation
- * @param {string} direction - 'horizontal' for single-day/compact-list, 'vertical' for card-view
+ * Render Compact List Layout: the day's lessons as grouped rows.
  */
-function initDaySwipeNavigation(direction = 'horizontal') {
-    const container = document.querySelector('.timetable-container');
-    if (!container) return;
+export function renderCompactListLayout() {
+    const root = target();
+    if (!root) return;
+    lessonRefs = [];
 
-    // Cleanup previous controller
-    if (daySwipeController) {
-        daySwipeController.abort();
+    const day = state.selectedDayIndex ?? 0;
+    const slots = daySlots(state.currentTimetableData, day);
+    const monday = mondayOfShown();
+    const dayLabel = monday ? `${DAY_NAMES[day]} ${czDate(addDays(monday, day))}` : DAY_NAMES[day];
+
+    if (!slots.size) {
+        root.innerHTML = emptyHtml('Žádná výuka', `${whoName()} má v tento den volno. Vyber jiný den v pásu nahoře.`);
+        initDaySwipeNavigation('horizontal');
+        return;
     }
 
+    const hours = [...slots.keys()];
+    let rows = '';
+    for (let h = Math.min(...hours); h <= Math.max(...hours); h++) {
+        const items = slots.get(h);
+        if (!items || !items.length) {
+            const s = startMin(h);
+            rows += `<li class="ls-item"><div class="ls-row ls-free"><span class="ls-time"><span class="ls-t1">${s != null ? fmtMin(s) : `${h}.`}</span><span>${endMin(h) != null ? fmtMin(endMin(h)) : ''}</span></span><span class="ls-main"><span class="ls-s">Volno</span><span class="ls-l2">${h}. hodina</span></span></div></li>`;
+            continue;
+        }
+        items.forEach((item, i) => { rows += listRowHtml(item, day, i === 0); });
+    }
+    root.innerHTML = `<section class="ls g-veil" aria-label="${esc(dayLabel)}"><ul class="ls-list" role="list">${rows}</ul></section>`;
+
+    bindLessons(root);
+    // Vždy od začátku dne: zapamatovaný posun z jiného dne skrýval první hodiny
+    root.scrollTop = 0;
+    initDaySwipeNavigation('horizontal');
+}
+
+/* ── Karty ─────────────────────────────────────────────────────────────── */
+
+function cardLessonHtml(item, day, split) {
+    const l = item.lesson;
+    const p = lessonParts(item);
+    const { cls, attrs } = lessonAttrs(item, day, split ? 'card-half' : 'card-main');
+    return `<button type="button" class="${cls}"${attrs}>
+        ${p.group ? `<span class="card-g">${esc(p.group)}</span>` : ''}
+        <span class="card-s">${esc(split ? p.short : p.subject)}</span>
+        ${p.place ? `<span class="card-r">${esc(p.place)}</span>` : ''}
+        ${item.kind ? statusHtml(item.kind, { cls: 'card-st' }) : ''}
+        ${p.who ? `<span class="card-w">${esc(p.who)}</span>` : ''}
+        ${p.note ? `<span class="card-n">${esc(p.note)}</span>` : ''}
+    </button>`;
+}
+
+/**
+ * Render Card View Layout: one lesson per card, horizontal scroll-snap.
+ */
+export function renderCardLayout() {
+    const root = target();
+    if (!root) return;
+    lessonRefs = [];
+
+    const day = state.selectedDayIndex ?? 0;
+    const slots = daySlots(state.currentTimetableData, day);
+
+    if (!slots.size) {
+        if (swipeController) { swipeController.abort(); swipeController = null; }
+        root.innerHTML = emptyHtml('Žádná výuka', `${whoName()} má v tento den volno. Vyber jiný den v pásu nahoře.`);
+        return;
+    }
+
+    const hours = [...slots.keys()];
+    const list = [];
+    for (let h = Math.min(...hours); h <= Math.max(...hours); h++) list.push(h);
+
+    const prefs = (state.layoutPreferences && state.layoutPreferences['card-view']) || {};
+    const index = Math.max(0, Math.min(prefs.cardIndex || 0, list.length - 1));
+
+    const cards = list.map((h, i) => {
+        const items = slots.get(h) || [];
+        const head = `<span class="card-head"><span class="card-h">${h}. hodina</span><span class="card-t">${esc(hourRange(h))}</span></span>`;
+        if (!items.length) {
+            return `<li class="card card--free g-veil" data-card-index="${i}">${head}<span class="card-free">${icon('sun')}<span>Volno</span></span></li>`;
+        }
+        const body = items.length === 1
+            ? cardLessonHtml(items[0], day, false)
+            : `<span class="card-split">${items.map(it => cardLessonHtml(it, day, true)).join('')}</span>`;
+        return `<li class="card g-veil" data-card-index="${i}">${head}${body}</li>`;
+    }).join('');
+
+    root.innerHTML = `<div class="cards">
+        <ul class="cards-track" role="list" id="cardsTrack">${cards}</ul>
+        <div class="cards-nav">
+            <button type="button" class="g-circle sh-ctl" id="cardPrevBtn" aria-label="Předchozí hodina">${icon('chevron-left')}</button>
+            <span class="cards-dots" aria-hidden="true">${list.map((_, i) => `<span class="card-dot${i === index ? ' active' : ''}"></span>`).join('')}</span>
+            <span class="vh" id="cardPos" aria-live="polite"></span>
+            <button type="button" class="g-circle sh-ctl" id="cardNextBtn" aria-label="Další hodina">${icon('chevron-right')}</button>
+        </div>
+    </div>`;
+
+    bindLessons(root);
+    initCardScroller(list.length, index);
+}
+
+function initCardScroller(total, index) {
+    const track = typeof document !== 'undefined' ? document.getElementById('cardsTrack') : null;
+    if (!track) return;
+    if (swipeController) swipeController.abort();
+    swipeController = new AbortController();
+    const signal = swipeController.signal;
+    const cards = [...track.children];
+    const prev = document.getElementById('cardPrevBtn');
+    const next = document.getElementById('cardNextBtn');
+    const pos = document.getElementById('cardPos');
+
+    const sync = (i) => {
+        updateLayoutPreference('card-view', { cardIndex: i });
+        document.querySelectorAll('.card-dot').forEach((d, k) => d.classList.toggle('active', k === i));
+        if (prev) prev.disabled = i <= 0;
+        if (next) next.disabled = i >= total - 1;
+    };
+    const go = (i, smooth = true) => {
+        const card = cards[Math.max(0, Math.min(total - 1, i))];
+        if (!card) return;
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        track.scrollTo({ left: card.offsetLeft - track.offsetLeft - (track.clientWidth - card.offsetWidth) / 2, behavior: smooth && !reduce ? 'smooth' : 'auto' });
+    };
+    const current = () => {
+        const mid = track.scrollLeft + track.clientWidth / 2;
+        let best = 0;
+        let dist = Infinity;
+        cards.forEach((c, k) => {
+            const center = c.offsetLeft - track.offsetLeft + c.offsetWidth / 2;
+            if (Math.abs(center - mid) < dist) { dist = Math.abs(center - mid); best = k; }
+        });
+        return best;
+    };
+
+    if (prev) prev.addEventListener('click', () => { const i = current() - 1; go(i); if (pos) pos.textContent = `${i + 1}. karta z ${total}`; }, { signal });
+    if (next) next.addEventListener('click', () => { const i = current() + 1; go(i); if (pos) pos.textContent = `${i + 1}. karta z ${total}`; }, { signal });
+    let t = null;
+    track.addEventListener('scroll', () => {
+        clearTimeout(t);
+        t = setTimeout(() => sync(current()), 80);
+    }, { passive: true, signal });
+    // Fokus na kartě mimo obraz ji posune do středu
+    track.addEventListener('focusin', (e) => {
+        const card = e.target.closest('.card');
+        if (card) go(Number(card.dataset.cardIndex));
+    }, { signal });
+
+    sync(index);
+    requestAnimationFrame(() => go(index, false));
+}
+
+/**
+ * Show the card that contains `el` (used by the deep-link highlight).
+ * @returns {boolean} true when a card was found
+ */
+export function showCardContaining(el) {
+    const card = el && el.closest ? el.closest('.card') : null;
+    const track = typeof document !== 'undefined' ? document.getElementById('cardsTrack') : null;
+    if (!card || !track) return false;
+    track.scrollTo({ left: card.offsetLeft - track.offsetLeft - (track.clientWidth - card.offsetWidth) / 2, behavior: 'auto' });
+    return true;
+}
+
+/* ── přejetí prstem mezi dny ───────────────────────────────────────────── */
+
+/**
+ * Initialize day swipe navigation
+ * @param {string} direction - 'horizontal' (Den, Seznam)
+ */
+function initDaySwipeNavigation(direction = 'horizontal') {
+    if (typeof document === 'undefined') return;
+    const container = document.getElementById('timetableHost');
+    if (!container || !container.addEventListener) return;
+
+    if (daySwipeController) daySwipeController.abort();
     daySwipeController = new AbortController();
     const signal = daySwipeController.signal;
 
@@ -72,10 +525,7 @@ function initDaySwipeNavigation(direction = 'horizontal') {
     let isDragging = false;
     let swipeEnabled = true;
 
-    // A swipe may only change the day when the content cannot scroll in that
-    // direction - otherwise the gesture belongs to the scroll container (a
-    // single-day table taller than the screen in landscape, for example) and
-    // hijacking it would make part of the timetable unreachable.
+    // Přejetí mění den jen když obsah nejde posouvat stejným směrem
     const axisIsScrollable = () => (direction === 'vertical'
         ? container.scrollHeight > container.clientHeight + 1
         : container.scrollWidth > container.clientWidth + 1);
@@ -87,1008 +537,19 @@ function initDaySwipeNavigation(direction = 'horizontal') {
         swipeEnabled = !axisIsScrollable();
     }, { passive: true, signal });
 
-    container.addEventListener('touchmove', (e) => {
-        if (!isDragging || !swipeEnabled) return;
-
-        const currentX = e.touches[0].clientX;
-        const currentY = e.touches[0].clientY;
-        const diffX = Math.abs(currentX - startX);
-        const diffY = Math.abs(currentY - startY);
-
-        // Prevent scroll in swipe direction
-        if (direction === 'horizontal' && diffX > diffY) {
-            e.preventDefault();
-        } else if (direction === 'vertical' && diffY > diffX) {
-            e.preventDefault();
-        }
-    }, { passive: false, signal });
-
     container.addEventListener('touchend', async (e) => {
         if (!isDragging) return;
         isDragging = false;
         if (!swipeEnabled) return;
-
-        const endX = e.changedTouches[0].clientX;
-        const endY = e.changedTouches[0].clientY;
-
-        const diffX = startX - endX;
-        const diffY = startY - endY;
-        const threshold = 50; // Larger threshold for day changes
-
-        let shouldChangeDay = false;
-        let dayDirection = 0;
-
-        if (direction === 'horizontal') {
-            // Horizontal: left swipe = next day, right = prev
-            if (Math.abs(diffX) > threshold && Math.abs(diffX) > Math.abs(diffY)) {
-                shouldChangeDay = true;
-                dayDirection = diffX > 0 ? 1 : -1;
-            }
-        } else {
-            // Vertical: up swipe = next day, down = prev
-            if (Math.abs(diffY) > threshold && Math.abs(diffY) > Math.abs(diffX)) {
-                shouldChangeDay = true;
-                dayDirection = diffY > 0 ? 1 : -1;
-            }
-        }
-
-        if (shouldChangeDay) {
-            const currentDay = state.selectedDayIndex;
-            const newDay = (currentDay + dayDirection + 5) % 5; // Wrap around
-
-            // Import and call selectDay
+        const diffX = startX - e.changedTouches[0].clientX;
+        const diffY = startY - e.changedTouches[0].clientY;
+        if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY) * 1.5) {
+            const newDay = Math.max(0, Math.min(4, (state.selectedDayIndex ?? 0) + (diffX > 0 ? 1 : -1)));
+            if (newDay === state.selectedDayIndex) return;
             const { selectDay } = await import('./timetable.js');
             selectDay(newDay);
         }
     }, { passive: true, signal });
 }
 
-/**
- * Render Single Day Layout (original behavior)
- * Shows only the selected day's lessons in table format
- */
-export async function renderSingleDayLayout() {
-    let rows = document.querySelectorAll('.timetable-row');
-
-    // If no rows exist, regenerate the timetable
-    if (rows.length === 0) {
-        // Card/compact layouts destroy #timetable element, need to recreate it
-        const container = document.querySelector('.timetable-container');
-        container.innerHTML = '<div class="timetable-grid" id="timetable"></div>';
-
-        // Update dom reference to new element
-        dom.timetableGrid = document.getElementById('timetable');
-
-        // Regenerovat tabulku
-        renderTimetable(state.currentTimetableData);
-
-        // Query again after regeneration
-        rows = document.querySelectorAll('.timetable-row');
-    }
-
-    rows.forEach((row, index) => {
-        if (index === state.selectedDayIndex) {
-            row.classList.add('active');
-        } else {
-            row.classList.remove('active');
-        }
-    });
-
-    // Add day swipe navigation (vertical due to horizontal scroll)
-    initDaySwipeNavigation('vertical');
-}
-
-/**
- * Render Week View Layout (show all days)
- * Shows all 5 working days in table format
- */
-export async function renderWeekLayout() {
-    let rows = document.querySelectorAll('.timetable-row');
-
-    // If no rows exist, regenerate the timetable
-    if (rows.length === 0) {
-        // Card/compact layouts destroy #timetable element, need to recreate it
-        const container = document.querySelector('.timetable-container');
-        container.innerHTML = '<div class="timetable-grid" id="timetable"></div>';
-
-        // Update dom reference to new element
-        dom.timetableGrid = document.getElementById('timetable');
-
-        // Regenerovat tabulku
-        renderTimetable(state.currentTimetableData);
-
-        // Query again after regeneration
-        rows = document.querySelectorAll('.timetable-row');
-    }
-
-    rows.forEach(row => row.classList.add('active'));
-}
-
-/**
- * Render single lesson content
- */
-function renderSingleLesson(lesson) {
-    const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-    const isChanged = lesson.changed;
-
-    return `
-        <div class="card-lessons-split">
-            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}"${isChanged ? ' data-changed="true"' : ''}>
-                ${lesson.group ? `<div class="lesson-group-badge">${esc(lesson.group)}</div>` : ''}
-
-                <div class="lesson-subject-name">${esc(lesson.subject)}</div>
-
-                <!-- Details with SVG Icons -->
-                <div class="card-details">
-                    ${lesson.teacher ? `
-                        <div class="card-detail-item">
-                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                <circle cx="12" cy="7" r="4"/>
-                            </svg>
-                            <span>${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}</span>
-                        </div>
-                    ` : ''}
-                    ${lesson.room ? `
-                        <div class="card-detail-item">
-                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 20H2"/>
-                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
-                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
-                                <path d="M14 12h.01"/>
-                                <path d="M22 20h-3"/>
-                            </svg>
-                            <span>${esc(lesson.room)}</span>
-                        </div>
-                    ` : ''}
-                </div>
-
-                <!-- Status Badges -->
-                ${isChanged || isRemoved ? `
-                    <div class="card-badges">
-                        ${isChanged ? `
-                            <div class="card-badge changed">
-                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                                    <line x1="12" y1="9" x2="12" y2="13"/>
-                                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                                </svg>
-                                <span>Změna v rozvrhu</span>
-                            </div>
-                        ` : ''}
-                        ${isRemoved ? `
-                            <div class="card-badge removed">
-                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="15" y1="9" x2="9" y2="15"/>
-                                    <line x1="9" y1="9" x2="15" y2="15"/>
-                                </svg>
-                                <span>Hodina zrušena</span>
-                            </div>
-                        ` : ''}
-                    </div>
-                ` : ''}
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Render split lessons (multiple groups in same time slot)
- */
-function renderSplitLessons(lessons) {
-    let html = '<div class="card-lessons-split">';
-
-    lessons.forEach(lesson => {
-        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-        const isChanged = lesson.changed;
-
-        html += `
-            <div class="card-lesson-half ${isRemoved ? 'lesson-removed' : ''} ${isChanged && !isRemoved ? 'lesson-changed' : ''}"${isChanged ? ' data-changed="true"' : ''}>
-                ${lesson.group ? `<div class="lesson-group-badge">${esc(lesson.group)}</div>` : ''}
-                <div class="lesson-subject-name">${esc(lesson.subject)}</div>
-
-                <div class="card-details">
-                    ${lesson.teacher ? `
-                        <div class="card-detail-item">
-                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                <circle cx="12" cy="7" r="4"/>
-                            </svg>
-                            <span>${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}</span>
-                        </div>
-                    ` : ''}
-                    ${lesson.room ? `
-                        <div class="card-detail-item">
-                            <svg class="detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 20H2"/>
-                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
-                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
-                                <path d="M14 12h.01"/>
-                                <path d="M22 20h-3"/>
-                            </svg>
-                            <span>${esc(lesson.room)}</span>
-                        </div>
-                    ` : ''}
-                </div>
-
-                <!-- Status Badges -->
-                ${isChanged || isRemoved ? `
-                    <div class="card-badges">
-                        ${isChanged ? `
-                            <div class="card-badge changed">
-                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                                    <line x1="12" y1="9" x2="12" y2="13"/>
-                                    <line x1="12" y1="17" x2="12.01" y2="17"/>
-                                </svg>
-                                <span>Změna v rozvrhu</span>
-                            </div>
-                        ` : ''}
-                        ${isRemoved ? `
-                            <div class="card-badge removed">
-                                <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"/>
-                                    <line x1="15" y1="9" x2="9" y2="15"/>
-                                    <line x1="9" y1="9" x2="15" y2="15"/>
-                                </svg>
-                                <span>Hodina zrušena</span>
-                            </div>
-                        ` : ''}
-                    </div>
-                ` : ''}
-            </div>
-        `;
-    });
-
-    html += '</div>';
-    return html;
-}
-
-/**
- * Render Card View Layout (swipeable cards)
- * Shows lessons as swipeable cards
- */
-export function renderCardLayout() {
-    const container = document.querySelector('.timetable-container');
-    if (!container) return;
-
-    const data = state.currentTimetableData;
-    const selectedDay = state.selectedDayIndex;
-
-    // Get all lessons for selected day, sorted by hour
-    const dayLessons = data
-        .filter(lesson => lesson.day === selectedDay)
-        .sort((a, b) => a.hour - b.hour);
-
-    // Zjistit všechny hodiny ve VYBRANÉM DNI (pro určení rozsahu)
-    const allHours = [...new Set(dayLessons.map(d => d.hour))].sort((a, b) => a - b);
-    const minHour = allHours.length > 0 ? Math.min(...allHours) : 0;
-    const maxHour = allHours.length > 0 ? Math.max(...allHours) : -1;
-    const isCompletelyEmpty = dayLessons.length === 0 || maxHour < 0;
-
-    // EDGE CASE: Pokud je rozvrh kompletně prázdný, zobraz stávající empty state
-    if (isCompletelyEmpty) {
-        // Abort any existing event listeners before showing empty state
-        if (swipeController) {
-            swipeController.abort();
-            swipeController = null;
-        }
-        if (navigationController) {
-            navigationController.abort();
-            navigationController = null;
-        }
-
-        container.innerHTML = `
-            <div class="card-view-wrapper">
-                <div class="lesson-card-full">
-                    <div style="text-align: center; padding: 40px; color: var(--text-dim);">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto;">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="16" y1="2" x2="16" y2="6"></line>
-                            <line x1="8" y1="2" x2="8" y2="6"></line>
-                            <line x1="3" y1="10" x2="21" y2="10"></line>
-                        </svg>
-                        <p style="margin-top: 16px; font-size: 1.2rem;">Žádná výuka</p>
-                    </div>
-                </div>
-            </div>
-        `;
-        return;
-    }
-
-    // Vytvořit mapu hodin (stejně jako stávající kód)
-    const lessonsByHour = {};
-    dayLessons.forEach(lesson => {
-        if (!lessonsByHour[lesson.hour]) {
-            lessonsByHour[lesson.hour] = [];
-        }
-        lessonsByHour[lesson.hour].push(lesson);
-    });
-
-    // NOVÝ: Vytvořit seznam VŠECH hodin od minHour do maxHour (včetně volných)
-    const allHoursList = [];
-    for (let hour = minHour; hour <= maxHour; hour++) {
-        allHoursList.push(hour);
-    }
-
-    // Validate cardIndex against actual card count
-    const rawCardIndex = state.layoutPreferences['card-view'].cardIndex || 0;
-    const maxCardIndex = Math.max(0, allHoursList.length - 1);
-    const currentCardIndex = Math.max(0, Math.min(rawCardIndex, maxCardIndex));
-
-    // Reset cardIndex in state if it was clamped
-    if (rawCardIndex !== currentCardIndex) {
-        updateLayoutPreference('card-view', { cardIndex: currentCardIndex });
-    }
-
-    let html = `<div class="card-view-wrapper" style="transform: translateX(-${currentCardIndex * 100}%)">`;
-
-    // ZMĚNA: Iterovat přes všechny hodiny (včetně prázdných)
-    allHoursList.forEach((hour, cardIndex) => {
-        const lessons = lessonsByHour[hour] || []; // Může být undefined pro prázdné hodiny
-        const timeInfo = lessonTimes.find(t => t.hour === hour);
-        const timeLabel = timeInfo ? timeInfo.label : '';
-
-        if (lessons.length === 0) {
-            // NOVÝ KÓD: Prázdná hodina (volno)
-            html += `
-                <div class="lesson-card-full empty-lesson-card" data-card-index="${cardIndex}">
-                    <div class="card-header-row">
-                        <div class="card-subject">${hour}. hodina</div>
-                        <div class="card-time-meta">${timeLabel}</div>
-                    </div>
-                    <div class="empty-lesson-content">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                            <line x1="16" y1="2" x2="16" y2="6"></line>
-                            <line x1="8" y1="2" x2="8" y2="6"></line>
-                            <line x1="3" y1="10" x2="21" y2="10"></line>
-                        </svg>
-                        <div class="empty-lesson-text">Volno</div>
-                    </div>
-                </div>
-            `;
-        } else {
-            // STÁVAJÍCÍ KÓD: Hodina s výukou
-            const hasChanged = lessons.some(l => l.changed);
-            const hasRemoved = lessons.some(l => l.type === 'removed' || l.type === 'absent');
-
-            // Time-based highlighting (kept in sync later by lesson-status.js)
-            const ts = timeStatus(selectedDay, hour, !hasRemoved && state.selectedScheduleType === 'actual');
-
-            html += `
-                <div class="lesson-card-full${ts.cls}"${ts.attrs} data-card-index="${cardIndex}" data-lesson-id="${lessons[0].day}-${hour}">
-                    <!-- Header: Hour + Time -->
-                    <div class="card-header-row">
-                        <div class="card-subject">${hour}. hodina</div>
-                        <div class="card-time-meta">
-                            ${timeLabel}
-                        </div>
-                    </div>
-
-                    <!-- Lessons (split if multiple groups) -->
-                    ${lessons.length === 1 ? renderSingleLesson(lessons[0]) : renderSplitLessons(lessons)}
-                </div>
-            `;
-        }
-    });
-
-    html += '</div>';
-
-    // Add navigation dots - OPRAVA: Použít allHoursList.length místo hours.length
-    html += '<div class="card-view-dots">';
-    allHoursList.forEach((_, index) => {
-        // Decorative for AT: the labelled prev/next buttons are the keyboard path
-        html += `<div class="card-view-dot ${index === currentCardIndex ? 'active' : ''}" data-dot-index="${index}" aria-hidden="true"></div>`;
-    });
-    html += '</div>';
-
-    // Add navigation buttons
-    html += `
-        <div class="card-view-navigation">
-            <button type="button" class="card-view-nav-btn" id="cardPrevBtn" aria-label="Předchozí hodina" ${currentCardIndex === 0 ? 'disabled' : ''}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="15 18 9 12 15 6"></polyline>
-                </svg>
-            </button>
-            <button type="button" class="card-view-nav-btn" id="cardNextBtn" aria-label="Další hodina" ${currentCardIndex >= allHoursList.length - 1 ? 'disabled' : ''}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-            </button>
-        </div>
-    `;
-
-    container.innerHTML = html;
-
-    // Off-screen cards must not take keyboard focus (they are only translated away)
-    syncCardInert(currentCardIndex);
-
-    // Add event listeners - OPRAVA: Použít allHoursList.length
-    initCardViewNavigation(allHoursList.length);
-    initCardViewSwipe(allHoursList.length);
-    initDaySwipeNavigation('vertical'); // Vertical swipe for day changes
-    addCardClickListeners(lessonsByHour);
-}
-
-/**
- * Initialize card view navigation buttons and dots
- */
-function initCardViewNavigation(totalCards) {
-    // Abort previous navigation listeners if they exist
-    if (navigationController) {
-        navigationController.abort();
-    }
-
-    // Create new AbortController
-    navigationController = new AbortController();
-    const signal = navigationController.signal;
-
-    const prevBtn = document.getElementById('cardPrevBtn');
-    const nextBtn = document.getElementById('cardNextBtn');
-    const dots = document.querySelectorAll('.card-view-dot');
-
-    if (prevBtn) {
-        prevBtn.addEventListener('click', () => navigateCard(-1, totalCards), { signal });
-    }
-
-    if (nextBtn) {
-        nextBtn.addEventListener('click', () => navigateCard(1, totalCards), { signal });
-    }
-
-    dots.forEach((dot, index) => {
-        dot.addEventListener('click', () => navigateToCard(index, totalCards), { signal });
-    });
-}
-
-/**
- * Navigate to next/previous card
- */
-function navigateCard(direction, totalCards) {
-    const currentIndex = state.layoutPreferences['card-view'].cardIndex || 0;
-    const newIndex = Math.max(0, Math.min(totalCards - 1, currentIndex + direction));
-    navigateToCard(newIndex, totalCards);
-}
-
-/**
- * Navigate to specific card by index
- */
-function navigateToCard(index, totalCards) {
-    // Update state
-    updateLayoutPreference('card-view', { cardIndex: index });
-
-    // Update wrapper transform
-    const wrapper = document.querySelector('.card-view-wrapper');
-    if (wrapper) {
-        wrapper.style.transform = `translateX(-${index * 100}%)`;
-    }
-
-    // Update dots
-    document.querySelectorAll('.card-view-dot').forEach((dot, i) => {
-        dot.classList.toggle('active', i === index);
-    });
-    syncCardInert(index);
-
-    // Update buttons
-    const prevBtn = document.getElementById('cardPrevBtn');
-    const nextBtn = document.getElementById('cardNextBtn');
-
-    if (prevBtn) prevBtn.disabled = index === 0;
-    if (nextBtn) nextBtn.disabled = index === totalCards - 1;
-}
-
-/** Only the visible card is focusable / exposed; the rest are inert. */
-function syncCardInert(index) {
-    document.querySelectorAll('.card-view-wrapper > .lesson-card-full').forEach((card, i) => {
-        card.inert = i !== index;
-    });
-}
-
-/**
- * Show the card that contains `el` (used by the deep-link highlight, which
- * cannot scroll a card into view - the card view is a translated strip).
- * @returns {boolean} true when a card was found
- */
-export function showCardContaining(el) {
-    const card = el && el.closest ? el.closest('.lesson-card-full') : null;
-    if (!card || card.dataset.cardIndex === undefined) return false;
-    const total = document.querySelectorAll('.card-view-wrapper > .lesson-card-full').length;
-    navigateToCard(Number(card.dataset.cardIndex), total);
-    return true;
-}
-
-/**
- * Initialize card view swipe gestures
- */
-function initCardViewSwipe(totalCards) {
-    const container = document.querySelector('.timetable-container.card-view-mode');
-    if (!container) return;
-
-    // Abort previous swipe listeners if they exist
-    if (swipeController) {
-        swipeController.abort();
-    }
-
-    // Create new AbortController
-    swipeController = new AbortController();
-    const signal = swipeController.signal;
-
-    let startX = 0;
-    let startY = 0;
-    let isDragging = false;
-
-    container.addEventListener('touchstart', (e) => {
-        startX = e.touches[0].clientX;
-        startY = e.touches[0].clientY;
-        isDragging = true;
-    }, { passive: true, signal });
-
-    container.addEventListener('touchmove', (e) => {
-        if (!isDragging) return;
-
-        // Prevent vertical scroll while swiping horizontally
-        const currentX = e.touches[0].clientX;
-        const currentY = e.touches[0].clientY;
-        const diffX = Math.abs(currentX - startX);
-        const diffY = Math.abs(currentY - startY);
-
-        if (diffX > diffY) {
-            e.preventDefault();
-        }
-    }, { passive: false, signal });
-
-    container.addEventListener('touchend', (e) => {
-        if (!isDragging) return;
-        isDragging = false;
-
-        const endX = e.changedTouches[0].clientX;
-        const diff = startX - endX;
-        const threshold = 30; // Lower threshold for easier swiping
-
-        if (Math.abs(diff) > threshold) {
-            const currentIndex = state.layoutPreferences['card-view'].cardIndex || 0;
-
-            if (diff > 0 && currentIndex < totalCards - 1) {
-                // Swipe left - next card
-                navigateToCard(currentIndex + 1, totalCards);
-            } else if (diff < 0 && currentIndex > 0) {
-                // Swipe right - previous card
-                navigateToCard(currentIndex - 1, totalCards);
-            }
-        }
-    }, { passive: true, signal });
-}
-
-/**
- * Add click listeners to cards to open modal
- */
-function addCardClickListeners(lessonsByHour) {
-    // OPRAVA: Pouze pro neprázdné karty
-    document.querySelectorAll('.lesson-card-full:not(.empty-lesson-card)').forEach((card) => {
-        // For single lesson cards
-        const singleLesson = card.querySelector('.card-lesson-single');
-        if (singleLesson) {
-            card.addEventListener('click', () => {
-                const lessonId = card.dataset.lessonId;
-                const [day, hour] = lessonId.split('-');
-                const lessons = lessonsByHour[hour];
-                if (lessons && lessons[0]) {
-                    showLessonModal(lessons[0]);
-                }
-            });
-        }
-
-        // For split lesson cards - click on individual halves
-        const lessonHalves = card.querySelectorAll('.card-lesson-half');
-        if (lessonHalves.length > 0) {
-            const lessonId = card.dataset.lessonId;
-            const [day, hour] = lessonId.split('-');
-            const lessons = lessonsByHour[hour];
-
-            lessonHalves.forEach((half, index) => {
-                if (!lessons || !lessons[index]) return;
-                addLessonDescription(half, lessons[index]);
-                makeActivatable(half, (e) => {
-                    e.stopPropagation(); // Prevent card click
-                    showLessonModal(lessons[index]);
-                });
-            });
-        }
-    });
-}
-
-/**
- * Render empty lesson (free period) for compact list
- */
-function renderEmptyLesson(hour) {
-    const timeInfo = lessonTimes.find(t => t.hour === hour);
-    const timeLabel = timeInfo ? timeInfo.label : '';
-
-    return `
-        <div class="compact-lesson-item compact-empty-lesson">
-            <div class="compact-lesson-meta">
-                <div class="compact-lesson-badge compact-badge-small compact-empty-badge">${hour}</div>
-                <div class="compact-lesson-time compact-time-small">
-                    <div class="compact-lesson-time-label">${timeLabel}</div>
-                </div>
-            </div>
-            <div class="compact-lesson-content">
-                <div class="compact-lesson-subject compact-empty-subject">Volno</div>
-            </div>
-        </div>
-    `;
-}
-
-/**
- * Render single lesson for compact list
- */
-function renderSingleCompactLesson(lesson) {
-    const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
-    const timeLabel = timeInfo ? timeInfo.label : '';
-
-    const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-    const isChanged = lesson.changed;
-
-    let itemClasses = 'compact-lesson-item';
-    if (isRemoved) itemClasses += ' removed';
-    if (isChanged) itemClasses += ' changed';
-
-    // Time-based highlighting (kept in sync later by lesson-status.js)
-    const ts = timeStatus(lesson.day, lesson.hour, !isRemoved && state.selectedScheduleType === 'actual');
-    itemClasses += ts.cls;
-
-    const subjectDisplay = abbreviateSubject(lesson.subject);
-
-    return `
-        <div class="${itemClasses}"${ts.attrs}${isChanged ? ' data-changed="true"' : ''} data-lesson-id="${lesson.day}-${lesson.hour}">
-            ${lessonStatusIcon(lesson)}
-            <div class="compact-lesson-meta">
-                <div class="compact-lesson-badge compact-badge-small">${lesson.hour}</div>
-                <div class="compact-lesson-time compact-time-small">
-                    <div class="compact-lesson-time-label">${timeLabel}</div>
-                </div>
-            </div>
-            <div class="compact-lesson-content">
-                <div class="compact-lesson-subject">${esc(subjectDisplay)}</div>
-                <div class="compact-lesson-details">
-                    ${lesson.teacher ? `
-                        <span class="compact-detail-item">
-                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                <circle cx="12" cy="7" r="4"/>
-                            </svg>
-                            ${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}
-                        </span>
-                    ` : ''}
-                    ${lesson.room ? `
-                        <span class="compact-detail-item">
-                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 20H2"/>
-                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
-                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
-                                <path d="M14 12h.01"/>
-                                <path d="M22 20h-3"/>
-                            </svg>
-                            ${esc(lesson.room)}
-                        </span>
-                    ` : ''}
-                </div>
-            </div>
-            ${lesson.group ? `<div class="compact-group-badge">${esc(lesson.group)}</div>` : ''}
-        </div>
-    `;
-}
-
-/**
- * Render split lessons (multiple groups) for compact list
- */
-function renderSplitCompactLessons(lessons, isVertical = false) {
-    if (!lessons || lessons.length === 0) return '';
-
-    const firstLesson = lessons[0];
-    const timeInfo = lessonTimes.find(t => t.hour === firstLesson.hour);
-    const timeLabel = timeInfo ? timeInfo.label : '';
-
-    const allRemoved = lessons.every(l => l.type === 'removed' || l.type === 'absent');
-
-    let itemClasses = 'compact-lesson-item compact-lesson-split';
-    if (allRemoved) itemClasses += ' removed';
-    if (isVertical) itemClasses += ' compact-lesson-split-vertical';
-
-    // Time-based highlighting (kept in sync later by lesson-status.js)
-    const ts = timeStatus(firstLesson.day, firstLesson.hour, !allRemoved && state.selectedScheduleType === 'actual');
-    itemClasses += ts.cls;
-
-    let html = `
-        <div class="${itemClasses}"${ts.attrs} data-lesson-id="${firstLesson.day}-${firstLesson.hour}">
-            <div class="compact-lesson-meta">
-                <div class="compact-lesson-badge compact-badge-small">${firstLesson.hour}</div>
-                <div class="compact-lesson-time compact-time-small">
-                    <div class="compact-lesson-time-label">${timeLabel}</div>
-                </div>
-            </div>
-            <div class="compact-lessons-split-container">
-    `;
-
-    lessons.forEach(lesson => {
-        const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-        const isChanged = lesson.changed;
-        const subjectDisplay = abbreviateSubject(lesson.subject);
-
-        let halfClasses = 'compact-lesson-half';
-        if (isRemoved) halfClasses += ' lesson-removed';
-        if (isChanged) halfClasses += ' lesson-changed';
-
-        html += `
-            <div class="${halfClasses}"${isChanged ? ' data-changed="true"' : ''} data-lesson-index="${lessons.indexOf(lesson)}">
-                ${lessonStatusIcon(lesson)}
-                ${lesson.group ? `<div class="compact-group-badge">${esc(lesson.group)}</div>` : ''}
-                <div class="compact-lesson-subject">${esc(subjectDisplay)}</div>
-                <div class="compact-lesson-details">
-                    ${lesson.teacher ? `
-                        <span class="compact-detail-item">
-                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                                <circle cx="12" cy="7" r="4"/>
-                            </svg>
-                            ${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}
-                        </span>
-                    ` : ''}
-                    ${lesson.room ? `
-                        <span class="compact-detail-item">
-                            <svg class="compact-detail-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 20H2"/>
-                                <path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/>
-                                <path d="M11 4H8a2 2 0 0 0-2 2v14"/>
-                                <path d="M14 12h.01"/>
-                                <path d="M22 20h-3"/>
-                            </svg>
-                            ${esc(lesson.room)}
-                        </span>
-                    ` : ''}
-                </div>
-            </div>
-        `;
-    });
-
-    html += `
-            </div>
-        </div>
-    `;
-
-    return html;
-}
-
-/**
- * Render Compact List Layout
- * Shows lessons as a vertical list
- */
-export function renderCompactListLayout() {
-    const container = document.querySelector('.timetable-container');
-    if (!container) return;
-
-    const data = state.currentTimetableData;
-    const selectedDay = state.selectedDayIndex;
-
-    // Get all lessons for selected day, sorted by hour
-    const dayLessons = data
-        .filter(lesson => lesson.day === selectedDay)
-        .sort((a, b) => a.hour - b.hour);
-
-    // Zjistit všechny hodiny ve VYBRANÉM DNI (pro určení rozsahu)
-    const allHours = [...new Set(dayLessons.map(d => d.hour))].sort((a, b) => a - b);
-    const minHour = allHours.length > 0 ? Math.min(...allHours) : 0;
-    const maxHour = allHours.length > 0 ? Math.max(...allHours) : -1;
-    const isCompletelyEmpty = dayLessons.length === 0 || maxHour < 0;
-
-    // EDGE CASE: Pokud je rozvrh kompletně prázdný, zobraz stávající empty state
-    if (isCompletelyEmpty) {
-        container.innerHTML = `
-            <div class="compact-list-wrapper">
-                <div class="compact-empty-day">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto;">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                        <line x1="3" y1="10" x2="21" y2="10"></line>
-                    </svg>
-                    <p style="margin-top: 12px;">Žádná výuka</p>
-                </div>
-            </div>
-        `;
-        return;
-    }
-
-    // Vytvořit mapu hodin pro rychlé lookup
-    const lessonMap = {};
-    dayLessons.forEach(lesson => {
-        if (!lessonMap[lesson.hour]) {
-            lessonMap[lesson.hour] = [];
-        }
-        lessonMap[lesson.hour].push(lesson);
-    });
-
-    // Start HTML
-    let html = '<div class="compact-list-wrapper">';
-
-    // Renderovat VŠECHNY hodiny od minHour do maxHour (včetně volných)
-    for (let hour = minHour; hour <= maxHour; hour++) {
-        const lessons = lessonMap[hour];
-
-        if (!lessons || lessons.length === 0) {
-            // Prázdná hodina (volno)
-            html += renderEmptyLesson(hour);
-        } else if (lessons.length === 1) {
-            // Jedna hodina - normální layout
-            html += renderSingleCompactLesson(lessons[0]);
-        } else if (lessons.length === 2) {
-            // 2 skupiny - side-by-side
-            html += renderSplitCompactLessons(lessons, false);
-        } else {
-            // 3+ skupiny - vertikální stack
-            html += renderSplitCompactLessons(lessons, true);
-        }
-    }
-
-    html += '</div>';
-
-    container.innerHTML = html;
-
-    // Click listeners pro single lessons
-    document.querySelectorAll('.compact-lesson-item:not(.compact-empty-lesson):not(.compact-lesson-split)').forEach((item) => {
-        const lessonId = item.dataset.lessonId;
-        if (!lessonId) return;
-
-        const [day, hour] = lessonId.split('-').map(Number);
-        const lessons = lessonMap[hour];
-        if (lessons && lessons[0]) {
-            addLessonDescription(item, lessons[0]);
-            makeActivatable(item, () => showLessonModal(lessons[0]));
-        }
-    });
-
-    // Click listeners pro split lesson halves
-    document.querySelectorAll('.compact-lesson-half').forEach((half) => {
-        const parentItem = half.closest('.compact-lesson-item');
-        if (!parentItem) return;
-
-        const lessonId = parentItem.dataset.lessonId;
-        if (!lessonId) return;
-
-        const [day, hour] = lessonId.split('-').map(Number);
-        const lessonsInHour = lessonMap[hour] || [];
-
-        // Najdi index half elementu mezi svými sourozenci
-        const halfIndex = parseInt(half.dataset.lessonIndex);
-        const lesson = lessonsInHour[halfIndex];
-
-        if (lesson) {
-            addLessonDescription(half, lesson);
-            makeActivatable(half, (e) => {
-                e.stopPropagation(); // Zabrání propagaci na parent
-                showLessonModal(lesson);
-            });
-        }
-    });
-
-    // Always start at the top: a remembered scroll offset from another day,
-    // timetable or session used to hide the first lessons of the day.
-    container.scrollTop = 0;
-
-    // Add day swipe navigation
-    initDaySwipeNavigation('horizontal');
-}
-
-/**
- * Render Agenda Layout
- * Timeline view: time column on left, lesson card on right
- */
-export function renderAgendaLayout() {
-    const container = document.querySelector('.timetable-container');
-    if (!container) return;
-
-    const data = state.currentTimetableData;
-    const selectedDay = state.selectedDayIndex;
-
-    const dayLessons = data
-        .filter(lesson => lesson.day === selectedDay)
-        .sort((a, b) => a.hour - b.hour);
-
-    const allHours = [...new Set(dayLessons.map(d => d.hour))].sort((a, b) => a - b);
-    const minHour = allHours.length > 0 ? Math.min(...allHours) : 0;
-    const maxHour = allHours.length > 0 ? Math.max(...allHours) : -1;
-    const isEmpty = dayLessons.length === 0 || maxHour < 0;
-
-    if (isEmpty) {
-        container.innerHTML = `
-            <div class="agenda-wrapper">
-                <div class="agenda-empty-day">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                        <line x1="16" y1="2" x2="16" y2="6"></line>
-                        <line x1="8" y1="2" x2="8" y2="6"></line>
-                        <line x1="3" y1="10" x2="21" y2="10"></line>
-                    </svg>
-                    <p>Žádná výuka</p>
-                </div>
-            </div>
-        `;
-        return;
-    }
-
-    const lessonMap = {};
-    dayLessons.forEach(lesson => {
-        if (!lessonMap[lesson.hour]) lessonMap[lesson.hour] = [];
-        lessonMap[lesson.hour].push(lesson);
-    });
-
-
-    let html = '<div class="agenda-wrapper">';
-
-    for (let hour = minHour; hour <= maxHour; hour++) {
-        const lessons = lessonMap[hour];
-        const timeInfo = lessonTimes.find(t => t.hour === hour);
-        const startTime = timeInfo
-            ? `${String(timeInfo.start[0]).padStart(2, '0')}:${String(timeInfo.start[1]).padStart(2, '0')}`
-            : `${hour}.`;
-
-        if (!lessons || lessons.length === 0) {
-            html += `
-                <div class="agenda-row agenda-row-empty">
-                    <div class="agenda-time">${startTime}</div>
-                    <div class="agenda-card agenda-card-empty">Volno</div>
-                </div>
-            `;
-        } else {
-            lessons.forEach((lesson, lessonIdx) => {
-                const isRemoved = lesson.type === 'removed' || lesson.type === 'absent';
-                const isChanged = lesson.changed;
-
-                let rowClasses = 'agenda-row';
-                if (isRemoved) rowClasses += ' agenda-removed';
-                else if (isChanged) rowClasses += ' agenda-changed';
-
-                // Time-based highlighting (kept in sync later by lesson-status.js)
-                const ts = timeStatus(selectedDay, hour, state.selectedScheduleType === 'actual' && !isRemoved, 'agenda');
-                rowClasses += ts.cls;
-
-                html += `
-                    <div class="${rowClasses}"${ts.attrs}${isChanged ? ' data-changed="true"' : ''} data-lesson-id="${lesson.day}-${hour}-${lessonIdx}">
-                        <div class="agenda-time">${lessonIdx === 0 ? startTime : ''}</div>
-                        <div class="agenda-card">
-                            ${lesson.group ? `<div class="agenda-group">${esc(lesson.group)}</div>` : ''}
-                            <div class="agenda-subject">${esc(lesson.subject)}</div>
-                            <div class="agenda-details">
-                                ${lesson.teacher ? `<span class="agenda-detail">${esc(abbreviateTeacherName(lesson.teacher, state.teacherAbbreviationMap))}</span>` : ''}
-                                ${lesson.room ? `<span class="agenda-detail agenda-room">${esc(lesson.room)}</span>` : ''}
-                            </div>
-                            ${(isChanged || isRemoved) ? `
-                                <div class="agenda-badge ${isRemoved ? 'removed' : 'changed'}">
-                                    ${isRemoved ? 'Zrušeno' : 'Změna'}
-                                </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-            });
-        }
-    }
-
-    html += '</div>';
-    container.innerHTML = html;
-
-    // Click listeners
-    document.querySelectorAll('.agenda-row[data-lesson-id]').forEach(row => {
-        const parts = row.dataset.lessonId.split('-').map(Number);
-        const hour = parts[1];
-        const idx = parts[2];
-        const lessons = lessonMap[hour];
-        if (lessons && lessons[idx]) {
-            addLessonDescription(row, lessons[idx]);
-            makeActivatable(row, () => showLessonModal(lessons[idx]));
-        }
-    });
-
-    initDaySwipeNavigation('horizontal');
-}
+export { slotLessons };

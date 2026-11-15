@@ -16,25 +16,17 @@ const crypto = require('crypto');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 
-// Same order as the original <link> tags in index.html (main.css first,
-// which itself @imports variables/base/header/... in order).
+// Design G stylesheets in cascade order (public/css/g/).
 const CSS_ORDER = [
-    'main.css',
-    'theme-warning.css',
-    'notifications.css',
-    'toast.css',
-    'timetable-extras.css',
-    'settings.css',
-    'layout-modal.css',
-    'layout-card-view.css',
-    'layout-compact-list.css',
-    'outage.css',
-    'footer.css',
-    'favorites.css',
-    // phase 2 views; print.css last so its @media print rules win
-    'views.css',
-    'kiosk.css',
-    'print.css',
+    // Návrh G „Obloha“: vrstvy deklaruje tokens.css (@layer reset, tokens, base, materials, components, shell, views, motion, print)
+    'g/tokens.css',
+    'g/base.css',
+    'g/shell.css',    // rám: horní lišta, plovoucí spodní lišta, postranní panel, hledání, hlášky
+    'g/rozvrh.css',   // přehled, den, týden, seznam, karta, detail hodiny
+    'g/views.css',    // změny, volné učebny, společné volno
+    'g/sheets.css',   // nastavení, upozornění, oblíbené, dialogy, toasty
+    'g/kiosk.css',
+    'g/print.css',
 ];
 
 function hashFile(file) {

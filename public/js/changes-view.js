@@ -2,6 +2,10 @@
  * "Změny" (?view=changes): the school-wide substitution board for today /
  * tomorrow, read from aggregates/changes_Actual|Next (S3) - two Firestore
  * reads instead of every class timetable, no request to Bakaláři.
+ *
+ * Design G: one sentence on top like Apple Weather ("Dnes 12 změn v 6 třídách:
+ * 7 suplování, 3 jiné učebny a 2 odpadají."), quick days as a segmented
+ * control, every class a content module (g-veil) with its rows.
  */
 
 import { fetchAggregate, fetchBackendStatus } from './api.js';
@@ -9,10 +13,11 @@ import {
     boardDayOptions, pickBoardDate, boardEntries, filterEntries, groupByClass,
     teachersMatch, teachersInEntries, dayLabel, shortDayLabel, czPlural, freshnessText, isoDate, parseIso, addDaysIso,
 } from './changes-core.js';
-import { entriesTableHtml, safeId } from './changes-render.js';
+import { entriesTableHtml, safeId, icon } from './changes-render.js';
 import { state } from './state.js';
 import { esc, setPressed } from './utils.js';
-import { updateViewParams } from './view-router.js';
+import { updateViewParams, openTimetable } from './view-router.js';
+import { timetableUrl } from './view-route.js';
 import { shareLink } from './share.js';
 
 let model = null;
@@ -22,6 +27,17 @@ let loadSeq = 0;
 
 const $ = (id) => document.getElementById(id);
 const ON_DAY = ['v neděli', 'v pondělí', 'v úterý', 've středu', 've čtvrtek', 'v pátek', 'v sobotu'];
+const SHORT_DAY = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
+const QUICK_DAYS = 4;
+
+/** Kinds in the summary sentence, in this order, with Czech plural forms. */
+const SUMMARY_KINDS = [
+    ['substitution', ['suplování', 'suplování', 'suplování']],
+    ['roomChange', ['jiná učebna', 'jiné učebny', 'jiných učeben']],
+    ['removed', ['odpadá', 'odpadají', 'odpadá']],
+    ['absent', ['akce', 'akce', 'akcí']],
+    ['changed', ['jiná změna', 'jiné změny', 'jiných změn']],
+];
 
 /** "Dnes" / "Zítra" / "Ve čtvrtek 12. 11." for sentences. */
 function onDayPhrase(iso, now) {
@@ -31,6 +47,21 @@ function onDayPhrase(iso, now) {
     const d = parseIso(iso);
     const p = ON_DAY[d.getDay()];
     return `${p.charAt(0).toUpperCase()}${p.slice(1)} ${d.getDate()}. ${d.getMonth() + 1}.`;
+}
+
+/** "a, b a c" */
+function joinAnd(parts) {
+    if (parts.length <= 1) return parts.join('');
+    return `${parts.slice(0, -1).join(', ')} a ${parts[parts.length - 1]}`;
+}
+
+/** "Dnes 12 změn v 6 třídách: 7 suplování, 3 jiné učebny a 2 odpadají." */
+export function summarySentence(when, entries, classCount, scope = '') {
+    const counts = new Map();
+    for (const e of entries) counts.set(e.kind, (counts.get(e.kind) || 0) + 1);
+    const parts = SUMMARY_KINDS.filter(([k]) => counts.get(k)).map(([k, forms]) => czPlural(counts.get(k), forms));
+    const where = classCount > 1 ? ` v ${czPlural(classCount, ['třídě', 'třídách', 'třídách'])}` : '';
+    return `${when} ${czPlural(entries.length, ['změna', 'změny', 'změn'])}${scope}${where}: ${joinAnd(parts)}.`;
 }
 
 function wire() {
@@ -52,6 +83,34 @@ function wire() {
             url: location.href,
         });
     });
+    $('changesList').addEventListener('click', (e) => {
+        // Empty states point somewhere: another day, or without the filter
+        const go = e.target.closest('button[data-go-date]');
+        if (go) {
+            filters.date = go.dataset.goDate;
+            render();
+            const pressed = $('changesQuickDays').querySelector('[aria-pressed="true"]');
+            if (pressed) pressed.focus();
+            return;
+        }
+        if (e.target.closest('button[data-clear-filter]')) {
+            filters.class = '';
+            filters.teacher = '';
+            render();
+            $('changesClass').focus();
+            return;
+        }
+        const link = e.target.closest('a[data-open-class]');
+        if (link && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+            e.preventDefault();
+            openTimetable({ type: 'Class', id: link.dataset.openClass, schedule: link.dataset.week, day: Number(link.dataset.day) });
+        }
+    });
+}
+
+function skeletonHtml() {
+    const mod = (rows) => `<div class="chg-class chg-skel g-veil g-mod" aria-hidden="true"><div class="g-skel chg-skel-head"></div>${'<div class="g-skel chg-skel-row"></div>'.repeat(rows)}</div>`;
+    return mod(2) + mod(3) + mod(1);
 }
 
 function setBusy(busy) {
@@ -59,7 +118,7 @@ function setBusy(busy) {
     list.setAttribute('aria-busy', busy ? 'true' : 'false');
     if (busy && !model) {
         $('changesSummary').textContent = 'Načítám změny…';
-        list.innerHTML = '<div class="view-loading" aria-hidden="true"><span></span><span></span><span></span></div>';
+        list.innerHTML = skeletonHtml();
     }
 }
 
@@ -96,14 +155,31 @@ function fillDaySelect(select, options, date, now) {
     }).join('');
 }
 
-function fillQuickDays(container, options, date, now) {
+/** Quick days: today (if in the data) and the next school days, as a segmented control. */
+function quickDates(options, now) {
     const today = isoDate(now);
     const quick = [];
     if (options.some(o => o.date === today)) quick.push(today);
-    const next = options.find(o => o.date > today);
-    if (next) quick.push(next.date);
+    for (const o of options) {
+        if (quick.length >= QUICK_DAYS) break;
+        if (o.date > today) quick.push(o.date);
+    }
+    return quick;
+}
+
+/** "Dnes", "Zítra", otherwise "Pá 6. 11." (visible text = accessible name) */
+function quickLabel(iso, now) {
+    const label = shortDayLabel(iso, now);
+    if (label === 'Dnes' || label === 'Zítra') return label;
+    const d = parseIso(iso);
+    return `${SHORT_DAY[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.`;
+}
+
+function fillQuickDays(container, options, date, now) {
+    const quick = quickDates(options, now);
     container.innerHTML = quick.map(d =>
-        `<button type="button" class="seg-btn" data-date="${esc(d)}" aria-pressed="false">${esc(shortDayLabel(d, now))}</button>`).join('');
+        `<button type="button" data-date="${esc(d)}" aria-pressed="false">${esc(quickLabel(d, now))}</button>`).join('');
+    container.hidden = quick.length === 0;
     setPressed(container.querySelectorAll('button'), b => b.dataset.date === date);
 }
 
@@ -128,6 +204,37 @@ function fillTeacherSelect(select, entries) {
     select.disabled = defs.length === 0;
 }
 
+/** Empty state that says what to do next. */
+function emptyHtml({ when, filtered, nextDate, now }) {
+    const title = `${when} ${filtered ? 'pro tento výběr ' : ''}žádné změny`;
+    let hint;
+    let action = '';
+    if (filtered) {
+        hint = 'Ostatní třídy a vyučující změny mít můžou.';
+        action = `<button type="button" class="g-btn g-btn--small" data-clear-filter>${icon('x')}Zrušit filtr</button>`;
+    } else if (nextDate) {
+        hint = 'Hodiny proběhnou podle rozvrhu.';
+        const which = nextDate === addDaysIso(isoDate(now), 1) ? 'zítřek' : dayLabel(nextDate, now, { relative: false });
+        action = `<button type="button" class="g-btn g-btn--small" data-go-date="${esc(nextDate)}">${icon('arrow-right')}Ukázat ${esc(which)}</button>`;
+    } else {
+        hint = 'Hodiny proběhnou podle rozvrhu.';
+    }
+    return `<div class="g-empty g-veil chg-empty">${icon('circle-check')}<strong>${esc(title)}.</strong><span>${esc(hint)}</span>${action}</div>`;
+}
+
+function classModuleHtml(g, option) {
+    const id = safeId('chg-class', g.classId);
+    const week = option.source === 'Next' ? 'next' : 'actual';
+    const href = timetableUrl({ type: 'Class', id: g.classId, schedule: week, day: option.day });
+    return `<section class="chg-class g-veil g-mod">
+        <div class="chg-class-head">
+            <h3 class="chg-class-title" id="${id}">${esc(g.className)} <span class="chg-count">${czPlural(g.entries.length, ['změna', 'změny', 'změn'])}</span></h3>
+            <a class="chg-open g-btn g-btn--quiet g-btn--small" href="${esc(href)}" data-open-class="${esc(g.classId)}" data-week="${week}" data-day="${esc(option.day)}" aria-label="Otevřít rozvrh třídy ${esc(g.className)}">Rozvrh${icon('chevron-right')}</a>
+        </div>
+        ${entriesTableHtml(g.entries, id)}
+    </section>`;
+}
+
 function render() {
     if (!model) return;
     const now = new Date();
@@ -138,9 +245,11 @@ function render() {
     if (options.length === 0) {
         ['changesDay', 'changesClass', 'changesTeacher'].forEach(id => { $(id).disabled = true; });
         $('changesQuickDays').innerHTML = '';
+        $('changesQuickDays').hidden = true;
         summary.textContent = '';
         $('changesFreshness').textContent = freshnessText({ lastSuccessAt: model.status && model.status.lastSuccessAt }, now);
-        list.innerHTML = `<p class="view-empty">Přehled změn zatím není k dispozici. Vznikne po příštím stažení dat z Bakalářů – zkuste to prosím později.</p>`;
+        list.innerHTML = `<div class="g-empty g-veil chg-empty">${icon('clock')}<strong>Přehled změn zatím není k dispozici.</strong>`
+            + '<span>Vznikne po příštím stažení dat z Bakalářů – zkuste to prosím později.</span></div>';
         return;
     }
     ['changesDay', 'changesClass'].forEach(id => { $(id).disabled = false; });
@@ -170,19 +279,15 @@ function render() {
     const filtered = !!(filters.class || filters.teacher);
     if (shown.length === 0) {
         summary.textContent = '';
-        list.innerHTML = `<p class="view-empty"><svg aria-hidden="true" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`
-            + `${esc(when)} ${filtered ? 'pro tento výběr ' : ''}žádné změny.</p>`;
+        const nextDate = (options.find(o => o.date > date && o.items.length) || {}).date || null;
+        list.innerHTML = emptyHtml({ when, filtered, nextDate, now });
     } else {
-        summary.textContent = `${when}: ${czPlural(shown.length, ['změna', 'změny', 'změn'])}`
-            + (groups.length > 1 ? ` v ${czPlural(groups.length, ['třídě', 'třídách', 'třídách'])}` : '')
-            + (filtered ? ' (filtr)' : '');
-        list.innerHTML = groups.map(g => {
-            const id = safeId('chg-class', g.classId);
-            return `<section class="chg-class">
-                <h3 class="chg-class-title" id="${id}">${esc(g.className)} <span class="chg-count">${czPlural(g.entries.length, ['změna', 'změny', 'změn'])}</span></h3>
-                ${entriesTableHtml(g.entries, id)}
-            </section>`;
-        }).join('');
+        const scope = [
+            filters.class && groups[0] ? ` ve třídě ${groups[0].className}` : '',
+            teacherDef ? ` u vyučujícího ${teacherDef.name}` : '',
+        ].join('');
+        summary.textContent = summarySentence(when, shown, groups.length, scope);
+        list.innerHTML = groups.map(g => classModuleHtml(g, option)).join('');
     }
 
     // Shareable state: the explicitly chosen day and the filters

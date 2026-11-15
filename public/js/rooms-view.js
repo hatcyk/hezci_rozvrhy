@@ -11,6 +11,8 @@ import { dayLabel, isoDate, mondayIso, addDaysIso, freshnessText, czPlural } fro
 import { timetableUrl } from './view-route.js';
 import { esc, setPressed } from './utils.js';
 import { updateViewParams, openTimetable } from './view-router.js';
+import { icon } from './changes-render.js';
+import { lessonTimes } from './constants.js';
 
 const HIDDEN_KEY = 'hiddenRooms';
 const WHEN_LABEL = {
@@ -19,6 +21,13 @@ const WHEN_LABEL = {
     nextDay: 'Příští školní den',
     next: 'Další hodina',
     picked: 'Vybraná hodina',
+};
+/** Start of the sentence on top ("Teď volné: 3"). */
+const LEAD_LABEL = {
+    now: 'Teď volné',
+    upcoming: 'Příští hodinu volné',
+    nextDay: 'Příští školní den volné',
+    picked: 'Volné',
 };
 
 let model = null;
@@ -108,7 +117,7 @@ export async function enterRoomsView(params = {}) {
     wire();
     const seq = ++loadSeq;
     $('roomsResult').setAttribute('aria-busy', 'true');
-    if (!model) $('roomsResult').innerHTML = '<div class="view-loading" aria-hidden="true"><span></span><span></span><span></span></div>';
+    if (!model) $('roomsResult').innerHTML = skeletonHtml();
     const [actual, next, status] = await Promise.all([
         fetchAggregate('freeRooms_Actual').catch(() => null),
         fetchAggregate('freeRooms_Next').catch(() => null),
@@ -130,31 +139,70 @@ export async function enterRoomsView(params = {}) {
     render();
 }
 
+function skeletonHtml() {
+    const tiles = '<div class="g-skel rooms-skel-tile"></div>'.repeat(4);
+    return `<div class="rooms-slot g-veil g-mod" aria-hidden="true"><div class="g-skel rooms-skel-head"></div><div class="rooms-skel-tiles">${tiles}</div></div>`.repeat(2);
+}
+
+/** "8:00–8:45" of a lesson */
+function timeRange(hour) {
+    const t = lessonTimes.find(x => x.hour === hour);
+    return t ? t.label.replace('-', '–') : '';
+}
+
+/** A tile: the big room code opens the room's timetable, the eye hides it from the list. */
 function roomItem(room, slot) {
     const href = timetableUrl({ type: 'Room', id: room.id, schedule: slot.week.toLowerCase(), day: slot.day });
     return `<li class="room-item">
         <a class="room-link" href="${esc(href)}" data-room="${esc(room.id)}" data-week="${esc(slot.week)}" data-day="${esc(slot.day)}">${esc(room.name)}</a>
-        <button type="button" class="room-hide" data-room="${esc(room.id)}" aria-label="Skrýt ${esc(room.name)} ze seznamu">Skrýt</button>
+        <button type="button" class="room-hide" data-room="${esc(room.id)}" aria-label="Skrýt ${esc(room.name)} ze seznamu" title="Skrýt ze seznamu">${icon('eye-off')}</button>
     </li>`;
+}
+
+/** Free rooms of a slot (or why there are none). */
+function slotResult(slot, hidden) {
+    const agg = model[slot.week] && model[slot.week].data;
+    if (!agg) return { agg: null, res: null };
+    return { agg, res: freeRoomsAt(agg, slot.day, slot.hour, hidden) };
 }
 
 function slotSection(slot, idx, hidden, now) {
     if (!slot) return '';
-    const agg = model[slot.week] && model[slot.week].data;
     const id = `roomsSlot${idx}`;
     const date = dateOf(slot.week, slot.day, now);
-    const dayText = date === isoDate(now) ? '' : ` · ${dayLabel(date, now)}`;
-    const head = `<h3 class="rooms-slot-title" id="${id}"><span class="rooms-when">${esc(WHEN_LABEL[slot.when] || '')}</span>${esc(dayText)}<span class="rooms-hour">${esc(hourLabel(slot.hour))}</span></h3>`;
-    if (!agg) {
-        return `<section class="rooms-slot">${head}<p class="view-empty">Pro tento týden zatím data nejsou.</p></section>`;
-    }
-    const res = freeRoomsAt(agg, slot.day, slot.hour, hidden);
+    const dayText = date === isoDate(now) ? '' : dayLabel(date, now);
+    const head = `<h3 class="rooms-slot-title" id="${id}"><span class="rooms-when">${esc(WHEN_LABEL[slot.when] || '')}</span>`
+        + `${dayText ? ` <span class="rooms-day">${esc(dayText)}</span>` : ''}`
+        + ` <span class="rooms-hour">${esc(hourLabel(slot.hour))}</span></h3>`;
+    const { agg, res } = slotResult(slot, hidden);
+    const empty = (title, hint) => `<div class="g-empty rooms-empty">${icon('door-open')}<strong>${esc(title)}</strong><span>${esc(hint)}</span></div>`;
+    let count = '';
     let body;
-    if (!res.known) body = '<p class="view-empty">Pro tuto hodinu nejsou data.</p>';
-    else if (res.rooms.length === 0) body = `<p class="view-empty">Žádná volná učebna${res.hiddenCount ? ' (kromě skrytých)' : ''}.</p>`;
-    else body = `<p class="rooms-count">${czPlural(res.rooms.length, ['volná učebna', 'volné učebny', 'volných učeben'])}${res.hiddenCount ? `, ${res.hiddenCount} skrytých` : ''}</p>
-        <ul class="room-list" aria-labelledby="${id}">${res.rooms.map(r => roomItem(r, slot)).join('')}</ul>`;
-    return `<section class="rooms-slot">${head}${body}</section>`;
+    if (!agg) body = empty('Pro tento týden zatím data nejsou.', 'Zkuste jiný den.');
+    else if (!res.known) body = empty('Pro tuto hodinu nejsou data.', 'Vyberte jinou hodinu.');
+    else if (res.rooms.length === 0) {
+        body = empty(`Žádná volná učebna${res.hiddenCount ? ' (kromě skrytých)' : ''}.`, 'Zkuste jinou hodinu nebo den.');
+    } else {
+        count = `<p class="rooms-count">${czPlural(res.rooms.length, ['volná učebna', 'volné učebny', 'volných učeben'])}${res.hiddenCount ? `, ${res.hiddenCount} skrytých` : ''}</p>`;
+        body = `<ul class="room-list rooms-tiles" aria-labelledby="${id}">${res.rooms.map(r => roomItem(r, slot)).join('')}</ul>`;
+    }
+    return `<section class="rooms-slot g-veil g-mod${idx === 1 ? ' is-primary' : ''}"><div class="rooms-slot-head">${head}${count}</div>${body}</section>`;
+}
+
+/** "Teď volné: 3" + "1. hodina, do 8:45" */
+function leadHtml(slot, hidden, now) {
+    if (!slot) return '';
+    const { res } = slotResult(slot, hidden);
+    if (!res || !res.known) return '';
+    const date = dateOf(slot.week, slot.day, now);
+    const t = lessonTimes.find(x => x.hour === slot.hour);
+    let when;
+    if (slot.when === 'now' && t) when = `${slot.hour}. hodina, do ${t.label.split('-')[1]}`;
+    else {
+        const day = date === isoDate(now) ? '' : `${dayLabel(date, now)}, `;
+        when = `${day}${slot.hour}. hodina ${timeRange(slot.hour)}`;
+    }
+    return `<strong class="rooms-lead-num">${esc(LEAD_LABEL[slot.when] || 'Volné')}: ${res.rooms.length}</strong> <span class="rooms-lead-when">${esc(when)}</span>`;
 }
 
 function render() {
@@ -165,7 +213,8 @@ function render() {
 
     if (!hasData) {
         ['roomsDay', 'roomsHour', 'roomsNow'].forEach(id => { $(id).disabled = true; });
-        $('roomsResult').innerHTML = '<p class="view-empty">Přehled volných učeben zatím není k dispozici. Vznikne po příštím stažení dat z Bakalářů.</p>';
+        $('roomsLead').innerHTML = '';
+        $('roomsResult').innerHTML = `<div class="g-empty g-veil rooms-empty">${icon('clock')}<strong>Přehled volných učeben zatím není k dispozici.</strong><span>Vznikne po příštím stažení dat z Bakalářů – zkuste to prosím později.</span></div>`;
         $('roomsFreshness').textContent = freshnessText({ lastSuccessAt: model.status && model.status.lastSuccessAt }, now);
         renderHidden([], hidden);
         return;
@@ -198,6 +247,7 @@ function render() {
     $('roomsHour').innerHTML = raster.map(h => `<option value="${h}"${primary && primary.hour === h ? ' selected' : ''}>${esc(hourLabel(h))}</option>`).join('');
     setPressed([$('roomsNow')], () => !pick);
 
+    $('roomsLead').innerHTML = leadHtml(primary, hidden, now);
     $('roomsResult').innerHTML = slotSection(primary, 1, hidden, now) + slotSection(secondary, 2, hidden, now);
 
     const src = primary && model[primary.week];
@@ -220,7 +270,7 @@ function renderHidden(allRooms, hidden) {
     $('roomsHiddenBox').hidden = hidden.length === 0;
     $('roomsHiddenList').innerHTML = hidden.map(id => {
         const name = names.get(id) || id;
-        return `<li class="room-item"><span class="room-name">${esc(name)}</span>
-            <button type="button" class="room-hide" data-room="${esc(id)}" aria-label="Zobrazit ${esc(name)} v seznamu">Zobrazit</button></li>`;
+        return `<li class="room-hidden-item"><span class="room-name">${esc(name)}</span>
+            <button type="button" class="room-hide g-btn g-btn--small" data-room="${esc(id)}" aria-label="Zobrazit ${esc(name)} v seznamu">${icon('eye')}Zobrazit</button></li>`;
     }).join('');
 }

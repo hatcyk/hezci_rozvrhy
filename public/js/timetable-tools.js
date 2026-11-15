@@ -53,16 +53,17 @@ export async function renderOnlyChanges(container) {
     const perDay = weekChangesAgainstPermanent(state.currentTimetableData || [], permanent);
     const weekStart = shownWeekStart();
     const now = new Date();
-    const title = `Změny proti stálému rozvrhu – ${SCHEDULE_TEXT[state.selectedScheduleType]}`;
+    const title = `Změny proti stálému rozvrhu, ${SCHEDULE_TEXT[state.selectedScheduleType]}`;
     let html = `<div class="oc-wrapper"><h2 class="oc-title" id="ocTitle">${esc(title)}</h2>`;
     if (perDay.length === 0) {
-        html += '<p class="view-empty">Tento týden se nic nemění – platí stálý rozvrh.</p>';
+        html += `<div class="g-empty g-veil oc-empty"><svg class="i" aria-hidden="true"><use href="icons.svg#circle-check"></use></svg>
+            <strong>Tento týden se nic nemění</strong><span>Platí stálý rozvrh. Celý týden uvidíš, když vypneš „Jen změny“.</span></div>`;
     } else {
         for (const { day, entries } of perDay) {
             const date = weekStart ? addDaysIso(weekStart, day) : null;
             const label = date ? dayLabel(date, now) : ['Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek'][day];
             const hid = `oc-day-${day}`;
-            html += `<section class="oc-day"><h3 class="oc-day-title" id="${hid}">${esc(label.charAt(0).toUpperCase() + label.slice(1))}
+            html += `<section class="oc-day g-veil g-mod"><h3 class="oc-day-title" id="${hid}">${esc(label.charAt(0).toUpperCase() + label.slice(1))}
                 <span class="chg-count">${czPlural(entries.length, ['změna', 'změny', 'změn'])}</span></h3>
                 ${entriesTableHtml(entries, hid)}</section>`;
         }
@@ -89,6 +90,7 @@ export function updateTimetableToolbar() {
     setPressed([btn], () => onlyChangesActive());
     const n = permanent ? 0 : weekChangeCount();
     $('onlyChangesCount').textContent = n ? String(n) : '';
+    $('onlyChangesCount').hidden = !n;
     $('onlyChangesCountSr').textContent = `, ${czPlural(n, ['změna', 'změny', 'změn'])}`;
 }
 
@@ -131,7 +133,8 @@ export function initTimetableTools({ applyLayout }) {
         share.addEventListener('click', () => {
             const id = getDropdownValue();
             if (!id) return;
-            const showsOneDay = window.matchMedia && window.matchMedia('(max-width: 1079px)').matches;
+            // Den / Seznam / Karty sdílí i vybraný den, týden celý týden
+            const showsOneDay = (window.matchMedia && window.matchMedia('(max-width: 1079px)').matches) || state.layoutMode === 'day';
             const typeWord = { Class: 'Rozvrh třídy', Teacher: 'Rozvrh vyučujícího', Room: 'Rozvrh učebny' }[state.selectedType] || 'Rozvrh';
             shareLink({
                 title: `${typeWord} ${currentLabel()}`,

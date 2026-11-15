@@ -70,14 +70,14 @@ async function handleForegroundMessage(payload) {
         showToast({
             title,
             body,
-            icon: '🔄',
+            icon: 'repeat-2',
             variant: 'change',
             onClick: () => applyDeepLink(link).catch(err => debug.error('Deep link failed:', err)),
         });
     } else if (d.type === 'lesson_reminder') {
-        showToast({ title, body, icon: '⏰', variant: 'reminder' });
+        showToast({ title, body, icon: 'clock', variant: 'reminder' });
     } else {
-        showToast({ title, body, icon: '🔔', variant: 'info' });
+        showToast({ title, body, icon: 'bell', variant: 'info' });
     }
 }
 

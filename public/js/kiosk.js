@@ -1,15 +1,19 @@
 /**
  * Kiosk (?kiosk=changes): the changes board on a hallway TV.
- * Big type and a clock, the list scrolls by itself when it does not fit
- * (screen by screen with prefers-reduced-motion), new data arrive live through
- * Firestore onSnapshot, the screen is kept on with the Screen Wake Lock API
- * where it exists, and the page reloads at night to pick up a new version.
- * No notification prompts and no panels: nobody operates the screen.
+ * Big type and a clock; when the list does not fit it pages screen by screen
+ * without animation (a page never starts in the middle of a row), new data
+ * arrive live through Firestore onSnapshot, the screen is kept on with the
+ * Screen Wake Lock API where it exists, and the page reloads at night to pick
+ * up a new version. No notification prompts and no panels: nobody operates
+ * the screen.
+ *
+ * Design G: always the night sky, solid panels (no glass: a TV runs for weeks
+ * and blur costs a lot on cheap players), type sized by the screen height.
  */
 
 import { watchAggregate, fetchBackendStatus } from './api.js';
 import { boardDayOptions, pickBoardDate, boardEntries, groupByClass, dayLabel, czPlural, freshnessText } from './changes-core.js';
-import { briefHtml, afterHtml, hourHtml } from './changes-render.js';
+import { briefHtml, afterHtml, hourHtml, kindTone } from './changes-render.js';
 import { KIOSK_SWITCH_AT, msUntilNightlyReload, lessonNowText, clockText, nextScroll } from './kiosk-core.js';
 import { esc, setPressed } from './utils.js';
 
@@ -20,8 +24,11 @@ let shownDate = null;
 let paused = false;
 let wakeLock = null;
 let lastHtml = '';
+let stops = [0];
 
-const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** How long one screen stays, and the first one after loading. */
+const PAGE_MS = 12000;
+const FIRST_PAGE_MS = 8000;
 
 function render() {
     const now = new Date();
@@ -32,7 +39,8 @@ function render() {
     const entries = boardEntries(option);
     const groups = groupByClass(entries);
 
-    $('kioskDay').textContent = date ? `${dayLabel(date, now)} · ${entries.length ? czPlural(entries.length, ['změna', 'změny', 'změn']) : 'bez změn'}` : '';
+    $('kioskDay').textContent = date ? dayLabel(date, now) : '';
+    $('kioskCount').textContent = date ? (entries.length ? czPlural(entries.length, ['změna', 'změny', 'změn']) : 'bez změn') : '';
 
     let html;
     if (!aggs.Actual && !aggs.Next) {
@@ -42,26 +50,26 @@ function render() {
     } else if (groups.length === 0) {
         const when = dayLabel(date, now, { relative: true }).split(',')[0];
         const lead = when === 'dnes' || when === 'zítra' ? when.charAt(0).toUpperCase() + when.slice(1) : 'Tento den';
-        html = `<p class="kiosk-empty">${lead} žádné změny v rozvrhu.</p>`;
+        html = `<p class="kiosk-empty"><strong>${lead} žádné změny v rozvrhu.</strong><span>Všechny hodiny proběhnou podle rozvrhu.</span></p>`;
     } else {
-        html = `<div class="k-grid">${groups.map(g => `
+        html = `<div class="k-list">${groups.map(g => `
             <section class="k-class">
                 <h2 class="k-class-name">${esc(g.className)}</h2>
                 <ul class="k-rows">${g.entries.map(e => `
-                    <li class="k-row k-row--${esc(e.kind)}">
+                    <li class="k-row k-row--${esc(e.kind)} k-tone--${kindTone(e.kind)}">
                         <span class="k-hour">${hourHtml(e)}</span>
-                        <span class="k-what">
-                            ${e.before ? `<span class="k-before"><span class="sr-only">původně </span>${briefHtml(e.before, { strike: true })}</span><span class="k-arrow" aria-hidden="true">→</span>` : ''}
-                            <span class="k-after"><span class="sr-only">nyní </span>${afterHtml(e)}</span>
-                        </span>
+                        <span class="k-before">${e.before ? `<span class="sr-only">původně </span>${briefHtml(e.before, { strike: true })}` : ''}</span>
+                        <span class="k-arrow" aria-hidden="true">${e.before ? '→' : ''}</span>
+                        <span class="k-after"><span class="sr-only">nyní </span>${afterHtml(e)}</span>
                     </li>`).join('')}
                 </ul>
             </section>`).join('')}</div>`;
     }
-    // Live updates arrive often with the same content: do not reset the scroll for nothing
+    // Live updates arrive often with the same content: do not reset the page for nothing
     if (html !== lastHtml) {
         $('kioskBoard').innerHTML = html;
         lastHtml = html;
+        computeStops();
     }
 
     const src = option && (option.source === 'Next' ? aggs.Next : aggs.Actual);
@@ -95,7 +103,7 @@ async function refreshStatus() {
 async function requestWakeLock() {
     const el = $('kioskWake');
     if (!('wakeLock' in navigator)) {
-        el.textContent = 'Displej může zhasnout – prohlížeč neumí Wake Lock, vypněte úsporný režim televize.';
+        el.textContent = 'Displej může zhasnout, vypněte úsporný režim televize.';
         return;
     }
     try {
@@ -104,37 +112,83 @@ async function requestWakeLock() {
         wakeLock.addEventListener('release', () => { wakeLock = null; });
     } catch (err) {
         // NotAllowedError: page hidden, battery saver or blocked by policy
-        el.textContent = `Displej může zhasnout (${err && err.name ? err.name : 'Wake Lock odmítnut'})`;
+        el.textContent = 'Displej může zhasnout, vypněte úsporný režim televize.';
+        console.warn('Wake Lock:', err && err.name ? err.name : err);
     }
 }
 
-/* ── auto-scroll ─────────────────────────────────────────────────────── */
+/* ── paging ──────────────────────────────────────────────────────────── */
 
-function startAutoScroll() {
+/**
+ * Scroll positions of the screens: each next screen starts at the first row
+ * the previous one cut off (or did not reach), so no row is ever split.
+ */
+function computeStops() {
     const board = $('kioskBoard');
-    let pos = 0;
-    let last = performance.now();
-    let holdUntil = last + 6000;
+    const max = board.scrollHeight - board.clientHeight;
+    const view = board.clientHeight;
+    if (max <= 1 || view <= 0) { stops = [0]; updatePage(); return; }
+    const base = board.getBoundingClientRect().top - board.scrollTop;
+    const pad = parseFloat(getComputedStyle(board).paddingTop) || 0;
+    const rows = [...board.querySelectorAll('.k-row')].map(r => {
+        const b = r.getBoundingClientRect();
+        return { top: b.top - base, bottom: b.bottom - base };
+    });
+    const out = [0];
+    let cur = 0;
+    for (let guard = 0; cur < max && guard < 200; guard++) {
+        const limit = cur + view;
+        const cut = rows.find(r => r.top > cur + pad + 1 && r.bottom > limit - 1);
+        let next = cut ? cut.top - pad : cur + view - 40;
+        if (next <= cur + 1) next = cur + view - 40; // a row taller than the screen
+        next = Math.min(Math.round(next), max);
+        out.push(next);
+        cur = next;
+    }
+    stops = out;
+    updatePage();
+}
+
+function currentPage() {
+    const top = $('kioskBoard').scrollTop;
+    let idx = 0;
+    stops.forEach((s, i) => { if (top >= s - 2) idx = i; });
+    return idx;
+}
+
+function updatePage() {
+    const el = $('kioskPage');
+    const page = currentPage();
+    $('kioskBoard').classList.toggle('has-more', stops.length > 1 && page < stops.length - 1);
+    if (el) el.textContent = stops.length > 1 ? `Strana ${page + 1} z ${stops.length}` : '';
+}
+
+function startPaging() {
+    const board = $('kioskBoard');
+    let holdUntil = performance.now() + FIRST_PAGE_MS;
 
     const userScrolled = () => {
-        pos = board.scrollTop;
         holdUntil = performance.now() + 30000; // someone reads / scrolls by hand
     };
     ['wheel', 'touchstart', 'keydown'].forEach(t => board.addEventListener(t, userScrolled, { passive: true }));
+    board.addEventListener('scroll', updatePage, { passive: true });
+    window.addEventListener('resize', () => { computeStops(); }, { passive: true });
 
     const frame = (t) => {
         const max = board.scrollHeight - board.clientHeight;
-        if (max <= 0) {
-            pos = 0;
-        } else if (!paused && !document.hidden && t >= holdUntil) {
-            if (Math.abs(board.scrollTop - pos) > 2) pos = board.scrollTop; // content changed under us
-            const mode = reduceMotion() ? 'paged' : 'smooth';
-            const step = nextScroll({ top: pos, max, viewport: board.clientHeight, mode, dtMs: Math.min(t - last, 100) });
-            pos = step.top;
-            board.scrollTop = pos;
-            if (step.wait) holdUntil = t + step.wait;
+        if (max > 0 && !paused && !document.hidden && t >= holdUntil) {
+            const top = board.scrollTop;
+            let next;
+            if (stops.length > 1) {
+                const later = stops.find(s => s > top + 2);
+                next = later === undefined ? 0 : later;
+            } else {
+                next = nextScroll({ top, max, viewport: board.clientHeight, mode: 'paged' }).top;
+            }
+            board.scrollTop = next;
+            holdUntil = t + PAGE_MS;
+            updatePage();
         }
-        last = t;
         requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -144,6 +198,9 @@ function startAutoScroll() {
         paused = !paused;
         setPressed([$('kioskPause')], () => paused);
         $('kioskPauseText').textContent = paused ? 'Spustit posouvání' : 'Pozastavit posouvání';
+        const ico = $('kioskPauseIcon');
+        if (ico) ico.setAttribute('href', `icons.svg#${paused ? 'play' : 'pause'}`);
+        if (!paused) holdUntil = performance.now() + PAGE_MS;
     });
 }
 
@@ -171,6 +228,6 @@ export function startKiosk() {
     const jitterMs = Math.floor(Math.random() * 15 * 60 * 1000);
     setTimeout(() => location.reload(), msUntilNightlyReload(new Date(), { hour: 3, jitterMs }));
 
-    startAutoScroll();
+    startPaging();
     render();
 }

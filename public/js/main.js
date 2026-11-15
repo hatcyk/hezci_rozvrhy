@@ -4,7 +4,7 @@ import { initTheme, initThemeToggle } from './theme.js';
 import { initModalListeners } from './modal.js';
 import { loadTimetable, populateValueSelect } from './timetable.js';
 import { fetchDefinitions, fetchBackendStatus } from './api.js';
-import { initCustomDropdown, setDropdownValue, openDropdown } from './dropdown.js';
+import { initCustomDropdown, setDropdownValue, refreshDropdownHeartIndicator } from './dropdown.js';
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek, setPressed } from './utils.js';
 import { initSunData } from './suntime.js';
 import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime, isFirebaseSdkLoaded, FIREBASE_UNAVAILABLE_MESSAGE } from './firebase-client.js';
@@ -20,9 +20,10 @@ import { debug } from './debug.js';
 import { initNextLessonWidget, refreshNextLessonWidget } from './next-lesson.js';
 import { initLessonStatusUpdates } from './lesson-status.js';
 import { parseRoute } from './view-route.js';
-import { initViewRouter, onViewEnter, showView } from './view-router.js';
+import { initViewRouter, onViewEnter, onViewReselect, showView } from './view-router.js';
 import { initTimetableTools } from './timetable-tools.js';
 import { applyLayout } from './layout-manager.js';
+import { initShell, syncScreenFromHistory, backToOverview } from './shell.js';
 
 /**
  * Register the views behind the navigation. They are imported on first use:
@@ -31,13 +32,16 @@ import { applyLayout } from './layout-manager.js';
  */
 function initViews() {
     onViewEnter('timetable', async () => {
-        // Back from another view: re-render (layouts measure the container,
-        // which had no size while hidden) and catch up on the widget
+        // Phones: overview or day, as the history entry says (Back from a day)
+        syncScreenFromHistory();
+        // Back from another view: re-render and catch up on "now"
         if (state.currentTimetableData && state.currentTimetableData.length) {
             await applyLayout();
             refreshNextLessonWidget();
         }
     });
+    // Second tap on the "Rozvrh" tab: from a day back to the overview
+    onViewReselect('timetable', () => { backToOverview(); });
     onViewEnter('changes', async (params) => (await import('./changes-view.js')).enterChangesView(params));
     onViewEnter('rooms', async (params) => (await import('./rooms-view.js')).enterRoomsView(params));
     onViewEnter('common', async (params) => (await import('./common-view.js')).enterCommonView(params));
@@ -151,32 +155,10 @@ async function applyBackendStatus(status) {
     dom.outageBanner.classList.remove('hidden');
 }
 
-// Type button handlers
+// Type buttons (Třídy / Učitelé / Učebny) are gone in design G: the search
+// covers all three kinds (dropdown.js).
 function updateTypeButtons() {
     setPressed(dom.typeButtons, btn => btn.dataset.type === state.selectedType);
-}
-
-function initTypeButtons() {
-    if (!dom.typeButtons) return;
-
-    dom.typeButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const wasTypeChanged = state.selectedType !== btn.dataset.type;
-
-            updateState('selectedType', btn.dataset.type);
-            updateTypeButtons();
-            populateValueSelect();
-
-            // Clear dropdown display when switching types
-            setDropdownValue('', 'Vyberte...');
-
-            // Auto-open dropdown only when switching types manually (clicking the button)
-            // Don't open when coming from modal where value is already pre-selected
-            if (wasTypeChanged) {
-                setTimeout(() => openDropdown(), 100);
-            }
-        });
-    });
 }
 
 // Schedule type button handlers
@@ -220,6 +202,9 @@ async function init() {
         // Initialize layout system
         initLayoutSystem();
         initResizeListener();
+
+        // Shell: overview / day screens, toolbar, "⋯" menu, titles
+        initShell();
 
         // Initialize Firebase. Both SDK init and auth require network; if they
         // fail (e.g. offline, Firebase SDK script not in SW cache), the app
@@ -267,6 +252,8 @@ async function init() {
         ]);
 
         updateState('definitions', definitions);
+        // Favourites (search, sidebar) now that the names are known
+        refreshDropdownHeartIndicator();
 
         await applyBackendStatus(backendStatus);
 
@@ -290,7 +277,6 @@ async function init() {
         populateValueSelect();
 
         // Initialize event listeners
-        initTypeButtons();
         initScheduleTypeButtons();
         initNotificationButton();
         initSettings();

@@ -18,8 +18,13 @@ import { esc } from './utils.js';
  * on iOS standalone apps looks like a system error. A toast is announced by
  * screen readers (role="status") and does not interrupt.
  */
-function notify(title, body = '', icon = '⚠️') {
+function notify(title, body = '', icon = 'triangle-alert') {
     showToast({ title, body, icon, variant: 'info', timeout: 9000 });
+}
+
+/** Text of a button that also holds an icon (only the label changes). */
+function buttonLabel(button) {
+    return button.querySelector('.btn-label') || button;
 }
 
 // Track which view is currently shown in the notification sheet
@@ -34,12 +39,12 @@ export function updateNotificationBellUI() {
     // The crossed bell is not the only cue: the name says it too (WCAG 1.4.1)
     if (state.notificationsEnabled) {
         dom.notificationBell.classList.remove('disabled');
-        dom.notificationBell.setAttribute('title', 'Notifikace zapnuty');
-        dom.notificationBell.setAttribute('aria-label', 'Notifikace (zapnuty)');
+        dom.notificationBell.setAttribute('title', 'Upozornění zapnuta');
+        dom.notificationBell.setAttribute('aria-label', 'Upozornění (zapnuta)');
     } else {
         dom.notificationBell.classList.add('disabled');
-        dom.notificationBell.setAttribute('title', 'Notifikace vypnuty');
-        dom.notificationBell.setAttribute('aria-label', 'Notifikace (vypnuty)');
+        dom.notificationBell.setAttribute('title', 'Upozornění vypnuta');
+        dom.notificationBell.setAttribute('aria-label', 'Upozornění (vypnuta)');
     }
 
 }
@@ -137,7 +142,7 @@ async function initializeModal() {
     // Show/hide iOS warning
     const isIosNotStandalone = isIOS() && !isStandalone();
     if (dom.iosWarning) {
-        dom.iosWarning.style.display = isIosNotStandalone ? 'block' : 'none';
+        dom.iosWarning.hidden = !isIosNotStandalone;
     }
 
     // Populate dropdown options
@@ -174,7 +179,7 @@ export function updateReminderWarning() {
     const undeliverable = !state.notificationsEnabled || permission !== 'granted';
     const show = lessonRemindersEnabled() && undeliverable;
 
-    el.style.display = show ? 'block' : 'none';
+    el.hidden = !show;
     updateState('remindersNeedAttention', show);
 }
 
@@ -190,11 +195,11 @@ export function updateNotificationUIState() {
     if (flatList) flatList.classList.remove('disabled');
 
     if (state.notificationsEnabled) {
-        if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'none';
-        if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'block';
+        if (dom.notificationToggleEnable) dom.notificationToggleEnable.hidden = true;
+        if (dom.notificationToggleDisable) dom.notificationToggleDisable.hidden = false;
     } else {
-        if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'block';
-        if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'none';
+        if (dom.notificationToggleEnable) dom.notificationToggleEnable.hidden = false;
+        if (dom.notificationToggleDisable) dom.notificationToggleDisable.hidden = true;
 
         // Update enable button state based on selection
         updateEnableButtonState();
@@ -231,30 +236,31 @@ export async function enableNotifications() {
 
     // Check if at least one timetable is selected
     if (!state.watchedTimetables || state.watchedTimetables.length === 0) {
-        notify('Nejdřív vyberte alespoň jeden rozvrh ke sledování.', '', 'ℹ️');
+        notify('Nejdřív vyberte alespoň jeden rozvrh ke sledování.', '', 'info');
         return;
     }
 
     // Disable button during processing to prevent spam clicks
     button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = 'Zpracovávám...';
+    const label = buttonLabel(button);
+    const originalText = label.textContent;
+    label.textContent = 'Zpracovávám…';
 
     try {
         await requestNotificationPermission();
     } catch (error) {
         if (error.message === 'IOS_NOT_STANDALONE') {
-            notify('Nejdřív přidejte aplikaci na plochu.', 'Na iPhonu a iPadu fungují notifikace jen z plochy: Sdílet → Přidat na plochu.');
+            notify('Nejdřív přidejte aplikaci na plochu.', 'Na iPhonu a iPadu fungují upozornění jen z plochy: Sdílet → Přidat na plochu.');
         } else if (error.message === 'PERMISSION_BLOCKED') {
-            notify('Prohlížeč má notifikace pro tuto stránku zablokované.', 'Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
+            notify('Prohlížeč má upozornění pro tuto stránku zablokovaná.', 'Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
         } else if (error.message === 'PERMISSION_DISMISSED') {
-            notify('Notifikace nebyly povoleny.', 'Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
+            notify('Upozornění nebyla povolena.', 'Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
         } else {
-            notify('Nepodařilo se zapnout notifikace.', error.message);
+            notify('Nepodařilo se zapnout upozornění.', error.message);
         }
     } finally {
         button.disabled = false;
-        button.textContent = originalText;
+        label.textContent = originalText;
         updateNotificationUIState();
         updateReminderWarning();
     }
@@ -272,19 +278,20 @@ export async function disableNotificationsHandler() {
 
     // Disable button during processing to prevent spam clicks
     button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = 'Zpracovávám...';
+    const label = buttonLabel(button);
+    const originalText = label.textContent;
+    label.textContent = 'Zpracovávám…';
 
     try {
         await disableNotifications();
     } catch (error) {
         // The switch is only reported as off when the server confirmed it;
         // otherwise re-read the real state so the UI cannot lie.
-        notify('Nepodařilo se vypnout notifikace.', error.message);
+        notify('Nepodařilo se vypnout upozornění.', error.message);
         await loadNotificationPreferences();
     } finally {
         button.disabled = false;
-        button.textContent = originalText;
+        label.textContent = originalText;
         updateNotificationUIState();
         updateReminderWarning();
     }
@@ -369,7 +376,7 @@ async function simulateTimetableChange() {
     // Get selected timetable from dropdown
     const selectedValue = select.value;
     if (!selectedValue) {
-        notify('Nejdřív vyberte rozvrh ze seznamu.', '', 'ℹ️');
+        notify('Nejdřív vyberte rozvrh ze seznamu.', '', 'info');
         return;
     }
 
@@ -377,7 +384,7 @@ async function simulateTimetableChange() {
 
     button.disabled = true;
     const originalText = button.textContent;
-    button.textContent = '⏳ Vytvářím změnu...';
+    button.textContent = 'Vytvářím změnu…';
 
     try {
         const response = await fetch('/api/debug/simulate-change', {
@@ -400,11 +407,11 @@ async function simulateTimetableChange() {
         console.log('✅ Simulated change result:', result);
 
         notify(`Hotovo: změna vytvořena pro ${timetable.name}`,
-            `Notifikace poslány: ${result.notificationResult?.sentCount || 0}×, zpracováno změn: ${result.notificationResult?.processedCount || 0}`, '✅');
+            `Upozornění poslána: ${result.notificationResult?.sentCount || 0}×, zpracováno změn: ${result.notificationResult?.processedCount || 0}`, 'circle-check');
 
     } catch (error) {
         console.error('Failed to simulate change:', error);
-        notify('Chyba při simulaci změny.', error.message, '❌');
+        notify('Chyba při simulaci změny.', error.message, 'circle-x');
     } finally {
         button.disabled = false;
         button.textContent = originalText;
@@ -422,16 +429,12 @@ function updateDebugSectionVisibility() {
     fetch('/api/debug/status')
         .then(response => response.json())
         .then(data => {
-            if (data.debugMode) {
-                debugSection.style.display = 'block';
-                populateDebugTimetableSelect();
-            } else {
-                debugSection.style.display = 'none';
-            }
+            debugSection.hidden = !data.debugMode;
+            if (data.debugMode) populateDebugTimetableSelect();
         })
         .catch(() => {
             // Network error or other issue - hide debug section
-            debugSection.style.display = 'none';
+            debugSection.hidden = true;
         });
 }
 

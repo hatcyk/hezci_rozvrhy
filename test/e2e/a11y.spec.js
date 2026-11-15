@@ -15,8 +15,9 @@ const STATES = [
     await page.locator(LESSON).filter({ visible: true }).and(page.locator('[data-changed="true"]')).first().click();
     await expect(page.locator('#modalDiff')).toBeVisible();
   }],
-  ['jen změny', '/', async (page, app) => {
+  ['jen změny', '/', async (page, app, isMobile) => {
     await app.timetableReady();
+    await app.openDay(isMobile);
     await page.click('#onlyChangesBtn');
     await expect(page.locator('.oc-day').first()).toBeVisible();
   }],
@@ -27,8 +28,35 @@ const STATES = [
   }],
   ['do kalendáře', '/', async (page, app) => {
     await app.timetableReady();
+    await page.click('#moreBtn');
     await page.click('#calendarBtn');
     await expect(page.locator('#calendarModal')).toHaveAttribute('open', '');
+  }],
+  ['den (časová osa)', '/', async (page, app, isMobile) => {
+    await app.timetableReady();
+    await app.openDay(isMobile);
+    if (!isMobile) await page.click('#layoutSeg [data-layout="day"]');
+    await expect(page.locator('.tl .nowline')).toBeVisible();
+  }],
+  ['seznam a karty (mobil) / týden (počítač)', '/', async (page, app, isMobile) => {
+    await app.timetableReady();
+    if (!isMobile) { await expect(page.locator('.wg-col').first()).toBeVisible(); return; }
+    await page.evaluate(() => localStorage.setItem('layoutMode', 'card-view'));
+    await page.reload();
+    await app.timetableReady();
+    await app.openDay(true);
+    await expect(page.locator('.card').first()).toBeVisible();
+  }],
+  ['hledání s výsledky', '/', async (page, app) => {
+    await app.timetableReady();
+    await page.click('#valueDropdownTrigger');
+    await page.keyboard.type('a');
+    await expect(page.locator('#searchResults .sr-row').first()).toBeVisible();
+  }],
+  ['nabídka „⋯“', '/', async (page, app) => {
+    await app.timetableReady();
+    await page.click('#moreBtn');
+    await expect(page.locator('#moreMenu')).toBeVisible();
   }],
   ['změny', '/?view=changes', async (page) => { await expect(page.locator('#changesList tbody tr').first()).toBeVisible(); }],
   ['volné učebny', '/?view=rooms', async (page) => { await expect(page.locator('#roomsResult .room-link').first()).toBeVisible(); }],

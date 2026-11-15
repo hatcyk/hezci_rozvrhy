@@ -6,26 +6,27 @@
 import { state, updateState } from './state.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
 import { setDropdownValue, refreshDropdownHeartIndicator, setFavoritesAccessBtnUpdater } from './dropdown.js';
-import { HEART_FILLED_SVG } from './favorites.js';
 import { esc, setPressed } from './utils.js';
+import { getCurrentView, showView } from './view-router.js';
 
 const TYPE_LABELS = {
-    Class: 'Třída',
-    Teacher: 'Učitel',
-    Room: 'Učebna'
+    Class: 'třída',
+    Teacher: 'vyučující',
+    Room: 'učebna'
 };
+const TYPE_ICONS = { Class: 'users', Teacher: 'user', Room: 'door-open' };
+const icon = (name, cls = '') => `<svg class="i${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="icons.svg#${name}"></use></svg>`;
 
+/**
+ * The header button (owned by the app shell) only gets its name and a
+ * has-favorites class here; its icon stays whatever the shell drew.
+ */
 export function updateFavoritesAccessBtn() {
     const btn = document.getElementById('favoritesBtn');
     if (!btn) return;
-    const hasFavs = state.favoriteTimetables.length > 0;
-    btn.classList.toggle('has-favorites', hasFavs);
-    btn.setAttribute('aria-label', hasFavs ? `Oblíbené rozvrhy (${state.favoriteTimetables.length})` : 'Oblíbené rozvrhy');
-    if (hasFavs) {
-        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="favorites-modal-heart-icon"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
-    } else {
-        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
-    }
+    const count = state.favoriteTimetables.length;
+    btn.classList.toggle('has-favorites', count > 0);
+    btn.setAttribute('aria-label', count > 0 ? `Oblíbené rozvrhy (${count})` : 'Oblíbené rozvrhy');
 }
 
 function getLabelForFavorite(fav) {
@@ -43,23 +44,27 @@ function populateFavoritesSheet() {
     const favs = state.favoriteTimetables;
 
     if (favs.length === 0) {
-        list.innerHTML = `<p class="favorites-sheet-empty">Zatím žádné oblíbené.<br>Klikni na srdíčko u rozvrhu v seznamu.</p>`;
+        list.innerHTML = `<div class="g-empty favorites-sheet-empty">${icon('star')}<strong>Zatím žádné oblíbené</strong>`
+            + '<span>Přidáte je hvězdičkou u třídy, vyučujícího nebo učebny ve vyhledávání. Pak je tu otevřete jedním klepnutím.</span></div>';
         return;
     }
 
-    list.innerHTML = favs.map(fav => `
-        <button type="button" class="favorites-sheet-item" data-type="${esc(fav.type)}" data-id="${esc(fav.id)}">
-            ${HEART_FILLED_SVG}
-            <span>${esc(getLabelForFavorite(fav))}</span>
-            <span class="favorites-sheet-type-badge">${esc(TYPE_LABELS[fav.type] || fav.type)}</span>
+    list.innerHTML = `<div class="set-list">${favs.map(fav => `
+        <button type="button" class="favorites-sheet-item set-row" data-type="${esc(fav.type)}" data-id="${esc(fav.id)}">
+            ${icon(TYPE_ICONS[fav.type] || 'star', 'set-row-icon')}
+            <span class="set-row-text"><span class="set-row-title">${esc(getLabelForFavorite(fav))}</span></span>
+            <span class="set-row-value favorites-sheet-type-badge">${esc(TYPE_LABELS[fav.type] || fav.type)}</span>
+            ${icon('chevron-right', 'set-row-chev')}
         </button>
-    `).join('');
+    `).join('')}</div>`;
 
     list.querySelectorAll('.favorites-sheet-item').forEach(item => {
         item.addEventListener('click', async () => {
             const type = item.dataset.type;
             const id = item.dataset.id;
             closeBottomSheet('favoritesModal');
+            // A favourite is a timetable: from another view go back to it
+            if (getCurrentView() && getCurrentView() !== 'timetable') await showView('timetable', {}, { focus: false });
 
             if (state.selectedType !== type) {
                 updateState('selectedType', type);
@@ -76,6 +81,12 @@ function populateFavoritesSheet() {
     });
 }
 
+/** Open the favourites sheet (for any opener the app shell provides). */
+export function openFavoritesSheet() {
+    populateFavoritesSheet();
+    openBottomSheet('favoritesModal');
+}
+
 export function initFavoritesModal() {
     // Wire up the access button updater into dropdown.js (breaks circular dependency)
     setFavoritesAccessBtnUpdater(updateFavoritesAccessBtn);
@@ -84,10 +95,7 @@ export function initFavoritesModal() {
     const closeBtn = document.getElementById('favoritesModalClose');
 
     if (btn) {
-        btn.addEventListener('click', () => {
-            populateFavoritesSheet();
-            openBottomSheet('favoritesModal');
-        });
+        btn.addEventListener('click', openFavoritesSheet);
     }
 
     if (closeBtn) {

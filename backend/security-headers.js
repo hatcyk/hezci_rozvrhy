@@ -59,8 +59,8 @@ function buildAppCsp({ scriptHashes = [] } = {}) {
         // (debug builds) or /_vercel/* (same origin), + the 3 inline scripts.
         ["script-src", "'self'", ...scriptHashes, 'https://www.gstatic.com', 'https://cdn.jsdelivr.net', 'https://va.vercel-scripts.com'],
         // style="" attributes in index.html and the rendered markup need 'unsafe-inline'.
-        ["style-src", "'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-        ["font-src", "'self'", 'https://fonts.gstatic.com'],
+        ["style-src", "'self'", "'unsafe-inline'"],
+        ["font-src", "'self'"],
         ["img-src", "'self'", 'data:'],
         ["connect-src", "'self'",
             'https://firestore.googleapis.com',

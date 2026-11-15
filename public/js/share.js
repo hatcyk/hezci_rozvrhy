@@ -29,11 +29,11 @@ export async function shareLink({ title, text = '', url }) {
     try {
         if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('no clipboard');
         await navigator.clipboard.writeText(absolute);
-        showToast({ title: 'Odkaz zkopírován do schránky', body: absolute, icon: '🔗', variant: 'info', timeout: 4000 });
+        showToast({ title: 'Odkaz zkopírován do schránky', body: absolute, icon: 'link', variant: 'info', timeout: 4000 });
         return 'copied';
     } catch {
         // Last resort: show the link so it can be copied by hand
-        showToast({ title: 'Odkaz se nepodařilo zkopírovat – zkopírujte ho ručně:', body: absolute, icon: '🔗', variant: 'info', timeout: 0 });
+        showToast({ title: 'Odkaz se nepodařilo zkopírovat – zkopírujte ho ručně:', body: absolute, icon: 'link', variant: 'info', timeout: 0 });
         return 'failed';
     }
 }

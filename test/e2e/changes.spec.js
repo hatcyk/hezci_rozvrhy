@@ -22,9 +22,12 @@ test.describe('Změny dnes', () => {
     expect(classRows.find(r => r.startsWith('3.'))).toMatch(/Suplování/i);
 
     // Tabule čte dva souhrnné dokumenty, ne rozvrhy všech tříd. Na pozadí se
-    // načte jen uložený rozvrh, aby byla záložka „Rozvrh“ hned připravená.
+    // načte jen uložený rozvrh, aby byla záložka „Rozvrh“ hned připravená
+    // (návrh G: rám aplikace ukazuje v přehledu i počet volných učeben, proto smí číst freeRooms).
     const reads = await page.evaluate(() => window.__reads.filter(p => p.startsWith('aggregates/') || p.startsWith('timetables/')));
-    expect(new Set(reads.filter(p => p.startsWith('aggregates/')))).toEqual(new Set(['aggregates/changes_Actual', 'aggregates/changes_Next']));
+    const aggs = new Set(reads.filter(p => p.startsWith('aggregates/')));
+    expect(aggs.has('aggregates/changes_Actual') && aggs.has('aggregates/changes_Next')).toBe(true);
+    expect([...aggs].filter(p => !/^aggregates\/(changes|freeRooms)_(Actual|Next)$/.test(p))).toEqual([]);
     expect(reads.filter(p => p.startsWith('timetables/') && p !== 'timetables/Class_C2A_Actual')).toEqual([]);
   });
 

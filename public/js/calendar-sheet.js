@@ -47,36 +47,37 @@ function ensureDialog() {
     let dialog = $(ID);
     if (dialog) return dialog;
     dialog = document.createElement('dialog');
-    dialog.className = 'bottom-sheet';
+    dialog.className = 'g-sheet sheet';
     dialog.id = ID;
     dialog.setAttribute('aria-labelledby', 'calendarModalTitle');
+    const ic = (name, cls = '') => `<svg class="i${cls ? ` ${cls}` : ''}" aria-hidden="true"><use href="icons.svg#${name}"></use></svg>`;
     dialog.innerHTML = `
-        <div class="bottom-sheet-handle" aria-hidden="true"></div>
-        <div class="modal-header">
+        <div class="g-sheet-handle bottom-sheet-handle" aria-hidden="true"></div>
+        <div class="g-sheet-head">
             <h2 id="calendarModalTitle">Přidat do kalendáře</h2>
-            <button type="button" class="modal-close" id="calendarModalClose" aria-label="Zavřít přidání do kalendáře">
-                <svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+            <button type="button" class="modal-close g-circle" id="calendarModalClose" aria-label="Zavřít přidání do kalendáře">${ic('x')}</button>
         </div>
-        <div class="modal-body cal-body">
-            <p class="cal-intro" id="calendarIntro"></p>
+        <div class="g-sheet-body cal-body">
+            <p class="sheet-intro cal-intro" id="calendarIntro"></p>
             <fieldset class="cal-fieldset">
-                <legend>Co odebírat</legend>
-                <label class="cal-option"><input type="radio" name="calSchedule" value="actual,next" checked>
-                    <span><strong>Tento a příští týden</strong> – se suplováním a zrušenými hodinami</span></label>
-                <label class="cal-option"><input type="radio" name="calSchedule" value="permanent">
-                    <span><strong>Stálý rozvrh</strong> – opakované hodiny do konce pololetí</span></label>
+                <legend class="sheet-group-title">Co odebírat</legend>
+                <div class="set-list">
+                    <label class="set-row cal-option"><input type="radio" class="g-radio" name="calSchedule" value="actual,next" checked>
+                        <span class="set-row-text"><span class="set-row-title">Tento a příští týden</span><span class="set-row-desc">Se suplováním a zrušenými hodinami</span></span></label>
+                    <label class="set-row cal-option"><input type="radio" class="g-radio" name="calSchedule" value="permanent">
+                        <span class="set-row-text"><span class="set-row-title">Stálý rozvrh</span><span class="set-row-desc">Opakované hodiny do konce pololetí</span></span></label>
+                </div>
             </fieldset>
             <fieldset class="cal-fieldset" id="calendarGroupsBox" hidden>
-                <legend>Jen moje skupiny <span class="cal-hint">(hodiny celé třídy jsou vždy)</span></legend>
+                <legend class="sheet-group-title">Jen moje skupiny <span class="cal-hint">(hodiny celé třídy jsou vždy)</span></legend>
                 <div class="cal-groups" id="calendarGroups"></div>
             </fieldset>
-            <div class="cal-actions">
-                <a class="tt-tool tt-tool-primary" id="calendarSubscribe" href="#">Odebírat v kalendáři</a>
-                <button type="button" class="tt-tool" id="calendarCopy">Kopírovat odkaz</button>
+            <div class="sheet-actions cal-actions">
+                <a class="g-btn g-btn--primary" id="calendarSubscribe" href="#">${ic('calendar-plus')}Přidat do kalendáře</a>
+                <button type="button" class="g-btn" id="calendarCopy">${ic('copy')}Kopírovat odkaz</button>
             </div>
-            <p class="cal-help">Google Kalendář: zkopírujte odkaz a vložte ho v části <em>Další kalendáře → Z adresy URL</em>. Apple Kalendář a Outlook otevřou odebírání tlačítkem výše.</p>
-            <p class="cal-note" role="note"><strong>Kalendář se neobnovuje hned.</strong> Aplikace kalendáře si odebíraný kalendář stahují se zpožděním (např. Outlook zhruba po 3 hodinách), takže o nečekaném suplování vás dál včas upozorní notifikace této aplikace.</p>
+            <p class="sheet-hint cal-help">Google Kalendář: zkopírujte odkaz a vložte ho v části <em>Další kalendáře › Z adresy URL</em>. Apple Kalendář a Outlook otevřou odebírání tlačítkem Přidat do kalendáře.</p>
+            <div class="sheet-note cal-note" role="note">${ic('info')}<div><strong>Kalendář se neobnovuje hned.</strong> Aplikace kalendáře si odebíraný kalendář stahují se zpožděním (např. Outlook zhruba po 3 hodinách), takže o nečekaném suplování vám dál včas dají vědět upozornění této aplikace.</div></div>
         </div>`;
     document.body.appendChild(dialog);
 
@@ -86,9 +87,9 @@ function ensureDialog() {
         const url = currentUrls().https;
         try {
             await navigator.clipboard.writeText(url);
-            showToast({ title: 'Odkaz na kalendář zkopírován', body: url, icon: '📅', timeout: 4000 });
+            showToast({ title: 'Odkaz na kalendář zkopírován', body: url, icon: 'calendar-plus', timeout: 4000 });
         } catch {
-            showToast({ title: 'Odkaz se nepodařilo zkopírovat – zkopírujte ho ručně:', body: url, icon: '📅', timeout: 0 });
+            showToast({ title: 'Odkaz se nepodařilo zkopírovat – zkopírujte ho ručně:', body: url, icon: 'calendar-plus', timeout: 0 });
         }
     });
     return dialog;
@@ -115,7 +116,7 @@ export function openCalendarSheet() {
     const groups = state.selectedType === 'Class' ? classGroups(state.currentTimetableData) : [];
     $('calendarGroupsBox').hidden = groups.length === 0;
     $('calendarGroups').innerHTML = groups.map(g =>
-        `<label class="cal-option cal-option-inline"><input type="checkbox" name="calGroup" value="${esc(g)}"> <span>${esc(g)}</span></label>`).join('');
+        `<label class="cal-chip"><input type="checkbox" class="g-check" name="calGroup" value="${esc(g)}"><span>${esc(g)}</span></label>`).join('');
     updateLinks();
     openBottomSheet(ID);
 }

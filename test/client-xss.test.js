@@ -73,7 +73,7 @@ test('parseChangeInfo() escapes every part of a Bakaláři change note', async (
     }
 });
 
-test('agenda / compact / card layouts render a <img onerror> subject as text', async () => {
+test('day / week / list / card layouts render a <img onerror> subject as text', async () => {
     const { state } = await import('../public/js/state.js');
     const r = await import('../public/js/layout-renderers.js');
     state.currentTimetableData = [lesson(), lesson({ hour: 2, type: 'removed' }), lesson({ hour: 2, group: '9.Z 2.sk' })];
@@ -81,13 +81,20 @@ test('agenda / compact / card layouts render a <img onerror> subject as text', a
     state.selectedScheduleType = 'permanent';
     state.layoutPreferences = { 'card-view': { cardIndex: 0 } };
 
-    r.renderAgendaLayout();
-    assertInert(container.innerHTML, 'agenda');
+    r.renderDayLayout();
+    assertInert(container.innerHTML, 'day');
     assert.match(container.innerHTML, /data-changed="true"/, 'changed slots are marked for the deep-link highlight');
+    // Agenda (2.0) is an alias of Den now
+    assert.equal(r.renderAgendaLayout, r.renderDayLayout);
+
+    r.renderWeekLayout();
+    assertInert(container.innerHTML, 'week');
 
     r.renderCompactListLayout();
     assertInert(container.innerHTML, 'compact');
-    assert.match(container.innerHTML, /lesson-status-icon is-changed/, 'change has a shape icon, not only colour');
+    // Status = icon (shape) + word, not only colour
+    assert.match(container.innerHTML, /class="g-st g-st--(sub|extra|room)"><svg class="i"[^>]*><use href="icons\.svg#[a-z0-9-]+"><\/use><\/svg>(suplování|změna|jiná učebna)/);
+    assert.match(container.innerHTML, /g-st--cancel"><svg[^>]*>.*?<\/svg>odpadá/);
 
     r.renderCardLayout();
     assertInert(container.innerHTML, 'card');

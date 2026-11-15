@@ -44,7 +44,8 @@ test.describe('Volné učebny', () => {
     const name = (await link.innerText()).trim();
     await link.click();
     await app.timetableReady(name);
-    await expect(page.locator('.type-btn[aria-pressed="true"]')).toHaveAttribute('data-type', 'Room');
+    // Návrh G nemá typové záložky (typy řeší hledání): otevřený rozvrh je rozvrh učebny
+    expect(await page.evaluate(() => localStorage.getItem('selectedType'))).toBe('Room');
 
     await page.goBack();
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.view)).toBe('rooms');

@@ -33,8 +33,8 @@ export function parseViewParam(search = window.location.search) {
 
 /**
  * Selector of slots that carry a change, in every layout: renderers stamp
- * data-changed="true" on the element that opens the lesson detail (table
- * card, card-view half, compact item / half, agenda row).
+ * data-changed="true" on the element that opens the lesson detail (the
+ * <button class="lesson"> of Den, Týden, Seznam and Karty).
  */
 export const CHANGED_SELECTOR = '[data-changed="true"]';
 
@@ -125,6 +125,12 @@ export async function applyDeepLink(link) {
     // Re-apply day selection now that the layout exists, then highlight changes.
     if (link.day !== null && link.day !== undefined) {
         try { await selectDay(link.day); } catch (_) { /* layout may handle it */ }
+    }
+
+    // Phones: a link to a day (or to a change) opens that day, not the overview
+    if (link.day !== null && link.day !== undefined || link.highlight) {
+        const { setScreen } = await import('./shell.js');
+        setScreen('day');
     }
 
     if (link.highlight) await pulseChangedLessons();

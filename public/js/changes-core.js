@@ -176,6 +176,14 @@ export function removalReason(description) {
     return text;
 }
 
+/** Kind named by Bakaláři's own note ('' = the note says nothing specific). */
+export function kindFromNote(description) {
+    const t = String(description || '').toLowerCase();
+    if (t.includes('suplov')) return 'substitution';
+    if (/místnost|učebn/.test(t)) return 'roomChange';
+    return '';
+}
+
 /** Kind of a cancelled-original → replacement pair. */
 export function classifyPair(before, after) {
     const sameTeacher = teachersMatch(before.teacher, after.teacher)
@@ -240,7 +248,8 @@ export function mergeChangeItems(items, slotOf = (it) => String(it.hour)) {
         }
         for (const c of changed) {
             const fromText = originalFromDescription(descriptionOf(c));
-            const kind = fromText ? classifyPair(fromText, c) : 'changed';
+            // Bakaláři hodinu sami pojmenovali („Suplování: …“, „Změna místnosti: …“): stejné slovo jako v rozvrhu (rozvrh-core lessonKind)
+            const kind = kindFromNote(descriptionOf(c)) || (fromText ? classifyPair(fromText, c) : 'changed');
             ordered.push({ at: slotItems.indexOf(c), entry: entryFor(kind, [c], fromText, brief(c), fromText ? '' : descriptionOf(c), extra(c)) });
         }
         for (const r of removed) {

@@ -13,7 +13,7 @@ import { debug } from './debug.js';
 export const NOTIFICATION_TYPES = {
     changes: {
         title: 'Změny v rozvrhu',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>',
+        icon: '<svg class="i" aria-hidden="true"><use href="icons.svg#repeat-2"></use></svg>',
         options: {
             lesson_removed: {
                 label: 'Odpadlé hodiny',
@@ -43,8 +43,8 @@ export const NOTIFICATION_TYPES = {
         }
     },
     reminders: {
-        title: 'Upomínky',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
+        title: 'Připomínky hodin',
+        icon: '<svg class="i" aria-hidden="true"><use href="icons.svg#clock"></use></svg>',
         options: {
             next_lesson_room: {
                 label: 'Kam jít na další hodinu',
@@ -94,7 +94,7 @@ export function renderTimetablePreferencesView(type, id, container) {
     const timetables = state.watchedTimetables.filter(t => t.type === type && t.id === id);
 
     if (timetables.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-dim); padding: 20px 0; text-align: center;">Žádné nastavení k zobrazení.</p>';
+        container.innerHTML = '<p class="g-empty">Tento rozvrh nesledujete. Zapněte ho v seznamu a pak tu nastavíte, o čem chcete vědět.</p>';
         return;
     }
 
@@ -161,9 +161,7 @@ function createTimetablePreferenceItem(timetable, index) {
             <span>${esc(timetable.name)}</span>
             <span class="timetable-preference-badge">${esc(getScheduleTypeLabel(timetable.scheduleType))}</span>
         </div>
-        <svg class="timetable-preference-arrow" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"></polyline>
-        </svg>
+        <svg class="i timetable-preference-arrow" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>
     `;
 
     // Body with notification options
@@ -179,13 +177,11 @@ function createTimetablePreferenceItem(timetable, index) {
         const groupFilterSection = document.createElement('div');
         groupFilterSection.className = 'group-filter-section';
         groupFilterSection.innerHTML = `
-            <label class="group-filter-label">Filtrovat podle skupiny:</label>
+            <span class="group-filter-label">Jen tyto skupiny</span>
             <div class="multiselect-dropdown" id="group-filter-${index}">
                 <div class="multiselect-trigger" aria-haspopup="true" aria-expanded="false">
                     <span class="multiselect-label">Načítám...</span>
-                    <svg class="multiselect-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
+                    <svg class="i multiselect-arrow" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>
                 </div>
                 <div class="multiselect-menu">
                     <div class="multiselect-options"></div>
@@ -218,7 +214,7 @@ function createTimetablePreferenceItem(timetable, index) {
         if (groupKey === 'reminders' && timetable.scheduleType === 'Actual') {
             const note = document.createElement('span');
             note.className = 'notification-type-group-note';
-            note.textContent = '(pouze pro aktuální týden)';
+            note.textContent = 'jen pro aktuální týden';
             groupTitle.appendChild(note);
         }
 
@@ -231,6 +227,8 @@ function createTimetablePreferenceItem(timetable, index) {
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
+            checkbox.setAttribute('role', 'switch');
+            checkbox.className = 'g-switch';
             checkbox.id = `pref-${index}-${groupKey}-${optionKey}`;
             checkbox.checked = timetable.notificationTypes[groupKey]?.[optionKey] ?? option.default;
             checkbox.addEventListener('change', () => {
@@ -240,8 +238,8 @@ function createTimetablePreferenceItem(timetable, index) {
             const label = document.createElement('label');
             label.htmlFor = checkbox.id;
             label.innerHTML = `
-                <div>${option.label}</div>
-                <div class="notification-type-option-description">${option.description}</div>
+                <span class="notification-type-option-label">${option.label}</span>
+                <span class="notification-type-option-description">${option.description}</span>
             `;
 
             optionDiv.appendChild(checkbox);

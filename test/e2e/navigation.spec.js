@@ -18,7 +18,7 @@ test.describe('Navigace mezi pohledy', () => {
     await expect(nav.locator('[aria-current="page"]')).toHaveAttribute('data-view', 'changes');
     // Viditelný je vždy jen jeden <main>, ovládání rozvrhu je skryté
     await expect(page.locator('main:not([hidden])')).toHaveCount(1);
-    await expect(page.locator('#timetableToolbar')).toBeHidden();
+    await expect(page.locator('#ttControls')).toBeHidden();
 
     await nav.locator('a[data-view="common"]').click();
     await expect(page.locator('#commonTitle')).toBeFocused();
@@ -27,8 +27,7 @@ test.describe('Navigace mezi pohledy', () => {
     await expect.poll(() => view(page)).toBe('changes');
     await page.goBack();
     await expect.poll(() => view(page)).toBe('timetable');
-    await expect(page.locator(LESSON).first()).toBeVisible();
-    await expect(page.locator('#timetableToolbar')).toBeVisible();
+    await expect(page.locator(LESSON).filter({ visible: true }).first()).toBeVisible();
 
     await page.goForward();
     await expect.poll(() => view(page)).toBe('changes');
