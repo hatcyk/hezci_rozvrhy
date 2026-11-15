@@ -228,7 +228,9 @@ function describeLessonChange(change, oldLesson, newLesson) {
         return `Změna předmětu: ${oldLesson.subject} → ${newLesson.subject}`;
     }
     if (change.type === 'lesson_replaced') {
-        return `Suplování: ${oldLesson.subject} → ${newLesson.subject} (${newLesson.teacher})`;
+        // Neutral wording: the permanent schedule is compared the same way, and
+        // there a new subject with a new teacher is not a substitution.
+        return `Změna hodiny: ${oldLesson.subject} → ${newLesson.subject} (${newLesson.teacher})`;
     }
     if (change.type === 'lesson_restored') {
         return `Hodina se koná: ${newLesson.subject} (${newLesson.teacher})`;
@@ -361,7 +363,7 @@ function shortChangeText(change) {
         case 'subject_change':
             return `Změna na ${change.change?.newValue || subject}`;
         case 'lesson_replaced':
-            return `${change.change?.oldValue || ''} → ${change.change?.newValue || subject} (supluje ${change.lesson.teacher})`;
+            return `${change.change?.oldValue || ''} → ${change.change?.newValue || subject} (${change.lesson.teacher})`;
         case 'lesson_restored':
             return `${subject} se koná (zrušení odvoláno)`;
         default:

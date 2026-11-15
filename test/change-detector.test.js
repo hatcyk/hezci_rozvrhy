@@ -62,7 +62,7 @@ test('jiný předmět i učitel (suplování jiným předmětem) → jedno lesso
     ];
     const c = detectTimetableChanges(before, after, META);
     assert.deepEqual(types(c), ['lesson_replaced']);
-    assert.equal(c[0].description, 'Suplování: Matematika → Fyzika (Novák)');
+    assert.equal(c[0].description, 'Změna hodiny: Matematika → Fyzika (Novák)');
     assert.deepEqual(c[0].change, { field: 'lesson', oldValue: 'Matematika', newValue: 'Fyzika', type: 'lesson_replaced' });
     assert.equal(c[0].lesson.subject, 'Fyzika');
 

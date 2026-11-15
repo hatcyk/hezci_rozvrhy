@@ -63,7 +63,7 @@ test('a substitution with another subject (lesson_replaced) reaches users with t
     // A plain subject change (same teacher) keeps its own switch, off by default.
     assert.deepEqual(filterChangesByPreferences([change('subject_change')], DEFAULTS), []);
 
-    assert.equal(createChangeSummary([replaced]), 'Po 3.h: Matematika → Fyzika (supluje P. Novák)');
+    assert.equal(createChangeSummary([replaced]), 'Po 3.h: Matematika → Fyzika (P. Novák)');
     assert.match(createDetailedChangeSummary([replaced]), /3\.h: Matematika → Fyzika \(P\. Novák\)/);
 });
 
