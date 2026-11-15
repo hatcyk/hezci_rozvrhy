@@ -41,8 +41,9 @@ export function isNewerVersionActive(cacheNames, ownCache) {
 }
 
 /**
- * Show #updateBanner once a newer version is active. Checked when the worker
- * that controls the page changes and whenever the page becomes visible again.
+ * Show #updateBanner once a newer version is active, hide it when the page's
+ * own version is the active one. Checked at start, when the worker that
+ * controls the page changes and whenever the page becomes visible again.
  */
 export function initUpdateNotice({
     sw = typeof navigator !== 'undefined' ? navigator.serviceWorker : undefined,
@@ -58,11 +59,23 @@ export function initUpdateNotice({
 
     if (button) button.addEventListener('click', () => reload());
 
+    // A missing own cache alone proves nothing: a page loaded from the network
+    // right after a deploy runs the new bundles while the old worker (and only
+    // its cache) is still there. Something newer replaced this page's version
+    // only if its cache existed before, or a worker took the page over since.
+    let replaceable = false;
     const check = async () => {
         try {
-            if (isNewerVersionActive(await cacheStorage.keys(), ownCache)) banner.classList.remove('hidden');
+            const names = await cacheStorage.keys();
+            if (names.includes(ownCache)) {
+                replaceable = true;
+                banner.classList.add('hidden');
+            } else if (replaceable && isNewerVersionActive(names, ownCache)) {
+                banner.classList.remove('hidden');
+            }
         } catch (_) { /* cache storage unavailable (private mode): no notice */ }
     };
+    check();
 
     let lastUpdateCheck = now();
     const askForUpdate = async () => {
@@ -77,6 +90,7 @@ export function initUpdateNotice({
     // The new worker controls the page before its activation has finished,
     // i.e. before it removed the older caches - wait for that.
     sw.addEventListener('controllerchange', () => {
+        replaceable = true;
         const worker = sw.controller;
         if (!worker || worker.state === 'activated') { check(); return; }
         const onStateChange = () => {
