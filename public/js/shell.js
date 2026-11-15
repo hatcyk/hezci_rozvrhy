@@ -280,8 +280,7 @@ function placeControls() {
     if (!controls) return;
     const slot = isMobile() ? $('paneToolsSlot') : $('ttTools');
     if (!slot || controls.parentElement === slot) return;
-    if (slot.id === 'ttTools') slot.insertBefore(controls, $('layoutSeg') ? $('layoutSeg').nextSibling : slot.firstChild);
-    else slot.appendChild(controls);
+    slot.appendChild(controls);
 }
 
 /* ── inicializace ──────────────────────────────────────────────────────── */

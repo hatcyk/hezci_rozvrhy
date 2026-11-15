@@ -10,6 +10,9 @@
 @layer shell {
 
   /* ---------- kostra ---------- */
+  /* fokus z klávesnice se nesmí schovat pod plovoucí lištu (WCAG 2.4.11): prohlížeč posune
+     prvek nad ni, i když je ještě ve viewportu */
+  html { scroll-padding-bottom: calc(var(--tabbar-h) + 26px + env(safe-area-inset-bottom)); }
   .app-container {
     width: 100%; max-width: 720px; margin-inline: auto; min-height: 100dvh;
     padding:
@@ -89,7 +92,7 @@
   .tb-title:focus-visible { outline: 3px solid var(--now); outline-offset: 4px; border-radius: 6px; }
   .tb-sub { margin-top: 2px; font-size: var(--fs-body); font-weight: 500; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tb-sub:empty { display: none; }
-  .tb-tools, .tb-nav { display: none; }
+  .tb-tools, .tb-nav, .tb-layout { display: none; }
   .tb-actions { position: relative; display: flex; gap: 10px; margin-left: auto; flex: none; }
   .tb-bell { display: none; }
   .tb-bell .bell-off-icon, .tb-bell.disabled .bell-icon { display: none; }
@@ -104,7 +107,7 @@
   :root[data-screen="day"] .tb-title { font-size: var(--fs-title); }
 
   /* jiné pohledy: jen nastavení (a zvonek na počítači) */
-  :root:not([data-view="timetable"]) :is(.who, .tb-back, .tb-head, .tb-tools, .tb-nav, .tb-more) { display: none; }
+  :root:not([data-view="timetable"]) :is(.who, .tb-back, .tb-head, .tb-tools, .tb-layout, .tb-nav, .tb-more) { display: none; }
 
   /* ---------- nabídka „⋯“ ---------- */
   .menu {
@@ -221,6 +224,7 @@
 
   /* ---------- počítač ---------- */
   @media (min-width: 1080px) {
+    html { scroll-padding-bottom: 0; }
     .app-container {
       max-width: none; margin: 0;
       padding: 16px 16px 16px calc(var(--side-w) + 32px);
@@ -316,7 +320,7 @@
     .tb-sub { display: none; }
     .tb-tools { display: contents; }
     .tt-controls { grid-area: tools; }
-    .tb-layout { grid-area: layout; }
+    .tb-layout { grid-area: layout; display: inline-flex; }
     .tb-nav { grid-area: nav; display: flex; align-items: center; gap: 8px; }
     .tb-nav .g-btn { min-height: var(--tap); padding: 0 18px; }
     .tb-actions { grid-area: actions; }

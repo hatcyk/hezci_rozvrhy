@@ -30,7 +30,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Rozvrhy">
-    <link rel="stylesheet" href="css/app.css?v=4b31c8650b">
+    <link rel="stylesheet" href="css/app.css?v=c3f3b6de8b">
 </head>
 <body>
 
@@ -98,16 +98,9 @@
                 <span class="who-name" id="valueDropdownLabel">Načítám…</span><span class="vh">, změnit rozvrh</span>
                 <svg class="i who-chev" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>
             </button>
-            <div class="tb-head">
-                <h1 class="tb-title" id="ttTitle">Rozvrh</h1>
-                <p class="tb-sub" id="ttSub"></p>
-            </div>
-
+            <!-- Pořadí v DOM = pořadí fokusu na počítači po řádcích lišty: rozvrh, týden a „Jen změny“, akce;
+                 pak nadpis, Den / Týden a Dnes ‹ › (na mobilu je nástrojová část skrytá) -->
             <div class="tb-tools" id="ttTools">
-                <div class="g-seg sh-ctl tb-layout" id="layoutSeg" role="group" aria-label="Rozvržení">
-                    <button type="button" data-layout="day" aria-pressed="false">Den</button>
-                    <button type="button" data-layout="week-view" aria-pressed="true">Týden</button>
-                </div>
                 <div class="tt-controls" id="ttControls">
                     <div class="g-seg sh-ctl tt-sched" role="group" aria-label="Týden">
                         <button type="button" class="schedule-type-btn" data-schedule="permanent" aria-pressed="false">Stálý</button>
@@ -121,14 +114,9 @@
                 </div>
             </div>
 
-            <div class="tb-nav">
-                <button type="button" class="g-btn g-btn--small sh-ctl" id="todayBtn">Dnes</button>
-                <button type="button" class="g-circle sh-ctl" id="prevBtn" aria-label="Předchozí týden">
-                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-left"></use></svg>
-                </button>
-                <button type="button" class="g-circle sh-ctl" id="nextBtn" aria-label="Další týden">
-                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg>
-                </button>
+            <div class="tb-head">
+                <h1 class="tb-title" id="ttTitle">Rozvrh</h1>
+                <p class="tb-sub" id="ttSub"></p>
             </div>
 
             <div class="tb-actions">
@@ -161,6 +149,21 @@
                 </button>
                 <button type="button" class="g-circle sh-ctl" id="settingsToggle" aria-label="Nastavení" aria-haspopup="dialog">
                     <svg class="i" aria-hidden="true"><use href="icons.svg#settings"></use></svg>
+                </button>
+            </div>
+
+            <div class="g-seg sh-ctl tb-layout" id="layoutSeg" role="group" aria-label="Rozvržení">
+                <button type="button" data-layout="day" aria-pressed="false">Den</button>
+                <button type="button" data-layout="week-view" aria-pressed="true">Týden</button>
+            </div>
+
+            <div class="tb-nav">
+                <button type="button" class="g-btn g-btn--small sh-ctl" id="todayBtn">Dnes</button>
+                <button type="button" class="g-circle sh-ctl" id="prevBtn" aria-label="Předchozí týden">
+                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-left"></use></svg>
+                </button>
+                <button type="button" class="g-circle sh-ctl" id="nextBtn" aria-label="Další týden">
+                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg>
                 </button>
             </div>
         </header>
@@ -636,6 +639,6 @@
         });
     </script>
 
-    <script type="module" src="js/app.js?v=fdf19e6961"></script>
+    <script type="module" src="js/app.js?v=69977ae8e1"></script>
 </body>
 </html>
