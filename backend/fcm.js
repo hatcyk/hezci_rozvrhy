@@ -296,9 +296,19 @@ const PREFERENCE_KEYS_BY_CHANGE_TYPE = {
 
 const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
 
-/** Switches that let a change type through (any one of them is enough). */
-function preferenceKeysForChange(changeType) {
-    return PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+/**
+ * Switches that let a change through (any one of them is enough).
+ * @param {String} changeType
+ * @param {Object} [change] - the change itself; a cancelled lesson that takes
+ *        place with a substitute ('lesson_restored' + change.substitute) is
+ *        also a substitution
+ */
+function preferenceKeysForChange(changeType, change = null) {
+    const keys = PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+    if (changeType === 'lesson_restored' && change && change.change && change.change.substitute) {
+        return [...keys, 'substitution'];
+    }
+    return keys;
 }
 
 /** The main switch of a change type. */
@@ -314,7 +324,7 @@ function filterChangesByPreferences(changes, notificationTypes) {
 
     const userPrefs = notificationTypes.changes;
 
-    return changes.filter(change => preferenceKeysForChange(change.type).some(typeKey => {
+    return changes.filter(change => preferenceKeysForChange(change.type, change).some(typeKey => {
         const isEnabled = userPrefs[typeKey];
 
         // Preference never stored (older user doc): fall back to the important ones.

@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { filterChangesByPreferences, preferenceKeyForChange } = require('../backend/fcm');
+const { filterChangesByPreferences, preferenceKeyForChange, preferenceKeysForChange } = require('../backend/fcm');
 const { createChangeSummary, createDetailedChangeSummary } = require('../backend/change-detector');
 
 const change = (type, extra = {}) => ({
@@ -74,6 +74,26 @@ test('a cancellation that was called off (lesson_restored) goes to the people wh
     assert.deepEqual(filterChangesByPreferences([restored], prefs({ ...DEFAULTS.changes, lesson_removed: false })), []);
     assert.equal(createChangeSummary([restored]), 'Po 3.h: Matematika se koná (zrušení odvoláno)');
     assert.match(createDetailedChangeSummary([restored]), /3\.h: Matematika se koná \(zrušení odvoláno\)/);
+});
+
+test('a lesson put where a cancelled one was: its own wording, old documents keep theirs', () => {
+    const lesson = { subject: 'Fyzika', teacher: 'P. Novák', room: 'A102' };
+    const afterCancel = change('lesson_replaced', { lesson, change: { field: 'lesson', oldValue: 'Matematika', newValue: 'Fyzika', cancelled: true } });
+    assert.equal(createChangeSummary([afterCancel]), 'Po 3.h: Fyzika (P. Novák) místo odpadlé hodiny Matematika');
+    assert.match(createDetailedChangeSummary([afterCancel]), /3\.h: Fyzika \(P\. Novák\) místo odpadlé hodiny Matematika/);
+    // teacher unknown → no empty brackets
+    assert.equal(createChangeSummary([{ ...afterCancel, lesson: { subject: 'Fyzika', teacher: '' } }]), 'Po 3.h: Fyzika místo odpadlé hodiny Matematika');
+    assert.equal(createChangeSummary([change('lesson_replaced', { lesson: { subject: 'Fyzika' }, change: { oldValue: 'Matematika', newValue: 'Fyzika' } })]),
+        'Po 3.h: Matematika → Fyzika');
+
+    const withSubstitute = change('lesson_restored', { change: { field: 'type', oldValue: 'removed', newValue: 'normal', substitute: 'K. Malá' } });
+    assert.equal(createChangeSummary([withSubstitute]), 'Po 3.h: Matematika se koná, supluje K. Malá (zrušení odvoláno)');
+    assert.match(createDetailedChangeSummary([withSubstitute]), /3\.h: Matematika se koná, supluje K\. Malá \(zrušení odvoláno\)/);
+    // ... and it is a substitution as well as a called-off cancellation
+    assert.deepEqual(preferenceKeysForChange('lesson_restored', withSubstitute), ['lesson_removed', 'substitution']);
+    assert.deepEqual(preferenceKeysForChange('lesson_restored', change('lesson_restored')), ['lesson_removed']);
+    assert.deepEqual(filterChangesByPreferences([withSubstitute], prefs({ ...ALL_OFF.changes, substitution: true })), [withSubstitute]);
+    assert.deepEqual(filterChangesByPreferences([withSubstitute], ALL_OFF), []);
 });
 
 test('a cancelled lesson produces readable notification text', () => {

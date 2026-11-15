@@ -13,6 +13,8 @@ process.env.BAKALARI_PASSWORD = 'syntheticke-heslo';
 const prefetch = require('../backend/prefetch');
 const { prefetchAllData, assessLoginResponse, parseSetCookies, classifyError, requestConfig, DEFAULT_CONCURRENCY, CONCURRENT_REQUESTS } = prefetch;
 const { parseTimetablePage, addRemovedLessonsFromPermanent } = require('../backend/bakalari-parser');
+const { createChangeSummary } = require('../backend/change-detector');
+const { filterChangesByPreferences } = require('../backend/fcm');
 
 // Monday of week 46/2026, 6:00 Prague time
 const NOW = new Date('2026-11-09T05:00:00Z');
@@ -545,6 +547,37 @@ test('den volna: žádné „odpadlé“ hodiny ze stálého rozvrhu, žádné �
     assert.deepEqual(db.store.get('aggregates/changes_Actual').days[0].items, []);
     // the other snapshots carry an empty list, the permanent one too
     assert.deepEqual(db.store.get('timetables/Class_C1_Next').daysOff, []);
+});
+
+test('odpadlá hodina, do které se později doplní suplování → lesson_restored / lesson_replaced, ne lesson_added', async (t) => {
+    // Monday 1st lesson (Matematika, Cvičná) was cancelled in the stored snapshot of this week.
+    const cancelled = N46_OLD.filter(l => !(l.day === 0 && l.hour === 1));
+    const cases = [
+        [{ teacher: 'Ing. Radim Příkladovič Ph.D.' }, 'lesson_restored', 'po 1.h: Matematika se koná, supluje Ing. Radim Příkladovič Ph.D. (zrušení odvoláno)'],
+        [{ subject: 'Fyzika', teacher: 'Mgr. Petr Novák' }, 'lesson_replaced', 'po 1.h: Fyzika (Mgr. Petr Novák) místo odpadlé hodiny Matematika'],
+    ];
+    for (const [mod, type, text] of cases) {
+        t.mock.restoreAll();
+        quiet(t);
+        const store = initialStore();
+        store['timetables/Class_C1_Actual'] = storedDoc('Class', 'C1', 'Actual', cancelled, W46,
+            { permanent: store['timetables/Class_C1_Permanent'].data });
+        assert.deepEqual(store['timetables/Class_C1_Actual'].data.filter(l => l.type === 'removed').map(l => l.subject), ['Matematika']);
+        fakeBakalari(t, { pages: { ...defaultPages(), 'Actual/Class/C1': page(W46, [{ ...PERM[0], ...mod, changeinfo: 'Suplování (syntetické)' }, ...cancelled]) } });
+        const db = fakeFirestore(store);
+        assert.equal((await run(db)).status, 'ok');
+
+        const docs = changeDocs(db).filter(p => p.includes('Class_C1_Actual'));
+        assert.equal(docs.length, 1);
+        const changes = db.store.get(docs[0]).changes;
+        assert.deepEqual(changes.map(c => c.type), [type]);
+        // what a user with the app's default switches gets
+        const defaults = { changes: { lesson_removed: true, substitution: true, room_change: true, lesson_added: false, subject_change: false } };
+        assert.equal(createChangeSummary(filterChangesByPreferences(changes, defaults)), text);
+
+        // the next run sees the same page: nothing new
+        assert.equal((await run(db)).changeDocs, 0);
+    }
 });
 
 // ─── stálý rozvrh: denní obnova a pořadí zpracování ─────────────────────────
