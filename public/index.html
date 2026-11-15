@@ -2,8 +2,10 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <!-- Zooming must stay possible (WCAG 1.4.4): no user-scalable / maximum-scale limits -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Zooming must stay possible (WCAG 1.4.4): no user-scalable / maximum-scale limits.
+         viewport-fit=cover: the installed app draws under the black-translucent status bar and the CSS
+         keeps clear of it with env(safe-area-inset-*), which is 0 without this -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Lepší Rozvrh</title>
     <meta name="description" content="Přehledné rozvrhy tříd, učitelů a učeben SPŠD včetně změn a upozornění.">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
@@ -30,7 +32,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Rozvrhy">
-    <link rel="stylesheet" href="css/app.css?v=abce27c735">
+    <link rel="stylesheet" href="css/app.css?v=7ff2de3083">
 </head>
 <body>
 
