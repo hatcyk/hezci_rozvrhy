@@ -309,3 +309,40 @@ test('upomínky jen z rozvrhů, které je mají zapnuté; skupiny se filtrují',
         restore();
     }
 });
+
+test('třída má u upomínky přednost před učebnou i učitelem, i když je v seznamu až za nimi', async () => {
+    const restore = quiet();
+    const THIRD = 'anon-2d9f8e3a-0c3f-4e5d-9b4a-3c4d5e6f7081';
+    const reminders = { reminders: { next_lesson_room: true } };
+    const watch = (type, id) => ({ type, id, scheduleType: 'Actual', groupFilters: [], notificationTypes: reminders });
+    try {
+        // All three with reminders on; the room and the teacher are listed BEFORE the class.
+        db._store.set(`users/${THIRD}`, {
+            tokens: ['fcm-3'],
+            hasReminders: true,
+            watchedKeys: ['Room_B7_Actual', 'Teacher_T9_Actual', 'Class_ZY_Actual'],
+            preferences: { watchedTimetables: [watch('Room', 'B7'), watch('Teacher', 'T9'), watch('Class', 'ZY')] },
+        });
+        const D = '2026-11-12'; // Thursday
+        const lesson = (hour, subject, room) => ({ day: 3, hour, subject, teacher: 'X. Někdo', room, group: '', date: D });
+        db._store.set('timetables/Room_B7_Actual', { weekStart: '2026-11-09', data: [lesson(1, 'Chemie', 'B7'), lesson(2, 'Chemie', 'B7')] });
+        db._store.set('timetables/Teacher_T9_Actual', { weekStart: '2026-11-09', data: [lesson(1, 'Zeměpis', 'C1')] });
+        db._store.set('timetables/Class_ZY_Actual', { weekStart: '2026-11-09', data: [lesson(1, 'Dějepis', 'D4')] });
+        const mine = () => sent.filter(m => m.tokens.includes('fcm-3'));
+
+        // 1st hour: all three have a lesson → one reminder, about the class
+        await sendLessonReminders({ mockTime: new Date('2026-11-12T06:56:00Z') });
+        assert.equal(mine().length, 1);
+        assert.equal(mine()[0].data.subject, 'Dějepis');
+        assert.equal(mine()[0].data.room, 'D4');
+        assert.equal(db._get(`lesson_notifications_sent/${THIRD}_${D}_1`).timetableId, 'Class_ZY_Actual');
+
+        // 2nd hour: the class is free → the room's lesson (reminders are on for it)
+        await sendLessonReminders({ mockTime: new Date('2026-11-12T07:46:00Z') });
+        assert.equal(mine().length, 2);
+        assert.equal(mine()[1].data.subject, 'Chemie');
+    } finally {
+        db._store.delete(`users/${THIRD}`);
+        restore();
+    }
+});

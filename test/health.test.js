@@ -204,3 +204,52 @@ test('/api/status: klient dostane 200 i se zastaralými daty, monitor s ?strict=
         await close();
     }
 });
+
+// ─── HTTP cron: sběr v procesu a odeslání změn ──────────────────────────────
+
+test('HTTP cron: po běhu ok i partial se uložené změny hned odešlou, po výpadku ne', async () => {
+    // A partial run stores the changes of the timetables it did download, in one
+    // batch with their snapshots, so they are as real as those of a full run
+    // and nothing else would send them before the next run. A run that stored
+    // nothing (guard, login, network, error) has nothing new to send; changes
+    // still pending from before are left to the separate notification job.
+    const TT = { type: 'Class', id: 'ZL', name: '1.A', scheduleType: 'Actual' };
+    db._store.set('users/watcher', {
+        tokens: ['t-watch'],
+        watchedKeys: ['Class_ZL_Actual'],
+        preferences: { watchedTimetables: [{ ...TT, groupFilters: ['all'] }] },
+    });
+    db._store.set('system/migrations', { watchIndexV1: true, watchIndexV2: true });
+    const pending = () => db._store.set('changes/c-http', {
+        timetable: TT, weekStart: '2026-11-09', timestamp: '2026-11-09T07:00:00.000Z', sent: false,
+        changes: [{ type: 'lesson_removed', day: 0, dayName: 'Po', hour: 2, lesson: { subject: 'Fyzika', teacher: 'K. Malá', room: 'B1', group: '' } }],
+    });
+    const restore = quiet();
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        for (const [status, sends] of [['ok', true], ['partial', true], ['guard_no_definitions', false], ['guard_no_lessons', false],
+            ['login_failed', false], ['network', false], ['error', false]]) {
+            pending();
+            prefetchImpl = async () => ({ success: status === 'ok', status, totalRequests: 8, errorCount: status === 'ok' ? 0 : 6 });
+            const outcome = await cron.triggerManualPrefetch();
+            assert.equal(outcome.run.status, status);
+            assert.equal(outcome.run.trigger, 'http');
+            assert.equal(db._get('changes/c-http').sent, sends, status);
+            assert.equal(db._get('changes/c-http').sentToDevices, sends ? 1 : undefined, status);
+            assert.equal(cron.isPrefetchRunning(), false);
+        }
+        // a partial run does not count as fresh data
+        prefetchImpl = async () => ({ success: true, status: 'ok' });
+        await cron.triggerManualPrefetch();
+        const successAt = db._get('system/health').lastSuccessAt;
+        prefetchImpl = async () => ({ success: false, status: 'partial', error: '6 of 8 timetables not refreshed' });
+        await cron.triggerManualPrefetch();
+        assert.equal(db._get('system/health').lastSuccessAt, successAt);
+        assert.equal(db._get('system/health').lastStatus, 'partial');
+    } finally {
+        console.warn = warn;
+        restore();
+        for (const p of ['users/watcher', 'changes/c-http']) db._store.delete(p);
+    }
+});

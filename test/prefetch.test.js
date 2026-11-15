@@ -780,13 +780,68 @@ test('dva překryté běhy (cron bez zámku) zapíší tutéž změnu jen jednou
     quiet(t);
     fakeBakalari(t);
     const db = fakeFirestore(initialStore());
-    // The second run starts while the first is still downloading: both load the same old snapshots.
+
+    // Barrier: both runs load the old snapshots before either writes anything,
+    // so BOTH find the same change and both try to store it. (Without it the
+    // second run already saw the first one's snapshot and never got here.)
+    const realGetAll = db.getAll;
+    let preloads = 0;
+    let release;
+    const bothLoaded = new Promise(resolve => { release = resolve; });
+    db.getAll = async (...refs) => {
+        // A Firestore snapshot is the document as it was when it was read
+        // (the fake reads the store lazily, in data()).
+        const docs = (await realGetAll(...refs)).map((doc) => {
+            const data = doc.data();
+            return { ...doc, data: () => structuredClone(data) };
+        });
+        if (refs.some(r => r.path.startsWith('timetables/')) && ++preloads <= 2) {
+            if (preloads === 2) release();
+            await bothLoaded;
+        }
+        return docs;
+    };
+
+    // Every batch that tries to store the change document, and how it ended.
+    // The moment the first one is stored, the sender picks it up (sent: true).
+    const attempts = [];
+    const realBatch = db.batch;
+    db.batch = () => {
+        const batch = realBatch();
+        let changePath = null;
+        for (const op of ['create', 'set']) {
+            const original = batch[op];
+            batch[op] = (r, data) => { if (r.path.startsWith('changes/')) changePath = r.path; return original(r, data); };
+        }
+        const commit = batch.commit;
+        batch.commit = async () => {
+            if (!changePath) return commit();
+            try {
+                await commit();
+                attempts.push('stored');
+                db.store.set(changePath, { ...db.store.get(changePath), sent: true, sentAt: '2026-11-09T05:01:00.000Z' });
+            } catch (error) {
+                attempts.push(/ALREADY_EXISTS/.test(error.message) ? 'already exists' : `failed: ${error.message}`);
+                throw error;
+            }
+        };
+        return batch;
+    };
+
     const [a, b] = await Promise.all([run(db), run(db)]);
+    assert.equal(preloads >= 2, true);
     assert.equal(a.status, 'ok');
     assert.equal(b.status, 'ok');
+    assert.equal(a.errorCount + b.errorCount, 0);
+    assert.deepEqual(attempts.sort(), ['already exists', 'stored'], 'both runs tried, the second was refused');
     assert.equal(changeDocs(db).length, 1, changeDocs(db).join(', '));
     assert.equal(a.changeDocs + b.changeDocs, 1, 'only the run that created the document counts it');
-    assert.equal(db.store.get(changeDocs(db)[0]).sent, false);
+    // set() instead of create() would have put sent: false back → the same notification twice
+    const doc = db.store.get(changeDocs(db)[0]);
+    assert.equal(doc.sent, true);
+    assert.equal(doc.sentAt, '2026-11-09T05:01:00.000Z');
+    // the refused run still stored its snapshot
+    assert.equal(db.store.get('timetables/Class_C1_Actual').weekStart, W46);
 });
 
 test('změna, která se vrátí a nastane znovu, dostane nový dokument (jiný výchozí snímek)', async (t) => {
