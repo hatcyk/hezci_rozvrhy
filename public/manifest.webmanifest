@@ -8,8 +8,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "theme_color": "#071422",
-  "background_color": "#071422",
+  "theme_color": "#050A1A",
+  "background_color": "#050A1A",
   "categories": ["education", "productivity"],
   "icons": [
     {
@@ -43,7 +43,7 @@
       "sizes": "780x1688",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "Dnešní rozvrh třídy s probíhající hodinou a změnami"
+      "label": "Přehled třídy: probíhající hodina, dnešní změny a týden"
     },
     {
       "src": "/screenshots/mobil-detail.png",
@@ -57,7 +57,7 @@
       "sizes": "1440x900",
       "type": "image/png",
       "form_factor": "wide",
-      "label": "Týdenní rozvrh třídy na počítači"
+      "label": "Týdenní rozvrh třídy na počítači v nočním režimu"
     }
   ],
   "shortcuts": [
