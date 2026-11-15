@@ -23,6 +23,7 @@ veřejných stránek rozvrhu (`/Timetable/Public/…`) po přihlášení školn�
 | Čas | `date-fns`, `date-fns-tz` (pásmo Europe/Prague včetně letního času) |
 | Data a upozornění | Firebase: Firestore, Authentication (custom token), Cloud Messaging; server `firebase-admin`, prohlížeč Firebase JS SDK 9.22 (compat) z gstatic.com |
 | Frontend | vanilla JavaScript (ES moduly) a CSS bez frameworku; `esbuild` je skládá do `public/js/app.js` a `public/css/app.css` |
+| Vzhled | návrh G „Obloha“: CSS vrstvy (`@layer`), `light-dark()`, `backdrop-filter`, systémové písmo bez webových fontů, ikony Lucide (`lucide-static`, jen při buildu) ve spritu `public/icons.svg` |
 | Hosting | Vercel (statické soubory z CDN + Express jako serverless funkce); alternativně vlastní server (Docker / systemd, viz DEPLOYMENT.md) |
 | Plánování | GitHub Actions (`.github/workflows/`), cron-job.org, případně systémový cron |
 | Testy | `node:test` (jednotkové a integrační), Playwright + axe-core (e2e) |
@@ -178,9 +179,25 @@ Těla se validují v `routes/validation.js`.
   před …“ (`offline.js`); když je server nezdravý, banner říká, z kdy data jsou.
 - **Volání API** s uživatelem jdou přes `apiFetch` s `Authorization: Bearer <ID token>`,
   při 401 se jednou přihlásí znovu.
+- **Rám** (`shell.js`): na mobilu (šířka ≤ 1079 px) obrazovky Přehled a Den,
+  plovoucí spodní lišta s pohledy a počtem změn, kulaté tlačítko hledání a
+  nabídka „⋯“; na počítači postranní panel (hledání, pohledy, oblíbené, karta
+  „teď“) a lišta pohledu (Den / Týden, Stálý / Aktuální / Příští, Dnes, ‹ ›,
+  „Jen změny“). Den na mobilu je záznam v historii, systémové Zpět vrátí
+  na Přehled.
+- **Přehled** (`overview.js`): vždy o „teď“ (aktuální týden, o víkendu příští):
+  probíhající nebo další hodina s učebnou, věta o změnách dne, pás hodin,
+  řádky týdne, dlaždice Změny a Volné učebny.
+- **Hledání** místo rozbalovacího seznamu: skupiny Třídy / Vyučující / Učebny,
+  bez ohledu na diakritiku, ovládání klávesnicí a zkratka „/“, nedávné volby,
+  hvězdička oblíbených jako samostatné tlačítko.
 - **Rozvržení** (`layout-registry.js`, `layout-manager.js`, `layout-renderers.js`,
-  `timetable.js`): desktop `week-view` (výchozí) a `single-day`; mobil (šířka
-  ≤ 1079 px) `agenda` (výchozí), `compact-list`, `card-view`, `single-day`.
+  `timetable.js`, čisté funkce v `rozvrh-core.js`): `day` (časová osa ve
+  skutečném měřítku s čárou „teď“, mobil i počítač), `week-view` (jen počítač,
+  výchozí), `compact-list` a `card-view` (jen mobil). Uložené `agenda` a
+  `single-day` převede `migrateLayoutId()` na `day`. Stav hodiny je vždy ikona
+  a slovo (suplování, jiná učebna, odpadá, akce, přidaná hodina), ne jen barva.
+  Detail hodiny je na mobilu spodní panel, na počítači bublina u bloku.
 - **Pohledy** (`view-router.js`, skutečné odkazy, History API, fokus na nadpis):
   Změny (`changes-*.js`), Volné učebny (`rooms-*.js`), Společné volno
   (`common-*.js`), kiosk (`kiosk*.js`, `/?kiosk=changes`, `onSnapshot`, Wake Lock).
@@ -189,6 +206,17 @@ Těla se validují v `routes/validation.js`.
   tisk A4 na šířku, odkaz `webcal://…/api/ical/…`.
 - **Panely** jsou nativní `<dialog>` + `showModal()` (`bottom-sheet.js`):
   stránka za nimi je inertní, Esc zavře, fokus se vrátí.
+- **Vzhled** (`public/css/g/`, pořadí v `tools/build.js`): `tokens.css` deklaruje
+  vrstvy `reset, tokens, base, materials, components, shell, views, motion, print`
+  a barvy obou režimů přes `light-dark()`. Tři materiály: sklo
+  (`backdrop-filter`) jen na navigaci, závoj na obsahu a plná plocha; bez
+  podpory `backdrop-filter`, při `prefers-reduced-transparency` nebo s volbou
+  „Omezit průhlednost“ (`data-transparency="reduced"`, Safari systémové
+  nastavení nepozná) je všude plná plocha. Obloha je pevná vrstva
+  `body::before`. Ikony jsou `<svg><use href="icons.svg#…">`; sprite skládá
+  `tools/icons.js` z balíčku `lucide-static`. Kiosk má vždy noční oblohu bez
+  skla a písmo podle výšky obrazovky, tisk bílý papír a stav ikonou a slovem.
+  Vzorník `design.html` ukazuje tokeny, materiály, stavy a živý kontrast.
 - **Bezpečné vykreslování:** všechna data z Bakalářů procházejí `esc()`
   (`utils.js`), takže HTML v názvu předmětu se zobrazí jako text.
 - **PWA:** `manifest.webmanifest` (maskovatelné ikony, snímky, zkratky na
@@ -222,11 +250,11 @@ Těla se validují v `routes/validation.js`.
 
 ## 8. Testování
 
-| Sada | Rozsah | Výsledek (4. 11. 2026) |
+| Sada | Rozsah | Výsledek (15. 11. 2026) |
 |---|---|---|
-| `npm test` (`node:test`, `test/*.test.js`, 22 souborů) | parser (vč. přelomu roku), prefetch s atrapou Firestore a Bakalářů, detektor změn a přechod týdne, agregáty, auth/S1, API a validace, stav/S4, upomínky, notifikace a limit FCM, admin API a stránka, iCal s vlastním validátorem, bezpečnostní hlavičky, klientské moduly (auth, XSS, SW, PWA, pohledy, tisk) | 223/223, 0 todo; běží v TZ UTC i Europe/Prague |
-| `npm run test:coverage` | pokrytí `backend/**` a `routes/**` | celkem 85,3 % řádků / 84,0 % větví; `backend/` 90,7 % / 85,4 %, `routes/` 66,3 % / 76,7 % (nejméně `debug.js`, `groups.js`, `fcm.js`) |
-| `npm run test:e2e` (Playwright 1.64, axe-core 4.14, `test/e2e/*.spec.js`) | 76 scénářů × projekty mobil (390×844) a desktop (1440×900): start a vykreslení, přepínání týdne a druhu, roletka, pohledy a historie, rozvržení, klávesnice na kartách, dialogy (fokus, Esc), Změny, Volné učebny, Společné volno, kiosk, sdílení, offline, přepnutí na příští týden přes `page.clock`, XSS, vynucená CSP, axe WCAG 2.2 AA ve 19 stavech | 134 prošlo, 18 přeskočeno (scénáře jen pro jeden projekt), axe 0 porušení, CSP 0 porušení |
+| `npm test` (`node:test`, `test/*.test.js`, 24 souborů) | parser (vč. přelomu roku), prefetch s atrapou Firestore a Bakalářů, detektor změn a přechod týdne, agregáty, auth/S1, API a validace, stav/S4, upomínky, notifikace a limit FCM, admin API a stránka, iCal s vlastním validátorem, bezpečnostní hlavičky, klientské moduly (auth, XSS, SW, PWA, pohledy, tisk, rozvrh návrhu G), kontrast všech dvojic barevných tokenů v obou režimech (`g-contrast.test.js`) | 336/336, 0 todo |
+| `npm run test:coverage` | pokrytí `backend/**` a `routes/**` | celkem 85,3 % řádků / 84,1 % větví (15. 11.); po složkách ze 4. 11.: `backend/` 90,7 % / 85,4 %, `routes/` 66,3 % / 76,7 % (nejméně `debug.js`, `groups.js`, `fcm.js`) |
+| `npm run test:e2e` (Playwright 1.64, axe-core 4.14, `test/e2e/*.spec.js`) | 93 scénářů × projekty mobil (390×844) a desktop (1440×900): start a vykreslení, Přehled a Den, přepínání týdne a druhu, hledání (diakritika, klávesnice, skupiny), oblíbené, pohledy a historie, rozvržení a převod starých, klávesnice na blocích hodin, dialogy (fokus, Esc), Změny, Volné učebny, Společné volno, kiosk, sdílení, offline, přepnutí na příští týden přes `page.clock`, XSS, vynucená CSP, axe WCAG 2.2 AA ve 27 stavech (13 obrazovek × 2 režimy + kiosk) | 164 prošlo, 22 přeskočeno (scénáře jen pro jeden projekt), axe 0 porušení, CSP 0 porušení |
 
 E2E testy běží proti statickému serveru nad `public/`; Firebase SDK nahrazuje
 atrapa (`test/e2e/support/fake-firebase.js`), `/api/*` odpovídá atrapa v testu a

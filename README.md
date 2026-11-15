@@ -13,8 +13,14 @@ verze 2.0.0 ([changelog](changelog.md))
   Změny (suplování, změna učebny, zrušená hodina, akce/absence) jsou odlišené
   barvou, ikonou i textem. Detail hodiny ukazuje „Proti stálému rozvrhu:
   původně → nyní“.
-- **Rozvržení:** na desktopu celý týden nebo den, na mobilu agenda (výchozí),
-  seznam, karty a den. Volba se ukládá v prohlížeči.
+- **Přehled** (domov rozvrhu na mobilu): právě probíhající nebo další hodina
+  s učebnou, věta o dnešních změnách, pás hodin, řádky týdne a dlaždice Změny
+  a Volné učebny. Na počítači je stejný „teď“ v postranním panelu.
+- **Rozvržení:** na počítači týden nebo den, na mobilu den na časové ose
+  (výchozí), seznam a karty. Volba se ukládá v prohlížeči; dřívější „agenda“
+  a „denní zobrazení“ se samy převedou na den.
+- **Hledání** tříd, vyučujících a učeben bez ohledu na diakritiku (zkratka „/“),
+  s nedávnými volbami.
 - **Pohledy:** *Změny* (tabule změn celé školy na dnešek, zítřek i oba týdny, filtr
   třídy a vyučujícího), *Volné učebny* (teď, další hodina, libovolný den a hodina),
   *Společné volno* (společné volné hodiny 2–6 vyučujících nebo tříd).
@@ -23,7 +29,8 @@ verze 2.0.0 ([changelog](changelog.md))
 - **Upozornění (FCM):** na změny ve sledovaných rozvrzích (s filtrem skupin)
   a upomínka pár minut před hodinou.
 - **Další:** oblíbené rozvrhy, „Jen změny“, sdílení odkazu, tisk týdne na A4,
-  „Do kalendáře“ (iCal/webcal), světlý a tmavý motiv, widget „Teď / Další“,
+  „Do kalendáře“ (iCal/webcal), světlý a tmavý režim (ráno a noc) podle systému
+  nebo ručně, přepínač „Omezit průhlednost“,
   automatické přepnutí na příští týden v pátek od 14:00 a o víkendu.
 - **PWA a offline:** instalace na plochu, při výpadku sítě poslední uložená data
   s informací o jejich stáří; banner, když se data z Bakalářů nedaří aktualizovat.
@@ -57,7 +64,8 @@ Prohlížeč (PWA) ◄──► Express API na Vercelu (/api/*)
   hlavičky), `routes/` HTTP API, `scripts/` samostatné úlohy pro GitHub Actions
   a cron.
 - **Frontend** (vanilla ES moduly bez frameworku): zdroje v `public/js` a
-  `public/css`, esbuild z nich skládá `public/js/app.js` a `public/css/app.css`
+  `public/css/g` (vzhled podle návrhu G „Obloha“, vzorník `/design.html`),
+  esbuild z nich skládá `public/js/app.js` a `public/css/app.css`
   (commitnuté, nasazení nic nebuilduje). Service worker
   `public/firebase-messaging-sw.js`, administrace `public/admin.html` +
   `public/admin/`.

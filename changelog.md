@@ -1,5 +1,35 @@
 # Changelog
 
+## [Nevydáno] - návrh G „Obloha“
+### Nový vzhled celé aplikace
+
+Staví na 2.0.0 a vydává se nejdřív spolu s ní. Funkce, data, API ani pravidla
+Firestore se nemění.
+
+### Přidáno
+- **Přehled** jako domov rozvrhu na mobilu: probíhající nebo další hodina s velkou učebnou a zbývajícím časem, věta o dnešních změnách („Dnes 4 změny: …“), pás hodin, řádky týdne a dlaždice Změny a Volné učebny. Na počítači je stejný „teď“ v postranním panelu.
+- **Den na časové ose** ve skutečném měřítku s čárou „teď“ (mobil i počítač); týden na počítači jako kalendář se sloupci dnů.
+- **Hledání** místo rozbalovacího seznamu: Třídy / Vyučující / Učebny, bez ohledu na diakritiku, šipky a Enter, zkratka „/“, nedávné volby; hvězdička oblíbených jako samostatné tlačítko.
+- **Rám:** na mobilu plovoucí spodní lišta s pohledy a počtem změn a kulaté tlačítko hledání, na počítači postranní panel a lišta pohledu (Den / Týden, Stálý / Aktuální / Příští, Dnes, ‹ ›, „Jen změny“).
+- **Nastavení:** Systém / Světlý / Tmavý s náhledem oblohy, přepínač **Omezit průhlednost** (Safari systémové nastavení nepozná), sekce O aplikaci.
+- Vzorník návrhu `/design.html` (tokeny, materiály, stavy, živý kontrast) a sprite ikon Lucide `icons.svg` (`tools/icons.js`, `lucide-static` jen při buildu).
+- Testy: rozvrh návrhu G (`client-rozvrh.test.js`) a kontrast všech dvojic barevných tokenů v obou režimech (`g-contrast.test.js`); e2e testy na nové ovládání.
+
+### Změněno
+- **Vzhled:** obloha (ráno = světlý režim, noc = tmavý), sklo jen na navigaci, obsah na závoji nebo plné ploše, systémové písmo. CSS je nově v `public/css/g/` po vrstvách `@layer`, barvy obou režimů přes `light-dark()`.
+- **Rozvržení:** na mobilu den (výchozí), seznam a karty, na počítači týden a den. Uložené „agenda“ a „denní zobrazení“ se samy převedou na den.
+- Stav hodiny (suplování, jiná učebna, odpadá, akce, přidaná hodina) je všude ikona a slovo; „jiná učebna“ má stejný název v rozvrhu, Změnách i kiosku.
+- **Detail hodiny** je na mobilu spodní panel, na počítači bublina u bloku.
+- **Kiosk** má vždy noční oblohu bez skla, písmo podle výšky obrazovky (720p–4K), stránkuje bez animace a nedělí řádky; místo technické chyby Wake Lock říká, že je potřeba vypnout úsporný režim televize.
+- **Tisk:** bílý papír, černý text, stav ikonou a slovem. **Administrace** ve stejných barvách.
+- Manifest: barva motivu `#050A1A` a nové snímky obrazovky.
+- CSP bez Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`).
+
+### Odstraněno
+- Původních 25 souborů `public/css/*.css` (kromě sestaveného `app.css`) a webová písma Google Fonts.
+
+---
+
 ## [2.0.0] - 2026-11-04
 ### Nové pohledy, data s datem, administrace, bezpečnost a přístupnost (maturitní verze)
 
