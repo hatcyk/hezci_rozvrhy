@@ -71,6 +71,9 @@ let cachedSessionCookie = null;
 let sessionGeneration = 0;
 // The one mid-run re-login of this run (a promise), see renewSession().
 let sessionRenewal = null;
+// Set when that re-login failed: the run has no session any more and nothing
+// else may log in or download until the next run.
+let sessionLost = null;
 
 /**
  * Set-Cookie headers → { name: value }. Splits at the FIRST "=" only: session
@@ -287,13 +290,34 @@ async function renewSession(usedGeneration) {
         if (!sessionRenewal) {
             console.warn('⚠️  Bakaláři returned the login page mid-run - logging in again (once)');
             cachedSessionCookie = null;
-            sessionRenewal = loginToBakalari().catch((error) => {
-                console.error(`❌ Re-login failed: ${error.message}`);
+            // A single attempt, without the retries of the first login: the
+            // school account must not collect failed logins.
+            sessionRenewal = loginToBakalari(1).catch((error) => {
+                console.error(`❌ Re-login failed: ${error.message} - giving up on the rest of this run`);
+                sessionLost = error;
             });
         }
         await sessionRenewal;
     }
     return sessionGeneration !== usedGeneration;
+}
+
+/**
+ * The re-login of this run failed. With the cached cookie gone, every further
+ * page used to log in on its own (7 logins for 6 pages when Bakaláři refused
+ * them, three attempts per page when /login did not answer - on a real run of
+ * ~220 pages up to a hundred failed logins every 15 minutes). Now the rest of
+ * the run fails right here, without touching the server; the next run starts
+ * with a fresh login. The error keeps its kind (rejected login / network), so
+ * a run in which nothing was downloaded ends as 'login_failed' or 'network'.
+ */
+function assertSessionNotLost(what) {
+    if (!sessionLost) return;
+    const message = `Bakalari session lost and the re-login failed (${sessionLost.message}) - ${what} not downloaded`;
+    if (sessionLost.code === 'BAKALARI_LOGIN_FAILED') throw new BakalariLoginError(message);
+    const error = new Error(message, { cause: sessionLost });
+    error.code = sessionLost.code;
+    throw error;
 }
 
 const NETWORK_CODES = new Set([
@@ -400,6 +424,7 @@ async function fetchTimetableHtml(type, id, scheduleType, date = null) {
     }
 
     for (let attempt = 1; ; attempt++) {
+        assertSessionNotLost(`${type}/${id}/${scheduleType}`);
         // Get fresh login cookie (cached during prefetch run)
         const cookie = await loginToBakalari();
         const generation = sessionGeneration;
@@ -409,6 +434,7 @@ async function fetchTimetableHtml(type, id, scheduleType, date = null) {
         // guard kept the old snapshot and the run still counted it as a success.
         if (!isLoginPageResponse(response)) return response.data;
         if (attempt > 1 || !(await renewSession(generation))) {
+            assertSessionNotLost(`${type}/${id}/${scheduleType}`); // names why the re-login failed
             throw new BakalariLoginError(`Bakalari returned the login page for ${type}/${id}/${scheduleType} - session not accepted`);
         }
     }
@@ -533,6 +559,7 @@ async function prefetchAllData(options = {}) {
     // Reset per-run state for a fresh login
     cachedSessionCookie = null;
     sessionRenewal = null;
+    sessionLost = null;
     emptyPageDiagnosticLogged = false;
 
     const stats = {

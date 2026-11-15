@@ -134,6 +134,8 @@ function detectLessonChanges(oldLesson, newLesson) {
     // Reported alone, like the cancellation itself.
     if (oldType === 'removed' || oldType === 'absent') {
         changes.push({ field: 'type', oldValue: oldType, newValue: newType, type: 'lesson_restored' });
+        const moved = roomChangeAfterCancellation(oldLesson, newLesson);
+        if (moved) changes.push(moved);
         return changes;
     }
 
@@ -157,6 +159,75 @@ function detectLessonChanges(oldLesson, newLesson) {
         changes.push({ field: 'room', oldValue: oldLesson.room, newValue: newLesson.room, type: 'room_change' });
     }
 
+    return changes;
+}
+
+/**
+ * The lesson is back in another room than the cancelled one had. Only when the
+ * cancelled entry knew its room (the copy from the permanent schedule does, a
+ * "removed" atom of a teacher/room page usually does not).
+ */
+function roomChangeAfterCancellation(cancelled, lesson) {
+    if (norm(cancelled.room) === '' || norm(cancelled.room) === norm(lesson.room)) return null;
+    return { field: 'room', oldValue: cancelled.room, newValue: lesson.room, type: 'room_change' };
+}
+
+/** Taking place: neither cancelled ("removed") nor an absence of the class. */
+const takesPlace = (lesson) => lesson.type !== 'removed' && lesson.type !== 'absent';
+
+/**
+ * The cancelled lesson a newly appeared lesson stands in for, or null.
+ *
+ * A lesson that was announced as cancelled and later gets a substitute stays in
+ * the class timetable as a struck-through copy (addRemovedLessonsFromPermanent),
+ * so the old and the new copy pair with each other and the substitute is left
+ * over as "added". Reported as a plain 'lesson_added' (off by default in the
+ * app) it reached nobody: the student had been told "odpadla" and never heard
+ * that a lesson takes place after all.
+ *
+ * It stands in for a cancelled lesson when, in the old snapshot, the lessons
+ * of that hour which concern the same people were all cancelled, and none of
+ * them is paired with a lesson that takes place (that one is reported as
+ * restored on its own). In a class timetable "the same people" is the same
+ * group, or either side being the whole class; a teacher or a room has one
+ * lesson at a time, so there every lesson of the hour counts (the group is
+ * the class that comes).
+ * @param {Object} lesson - lesson without a counterpart in the old snapshot
+ * @param {Array} oldAtHour - old lessons of the same day and hour, all groups
+ * @param {Set<Object>} revived - old cancelled lessons paired with a live one
+ * @param {Boolean} byGroup - class timetable: only overlapping groups count
+ */
+function cancelledPredecessor(lesson, oldAtHour, revived, byGroup) {
+    if (!takesPlace(lesson)) return null;
+    const group = standardizeSlotGroup(lesson.group);
+    const concerned = !byGroup ? oldAtHour : oldAtHour.filter((old) => {
+        const oldGroup = standardizeSlotGroup(old.group);
+        return oldGroup === group || oldGroup === '' || group === '';
+    });
+    if (concerned.length === 0 || concerned.some(old => old.type !== 'removed' || revived.has(old))) return null;
+    return concerned.find(old => norm(old.subject) === norm(lesson.subject)) || concerned[0];
+}
+
+/**
+ * Changes of a lesson that appeared where a cancelled one was (see
+ * cancelledPredecessor): the same subject is the cancelled lesson taking place
+ * after all, with a substitute when the teacher differs; another subject
+ * replaces it. Both belong to the people who were told about the cancellation.
+ */
+function changesAfterCancellation(cancelled, lesson) {
+    const changes = [];
+    if (norm(cancelled.subject) === norm(lesson.subject)) {
+        const substitute = norm(cancelled.teacher) !== '' && norm(lesson.teacher) !== ''
+            && norm(cancelled.teacher) !== norm(lesson.teacher);
+        changes.push({
+            field: 'type', oldValue: 'removed', newValue: lesson.type || 'normal', type: 'lesson_restored',
+            ...(substitute ? { substitute: lesson.teacher } : {}),
+        });
+    } else {
+        changes.push({ field: 'lesson', oldValue: cancelled.subject, newValue: lesson.subject, type: 'lesson_replaced', cancelled: true });
+    }
+    const moved = roomChangeAfterCancellation(cancelled, lesson);
+    if (moved) changes.push(moved);
     return changes;
 }
 
@@ -228,12 +299,17 @@ function describeLessonChange(change, oldLesson, newLesson) {
         return `Změna předmětu: ${oldLesson.subject} → ${newLesson.subject}`;
     }
     if (change.type === 'lesson_replaced') {
+        if (change.cancelled) {
+            return `Místo odpadlé hodiny ${oldLesson.subject}: ${newLesson.subject} (${newLesson.teacher})`;
+        }
         // Neutral wording: the permanent schedule is compared the same way, and
         // there a new subject with a new teacher is not a substitution.
         return `Změna hodiny: ${oldLesson.subject} → ${newLesson.subject} (${newLesson.teacher})`;
     }
     if (change.type === 'lesson_restored') {
-        return `Hodina se koná: ${newLesson.subject} (${newLesson.teacher})`;
+        return change.substitute
+            ? `Hodina se koná: ${newLesson.subject} (supluje ${newLesson.teacher})`
+            : `Hodina se koná: ${newLesson.subject} (${newLesson.teacher})`;
     }
     if (change.type === 'type_change') {
         return newLesson.type === 'absent'
@@ -306,9 +382,26 @@ function detectTimetableChanges(oldData, newData, metadata, options = {}) {
     const oldSlots = bySlot(oldData);
     const newSlots = bySlot(newData);
 
-    for (const key of new Set([...oldSlots.keys(), ...newSlots.keys()])) {
-        const { pairs, removed, added } = pairSlotLessons(oldSlots.get(key) || [], newSlots.get(key) || []);
+    // Pair every slot first: whether an "added" lesson stands in for a cancelled
+    // one depends on the whole hour (a whole-class lesson and its groups are
+    // separate slots).
+    const hourKey = (lesson) => `${lesson.day}-${lesson.hour}`;
+    const oldByHour = new Map();
+    for (const lesson of oldData || []) {
+        if (!oldByHour.has(hourKey(lesson))) oldByHour.set(hourKey(lesson), []);
+        oldByHour.get(hourKey(lesson)).push(lesson);
+    }
+    const paired = [...new Set([...oldSlots.keys(), ...newSlots.keys()])]
+        .map(key => pairSlotLessons(oldSlots.get(key) || [], newSlots.get(key) || []));
+    const byGroup = !metadata || metadata.type === 'Class' || !metadata.type;
+    const revived = new Set();
+    for (const { pairs } of paired) {
+        for (const [oldLesson, newLesson] of pairs) {
+            if (oldLesson.type === 'removed' && takesPlace(newLesson)) revived.add(oldLesson);
+        }
+    }
 
+    for (const { pairs, removed, added } of paired) {
         // A lesson that was already cancelled and has now disappeared is not news.
         for (const lesson of removed) {
             if (lesson.type === 'removed') continue;
@@ -317,7 +410,14 @@ function detectTimetableChanges(oldData, newData, metadata, options = {}) {
         // A cancelled lesson appearing is not a new lesson (it is reported as type_change when paired).
         for (const lesson of added) {
             if (lesson.type === 'removed') continue;
-            changes.push(entry('lesson_added', lesson, `Přidána hodina: ${lesson.subject} (${lesson.teacher})`));
+            const cancelled = cancelledPredecessor(lesson, oldByHour.get(hourKey(lesson)) || [], revived, byGroup);
+            if (!cancelled) {
+                changes.push(entry('lesson_added', lesson, `Přidána hodina: ${lesson.subject} (${lesson.teacher})`));
+                continue;
+            }
+            for (const change of changesAfterCancellation(cancelled, lesson)) {
+                changes.push(entry(change.type, lesson, describeLessonChange(change, cancelled, lesson), change));
+            }
         }
         for (const [oldLesson, newLesson] of pairs) {
             for (const change of detectLessonChanges(oldLesson, newLesson)) {
@@ -347,7 +447,9 @@ function moreChangesText(count) {
 
 /** One-line text of a change for the notification body (without the time prefix). */
 function shortChangeText(change) {
-    const subject = change.lesson ? change.lesson.subject : '';
+    // Documents written by an older prefetch may lack `lesson` or `change`.
+    const lesson = change.lesson || {};
+    const subject = lesson.subject || '';
     switch (change.type) {
         case 'lesson_removed':
             return `${subject} odpadla`;
@@ -355,20 +457,38 @@ function shortChangeText(change) {
             // A lesson in the slot turned into cancelled / absent.
             return change.change?.newValue === 'absent' ? `${subject} - absence` : `${subject} odpadla`;
         case 'substitution':
-            return `${subject} - supluje ${change.change?.newValue || change.lesson.teacher}`;
+            return `${subject} - supluje ${change.change?.newValue || lesson.teacher || '?'}`;
         case 'room_change':
-            return `${subject} - učebna ${change.change?.newValue || change.lesson.room}`;
+            return `${subject} - učebna ${change.change?.newValue || lesson.room || 'žádná'}`;
         case 'lesson_added':
             return `Přidána ${subject}`;
         case 'subject_change':
             return `Změna na ${change.change?.newValue || subject}`;
         case 'lesson_replaced':
-            return `${change.change?.oldValue || ''} → ${change.change?.newValue || subject} (${change.lesson.teacher})`;
+            return replacedText(change, lesson);
         case 'lesson_restored':
-            return `${subject} se koná (zrušení odvoláno)`;
+            return restoredText(change, lesson);
         default:
             return '';
     }
+}
+
+/** "Fyzika (P. Novák)"; without the brackets when the teacher is not known. */
+const withTeacher = (subject, teacher) => (teacher ? `${subject} (${teacher})` : subject);
+
+function replacedText(change, lesson) {
+    const replacement = withTeacher(change.change?.newValue || lesson.subject || '', lesson.teacher);
+    const original = change.change?.oldValue || '';
+    // A lesson put where a cancelled one was: say so, the reader was told "odpadla".
+    if (change.change?.cancelled) return `${replacement} místo odpadlé hodiny ${original}`.trim();
+    return `${original} → ${replacement}`;
+}
+
+function restoredText(change, lesson) {
+    const substitute = change.change?.substitute;
+    return substitute
+        ? `${lesson.subject || ''} se koná, supluje ${substitute} (zrušení odvoláno)`
+        : `${lesson.subject || ''} se koná (zrušení odvoláno)`;
 }
 
 /** Detailed line (with old → new values) for the expandable notification. */
@@ -382,18 +502,27 @@ function detailedChangeText(change) {
         case 'substitution':
             return `${lesson.subject} - ${change.change?.oldValue || ''} → ${change.change?.newValue || lesson.teacher}`;
         case 'room_change':
-            return `${lesson.subject} - učebna ${change.change?.oldValue || 'žádná'} → ${change.change?.newValue || lesson.room}`;
+            return `${lesson.subject} - učebna ${change.change?.oldValue || 'žádná'} → ${change.change?.newValue || lesson.room || 'žádná'}`;
         case 'lesson_added':
             return `Přidána ${lesson.subject} (${lesson.teacher})`;
         case 'subject_change':
             return `${change.change?.oldValue || ''} → ${change.change?.newValue || lesson.subject}`;
         case 'lesson_replaced':
-            return `${change.change?.oldValue || ''} → ${change.change?.newValue || lesson.subject} (${lesson.teacher})`;
+            return replacedText(change, lesson);
         case 'lesson_restored':
-            return `${lesson.subject} se koná (zrušení odvoláno)`;
+            return restoredText(change, lesson);
         default:
             return '';
     }
+}
+
+/**
+ * Can this change be put into words? False for a type this version does not
+ * know (written by a newer prefetch) - the sender drops those instead of
+ * sending a notification with an empty text.
+ */
+function isDescribableChange(change) {
+    return !!change && typeof change === 'object' && shortChangeText(change) !== '';
 }
 
 /** Changes grouped by day in chronological order: [{ label, date, changes }] */
@@ -546,6 +675,7 @@ module.exports = {
     inferWeekStart,
     createChangeSummary,
     createDetailedChangeSummary,
+    isDescribableChange,
     fitFcmDataPayload,
     truncateToBytes,
     FCM_MAX_PAYLOAD_BYTES,

@@ -13,6 +13,8 @@ process.env.BAKALARI_PASSWORD = 'syntheticke-heslo';
 const prefetch = require('../backend/prefetch');
 const { prefetchAllData, assessLoginResponse, parseSetCookies, classifyError, requestConfig, DEFAULT_CONCURRENCY, CONCURRENT_REQUESTS } = prefetch;
 const { parseTimetablePage, addRemovedLessonsFromPermanent } = require('../backend/bakalari-parser');
+const { createChangeSummary } = require('../backend/change-detector');
+const { filterChangesByPreferences } = require('../backend/fcm');
 
 // Monday of week 46/2026, 6:00 Prague time
 const NOW = new Date('2026-11-09T05:00:00Z');
@@ -180,7 +182,7 @@ function defaultPages() {
  * Install the Bakaláři fake on axios for one test.
  * @returns {{ calls: Array, maxInFlight: () => Number }}
  */
-function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = DEFINITIONS_PAGE, failures = {} } = {}) {
+function fakeBakalari(t, { pages = defaultPages(), login = 'ok', relogin = login, definitions = DEFINITIONS_PAGE, failures = {} } = {}) {
     const calls = [];
     let logins = 0;
     let inFlight = 0;
@@ -208,7 +210,8 @@ function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = D
             throw failure.status ? httpError(failure.status) : netError(failure.code);
         }
         if (path === '/login') {
-            if (login === 'network') throw netError('ECONNRESET');
+            // `relogin`: how the server treats a login after the first successful one
+            if ((logins > 0 ? relogin : login) === 'network') throw netError('ECONNRESET');
             return { status: 200, headers: { 'set-cookie': ['pre=1; path=/'] }, data: LOGIN_FORM };
         }
         if (path === '/Timetable/Public/Actual/Class/ZL') return { status: 200, headers: {}, data: definitions };
@@ -220,10 +223,11 @@ function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = D
     t.mock.method(axios, 'post', (url) => respond(() => {
         calls.push({ method: 'POST', url });
         logins++;
-        if (login === 'ok') return { status: 302, headers: { location: '/dashboard', 'set-cookie': ['BakaAuth=c2Vzc2lvbg==; path=/; HttpOnly'] }, data: '' };
-        if (login === 'wrong_password') return { status: 200, headers: {}, data: `<p>Neplatné přihlašovací údaje</p>${LOGIN_FORM}` };
-        if (login === 'redirect_login') return { status: 302, headers: { location: '/login?error=1' }, data: '' };
-        if (login === 'no_cookie') return { status: 302, headers: { location: '/dashboard' }, data: '' };
+        const mode = logins > 1 ? relogin : login;
+        if (mode === 'ok') return { status: 302, headers: { location: '/dashboard', 'set-cookie': ['BakaAuth=c2Vzc2lvbg==; path=/; HttpOnly'] }, data: '' };
+        if (mode === 'wrong_password') return { status: 200, headers: {}, data: `<p>Neplatné přihlašovací údaje</p>${LOGIN_FORM}` };
+        if (mode === 'redirect_login') return { status: 302, headers: { location: '/login?error=1' }, data: '' };
+        if (mode === 'no_cookie') return { status: 302, headers: { location: '/dashboard' }, data: '' };
         throw new Error('unexpected');
     }));
     return { calls, maxInFlight: () => maxInFlight };
@@ -547,6 +551,37 @@ test('den volna: žádné „odpadlé“ hodiny ze stálého rozvrhu, žádné �
     assert.deepEqual(db.store.get('timetables/Class_C1_Next').daysOff, []);
 });
 
+test('odpadlá hodina, do které se později doplní suplování → lesson_restored / lesson_replaced, ne lesson_added', async (t) => {
+    // Monday 1st lesson (Matematika, Cvičná) was cancelled in the stored snapshot of this week.
+    const cancelled = N46_OLD.filter(l => !(l.day === 0 && l.hour === 1));
+    const cases = [
+        [{ teacher: 'Ing. Radim Příkladovič Ph.D.' }, 'lesson_restored', 'po 1.h: Matematika se koná, supluje Ing. Radim Příkladovič Ph.D. (zrušení odvoláno)'],
+        [{ subject: 'Fyzika', teacher: 'Mgr. Petr Novák' }, 'lesson_replaced', 'po 1.h: Fyzika (Mgr. Petr Novák) místo odpadlé hodiny Matematika'],
+    ];
+    for (const [mod, type, text] of cases) {
+        t.mock.restoreAll();
+        quiet(t);
+        const store = initialStore();
+        store['timetables/Class_C1_Actual'] = storedDoc('Class', 'C1', 'Actual', cancelled, W46,
+            { permanent: store['timetables/Class_C1_Permanent'].data });
+        assert.deepEqual(store['timetables/Class_C1_Actual'].data.filter(l => l.type === 'removed').map(l => l.subject), ['Matematika']);
+        fakeBakalari(t, { pages: { ...defaultPages(), 'Actual/Class/C1': page(W46, [{ ...PERM[0], ...mod, changeinfo: 'Suplování (syntetické)' }, ...cancelled]) } });
+        const db = fakeFirestore(store);
+        assert.equal((await run(db)).status, 'ok');
+
+        const docs = changeDocs(db).filter(p => p.includes('Class_C1_Actual'));
+        assert.equal(docs.length, 1);
+        const changes = db.store.get(docs[0]).changes;
+        assert.deepEqual(changes.map(c => c.type), [type]);
+        // what a user with the app's default switches gets
+        const defaults = { changes: { lesson_removed: true, substitution: true, room_change: true, lesson_added: false, subject_change: false } };
+        assert.equal(createChangeSummary(filterChangesByPreferences(changes, defaults)), text);
+
+        // the next run sees the same page: nothing new
+        assert.equal((await run(db)).changeDocs, 0);
+    }
+});
+
 // ─── stálý rozvrh: denní obnova a pořadí zpracování ─────────────────────────
 
 const permanentCalls = (bak) => bak.calls.filter(c => c.url.includes('/Timetable/Public/Permanent/')).map(c => c.url.split('/Public/')[1]);
@@ -685,19 +720,128 @@ test('přihlašovací stránka místo rozvrhů i po novém přihlášení → ch
     assert.equal(db.store.get('timetables/Room_R1_Actual').weekStart, W45, 'snapshot kept');
 });
 
+for (const [relogin, why, expected] of [
+    ['wrong_password', 'Bakaláři ho odmítnou', { posts: 2, loginPages: 2, error: /login rejected/ }],
+    ['network', '/login neodpovídá', { posts: 1, loginPages: 2, error: /ECONNRESET/ }],
+]) {
+    test(`relace vyprší a nové přihlášení selže (${why}) → jediný pokus, zbytek běhu se už nepřihlašuje ani nestahuje`, async (t) => {
+        quiet(t);
+        const FORM_PAGES = ['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1', 'Actual/Room/R2', 'Next/Room/R2'];
+        const pages = defaultPages();
+        for (const key of FORM_PAGES) pages[key] = LOGIN_FORM;
+        const bak = fakeBakalari(t, { pages, relogin });
+        const db = fakeFirestore(initialStore());
+        const result = await run(db);
+
+        // 1 login at the start + exactly one attempt to log in again
+        // (used to be 7× POST /login, or 19× GET /login when the server did not answer)
+        assert.equal(bak.calls.filter(c => c.method === 'POST').length, expected.posts);
+        assert.equal(bak.calls.filter(c => c.method === 'GET' && c.url.endsWith('/login')).length, expected.loginPages);
+        // without a session the remaining pages are not requested at all
+        const formRequests = bak.calls.filter(c => FORM_PAGES.some(key => c.url.endsWith(`/Timetable/Public/${key}`))).length;
+        assert.ok(formRequests >= 1 && formRequests <= CONCURRENT_REQUESTS, `${formRequests} requests for pages behind the lost session`);
+
+        assert.equal(result.status, 'partial', 'the class pages did download');
+        assert.equal(result.success, false);
+        assert.equal(result.errorCount, 6);
+        assert.equal(result.successCount, 2);
+        assert.match(result.error, /session lost/);
+        assert.match(result.error, expected.error);
+        assert.equal(changeDocs(db).length, 1, 'what was downloaded before is processed as usual');
+
+        // the lost session is not carried over: the next run (server healthy again) is a normal one
+        t.mock.restoreAll();
+        quiet(t);
+        fakeBakalari(t);
+        const next = await run(db);
+        assert.equal(next.status, 'ok');
+        assert.equal(next.errorCount, 0);
+    });
+}
+
+test('relace vyprší hned po přihlášení a nové přihlášení selže → login_failed (nic se nestáhlo), síťová chyba → network', async (t) => {
+    for (const [relogin, status] of [['wrong_password', 'login_failed'], ['network', 'network']]) {
+        t.mock.restoreAll();
+        quiet(t);
+        const pages = Object.fromEntries(Object.keys(defaultPages()).map(key => [key, LOGIN_FORM]));
+        const bak = fakeBakalari(t, { pages, relogin });
+        const db = fakeFirestore(initialStore());
+        const result = await run(db);
+        assert.equal(result.status, status);
+        assert.ok(bak.calls.filter(c => c.method === 'POST').length <= 2, 'one login + at most one re-login');
+        assert.equal(bak.calls.filter(c => c.method === 'GET' && c.url.endsWith('/login')).length, 2);
+        assert.deepEqual(db.writes, []);
+    }
+});
+
 // ─── dokument změn: nejvýš jednou, atomicky se snímkem ──────────────────────
 
 test('dva překryté běhy (cron bez zámku) zapíší tutéž změnu jen jednou', async (t) => {
     quiet(t);
     fakeBakalari(t);
     const db = fakeFirestore(initialStore());
-    // The second run starts while the first is still downloading: both load the same old snapshots.
+
+    // Barrier: both runs load the old snapshots before either writes anything,
+    // so BOTH find the same change and both try to store it. (Without it the
+    // second run already saw the first one's snapshot and never got here.)
+    const realGetAll = db.getAll;
+    let preloads = 0;
+    let release;
+    const bothLoaded = new Promise(resolve => { release = resolve; });
+    db.getAll = async (...refs) => {
+        // A Firestore snapshot is the document as it was when it was read
+        // (the fake reads the store lazily, in data()).
+        const docs = (await realGetAll(...refs)).map((doc) => {
+            const data = doc.data();
+            return { ...doc, data: () => structuredClone(data) };
+        });
+        if (refs.some(r => r.path.startsWith('timetables/')) && ++preloads <= 2) {
+            if (preloads === 2) release();
+            await bothLoaded;
+        }
+        return docs;
+    };
+
+    // Every batch that tries to store the change document, and how it ended.
+    // The moment the first one is stored, the sender picks it up (sent: true).
+    const attempts = [];
+    const realBatch = db.batch;
+    db.batch = () => {
+        const batch = realBatch();
+        let changePath = null;
+        for (const op of ['create', 'set']) {
+            const original = batch[op];
+            batch[op] = (r, data) => { if (r.path.startsWith('changes/')) changePath = r.path; return original(r, data); };
+        }
+        const commit = batch.commit;
+        batch.commit = async () => {
+            if (!changePath) return commit();
+            try {
+                await commit();
+                attempts.push('stored');
+                db.store.set(changePath, { ...db.store.get(changePath), sent: true, sentAt: '2026-11-09T05:01:00.000Z' });
+            } catch (error) {
+                attempts.push(/ALREADY_EXISTS/.test(error.message) ? 'already exists' : `failed: ${error.message}`);
+                throw error;
+            }
+        };
+        return batch;
+    };
+
     const [a, b] = await Promise.all([run(db), run(db)]);
+    assert.equal(preloads >= 2, true);
     assert.equal(a.status, 'ok');
     assert.equal(b.status, 'ok');
+    assert.equal(a.errorCount + b.errorCount, 0);
+    assert.deepEqual(attempts.sort(), ['already exists', 'stored'], 'both runs tried, the second was refused');
     assert.equal(changeDocs(db).length, 1, changeDocs(db).join(', '));
     assert.equal(a.changeDocs + b.changeDocs, 1, 'only the run that created the document counts it');
-    assert.equal(db.store.get(changeDocs(db)[0]).sent, false);
+    // set() instead of create() would have put sent: false back → the same notification twice
+    const doc = db.store.get(changeDocs(db)[0]);
+    assert.equal(doc.sent, true);
+    assert.equal(doc.sentAt, '2026-11-09T05:01:00.000Z');
+    // the refused run still stored its snapshot
+    assert.equal(db.store.get('timetables/Class_C1_Actual').weekStart, W46);
 });
 
 test('změna, která se vrátí a nastane znovu, dostane nový dokument (jiný výchozí snímek)', async (t) => {

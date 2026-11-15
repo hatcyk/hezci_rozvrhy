@@ -5,7 +5,7 @@
 
 const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('./firebase-admin-init');
-const { createChangeSummary, createDetailedChangeSummary, fitFcmDataPayload } = require('./change-detector');
+const { createChangeSummary, createDetailedChangeSummary, fitFcmDataPayload, isDescribableChange } = require('./change-detector');
 const { matchesGroupFilters } = require('./bakalari-parser');
 
 // FCM error codes that mean a token is permanently dead and should be pruned.
@@ -294,11 +294,24 @@ const PREFERENCE_KEYS_BY_CHANGE_TYPE = {
     lesson_replaced: ['substitution', 'lesson_removed', 'subject_change'],
 };
 
+// What the app switches on for a newly watched timetable
+// (public/js/notifications-preferences.js). Used for a switch that was never
+// stored and for a watched timetable without any stored preferences.
 const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
 
-/** Switches that let a change type through (any one of them is enough). */
-function preferenceKeysForChange(changeType) {
-    return PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+/**
+ * Switches that let a change through (any one of them is enough).
+ * @param {String} changeType
+ * @param {Object} [change] - the change itself; a cancelled lesson that takes
+ *        place with a substitute ('lesson_restored' + change.substitute) is
+ *        also a substitution
+ */
+function preferenceKeysForChange(changeType, change = null) {
+    const keys = PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+    if (changeType === 'lesson_restored' && change && change.change && change.change.substitute) {
+        return [...keys, 'substitution'];
+    }
+    return keys;
 }
 
 /** The main switch of a change type. */
@@ -307,14 +320,12 @@ function preferenceKeyForChange(changeType) {
 }
 
 function filterChangesByPreferences(changes, notificationTypes) {
-    if (!notificationTypes || !notificationTypes.changes) {
-        // No preferences set, send all change notifications (default behavior)
-        return changes;
-    }
+    // No preferences stored for this timetable (user doc from 1.x, or one that
+    // holds only the reminder switches): the app's defaults apply. Sending
+    // everything, as before, included the types the app keeps off by default.
+    const userPrefs = (notificationTypes && notificationTypes.changes) || {};
 
-    const userPrefs = notificationTypes.changes;
-
-    return changes.filter(change => preferenceKeysForChange(change.type).some(typeKey => {
+    return changes.filter(change => preferenceKeysForChange(change.type, change).some(typeKey => {
         const isEnabled = userPrefs[typeKey];
 
         // Preference never stored (older user doc): fall back to the important ones.
@@ -324,6 +335,28 @@ function filterChangesByPreferences(changes, notificationTypes) {
 
         return !!isEnabled;
     }));
+}
+
+/**
+ * The changes of a stored document that this version can put into words.
+ * A newer prefetch may write a type this sender does not know yet (the prefetch
+ * runs from another branch than the web, see prefetch.yml); its text would be
+ * empty and the user would get a notification saying nothing. Those are dropped
+ * and logged; the rest of the document is sent as usual.
+ * @param {*} changes - `changes` of a changes/{id} document
+ * @param {String} docId - for the log
+ * @returns {Array}
+ */
+function describableChanges(changes, docId) {
+    const list = Array.isArray(changes) ? changes : [];
+    const known = list.filter(isDescribableChange);
+    if (known.length < list.length) {
+        const unknown = [...new Set(list.filter(change => !isDescribableChange(change))
+            .map(change => String((change && change.type) || 'no type')))];
+        console.warn(`⚠️  ${docId}: dropping ${list.length - known.length} change(s) of unknown type (${unknown.join(', ')}) - ` +
+            'written by a newer prefetch than this sender?');
+    }
+    return known;
 }
 
 /**
@@ -436,13 +469,14 @@ async function processPendingChanges() {
             }
 
             const timetable = changeData.timetable;
-            const changes = changeData.changes;
+            const changes = describableChanges(changeData.changes, changeDoc.id);
 
-            // Get users watching this timetable
-            const watchingUsers = await getUsersWatchingTimetable(timetable);
+            // Get users watching this timetable (nobody, when nothing in the
+            // document can be put into words)
+            const watchingUsers = changes.length > 0 ? await getUsersWatchingTimetable(timetable) : [];
 
             if (watchingUsers.length === 0) {
-                console.log(`⏭️  Skipping ${timetable.name} - no users watching`);
+                console.log(`⏭️  Skipping ${timetable && timetable.name} - ${changes.length > 0 ? 'no users watching' : 'no change to describe'}`);
                 // Recorded, so the admin shows "no watchers" instead of a
                 // delivery that never finishes.
                 await changeDoc.ref.update({ sentToUsers: 0, sentToDevices: 0 });
@@ -467,6 +501,11 @@ async function processPendingChanges() {
                     }
 
                     const notification = buildChangeNotification(timetable, filteredChanges);
+                    // Last line of defence: never a notification without a text.
+                    if (!notification.body) {
+                        console.warn(`⚠️  ${changeDoc.id}: empty notification text for user ${user.userId}, not sent`);
+                        continue;
+                    }
 
                     const result = await sendNotificationToTokens(user.tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
                     totalSent += result.successCount;
@@ -572,6 +611,7 @@ module.exports = {
     findDeadTokens,
     buildChangeNotification,
     filterChangesByPreferences,
+    describableChanges,
     preferenceKeyForChange,
     preferenceKeysForChange,
     sendNotificationToTokens,

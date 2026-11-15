@@ -22,6 +22,7 @@ export const TRIGGER_LABELS = {
 
 export const STATUS_LABELS = {
     ok: 'v pořádku',
+    partial: 'částečný sběr',
     guard_no_definitions: 'pojistka: žádné definice',
     guard_no_lessons: 'pojistka: žádné hodiny',
     login_failed: 'přihlášení selhalo',
@@ -45,7 +46,22 @@ export const CHANGE_TYPE_LABELS = {
     lesson_added: 'přidáno',
     subject_change: 'předmět',
     type_change: 'zrušeno',
+    lesson_replaced: 'jiná hodina',
+    lesson_restored: 'koná se',
+    unknown: 'neznámý typ',
 };
+
+/**
+ * Badge of a run status: a symbol and a text, not just a colour (WCAG 1.4.1).
+ * 'partial' (too many timetables not refreshed, the rest was stored) is a
+ * warning; every other status but 'ok' is a failed run.
+ * @returns {{ level: 'ok'|'warn'|'bad', text: String }}
+ */
+export function statusBadgeState(status) {
+    const level = status === 'ok' ? 'ok' : status === 'partial' ? 'warn' : 'bad';
+    const symbol = { ok: '✓', warn: '▲', bad: '✗' }[level];
+    return { level, text: `${symbol} ${STATUS_LABELS[status] || status || '?'}` };
+}
 
 const dateTimeFormat = new Intl.DateTimeFormat('cs-CZ', {
     timeZone: TZ, day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit',

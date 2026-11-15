@@ -8,7 +8,7 @@
 import { apiGet, apiPost, getSecret, setSecret, clearSecret, AdminApiError } from './api.js';
 import {
     JOB_LABELS, TRIGGER_LABELS, STATUS_LABELS, DELIVERY_LABELS, SCHEDULE_LABELS, CHANGE_TYPE_LABELS,
-    formatDateTime, formatMinutes, formatDuration, formatCounts, semaphoreState, safeGithubUrl,
+    formatDateTime, formatMinutes, formatDuration, formatCounts, semaphoreState, statusBadgeState, safeGithubUrl,
 } from './format.js';
 import { chartModel, renderChart } from './chart.js';
 
@@ -84,8 +84,8 @@ function renderHealth(data) {
 }
 
 function statusBadge(status) {
-    const ok = status === 'ok';
-    return el('span', { class: `badge ${ok ? 'badge-ok' : 'badge-bad'}` }, `${ok ? '✓' : '✗'} ${STATUS_LABELS[status] || status || '?'}`);
+    const { level, text } = statusBadgeState(status);
+    return el('span', { class: `badge badge-${level}` }, text);
 }
 
 function renderRuns(data) {
