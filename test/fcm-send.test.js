@@ -199,3 +199,21 @@ test('úklid starých změn: maže jen odeslané starší než limit', async (t)
     assert.deepEqual(db._paths('changes').sort(), ['changes/fresh-sent', 'changes/old-unsent', 'changes/pending']);
     assert.deepEqual(await cleanupOldChanges(2), { deleted: 0, errors: 0 });
 });
+
+test('dotaz na sledující selže (chybí index) → záložní průchod všemi uživateli vybere stejné příjemce', async (t) => {
+    quiet(t);
+    reset({
+        'users/u1': user(['t1']),
+        'users/next': user(['t-next'], { watched: { ...TT, scheduleType: 'Next' } }),
+        'users/other': user(['t-other'], { watched: { type: 'Room', id: 'ZL', scheduleType: 'Actual' } }),
+        'changes/c1': changeDoc(),
+    });
+    t.after(() => { delete db._failQuery; });
+    db._failQuery = ({ collection, filters }) => (collection === 'users' && filters.some(f => f.field === 'watchedKeys')
+        ? Object.assign(new Error('9 FAILED_PRECONDITION: The query requires an index'), { code: 9 })
+        : null);
+    const result = await processPendingChanges();
+    assert.deepEqual(result, { processedCount: 1, sentCount: 1 });
+    assert.deepEqual(sent.map(m => m.tokens), [['t1']]);
+    assert.equal(db._get('changes/c1').sentToUsers, 1);
+});
