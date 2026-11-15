@@ -47,6 +47,13 @@ test('notification badge is 96x96 with an alpha channel (monochrome mask)', () =
     assert.ok(colorType === 6 || colorType === 4, 'PNG colour type with alpha');
 });
 
+test('apple-touch-icon is opaque (iOS fills transparency with black, the logo vanished on it)', () => {
+    const href = html.match(/<link rel="apple-touch-icon" href="([^"]+)"/)[1];
+    const { width, height, colorType } = pngInfo(href);
+    assert.equal(`${width}x${height}`, '180x180');
+    assert.equal(colorType, 2, 'truecolour PNG without an alpha channel');
+});
+
 test('screenshots exist, match their declared size and cover narrow + wide', () => {
     assert.ok(manifest.screenshots.length >= 2);
     for (const s of manifest.screenshots) {
@@ -68,6 +75,10 @@ test('shortcuts: my timetable, today\'s changes, free rooms', () => {
 test('index.html: zoom allowed, theme-color per scheme, early theme script', () => {
     assert.ok(!/user-scalable\s*=\s*no/i.test(html), 'user-scalable=no blocks zoom (WCAG 1.4.4)');
     assert.ok(!/maximum-scale\s*=\s*1(\.0)?\b/i.test(html));
+    // env(safe-area-inset-*) in the CSS is 0 without viewport-fit=cover, and the black-translucent
+    // status bar of the installed app then covers the top bar
+    assert.match(html, /<meta name="viewport" content="[^"]*viewport-fit=cover[^"]*">/);
+    assert.match(html, /name="apple-mobile-web-app-status-bar-style" content="black-translucent"/);
     assert.match(html, /<html lang="cs">/);
     assert.match(html, /name="theme-color" media="\(prefers-color-scheme: dark\)"/);
     assert.match(html, /name="theme-color" media="\(prefers-color-scheme: light\)"/);

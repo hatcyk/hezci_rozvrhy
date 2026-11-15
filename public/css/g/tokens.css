@@ -15,28 +15,9 @@
   :root[data-theme="light"] { color-scheme: light; }
   :root[data-theme="dark"] { color-scheme: dark; }
 
+  /* barvy podle motivu (obloha, sklo, závoj, plné plochy, blok hodiny) jsou níže v @supports */
   :root {
-    /* obloha */
-    --sky-1: light-dark(#14407D, #050A1A);
-    --sky-2: light-dark(#255A9F, #0B1430);
-    --sky-3: light-dark(#3769AA, #15224B);   /* ráno ztmaveno z #3A6EAF: tlumený text přímo na obloze 4,74 : 1 */
-    --glow: light-dark(rgb(255 200 120 / .22), rgb(150 165 255 / .12));
-
-    /* sklo (navigace a ovládání) */
-    --glass: light-dark(rgb(8 24 60 / .26), rgb(255 255 255 / .07));
-    --glass-strong: light-dark(rgb(8 24 60 / .36), rgb(255 255 255 / .10));
     --glass-blur: blur(26px) saturate(170%);
-    /* spodní panely a dialogy: sklo, ale skoro neprůhledné, aby text nad obsahem zůstal čitelný */
-    --sheet: light-dark(rgb(18 52 104 / .86), rgb(18 26 56 / .88));
-    --backdrop: rgb(2 8 24 / .45);
-
-    /* závoj (obsah, bez rozostření) */
-    --veil: light-dark(rgb(0 55 200 / .38), rgb(60 85 210 / .25));
-    --veil-strong: light-dark(rgb(0 40 150 / .38), rgb(110 130 255 / .12));
-
-    /* plné náhrady (omezená průhlednost, prohlížeč bez backdrop-filter) */
-    --solid: light-dark(#1D4A85, #18213D);
-    --solid-strong: light-dark(#173E72, #1E2847);
 
     /* okraje, linky, čipy */
     --rim: rgb(255 255 255 / .20);
@@ -50,9 +31,6 @@
     --track: rgb(255 255 255 / .22);         /* dráha pruhu průběhu */
     --shadow-float: 0 10px 30px rgb(0 0 0 / .14);
     --shadow-sheet: 0 -8px 40px rgb(0 0 0 / .28);
-
-    /* blok hodiny: plný, aby jím neprosvítaly čáry časové osy */
-    --blk: light-dark(#44669A, #3C4766);
 
     /* text */
     --tx: #FFFFFF;
@@ -107,18 +85,90 @@
     --z-toast: 150;
   }
 
+  /* barvy podle motivu: light-dark(ráno, noc) se řídí color-scheme výše (Chrome 123, Firefox 120, Safari 17.5) */
+  @supports (color: light-dark(#000, #fff)) {
+    :root {
+      /* obloha */
+      --sky-1: light-dark(#14407D, #050A1A);
+      --sky-2: light-dark(#255A9F, #0B1430);
+      --sky-3: light-dark(#3769AA, #15224B);   /* ráno ztmaveno z #3A6EAF: tlumený text přímo na obloze 4,74 : 1 */
+      --glow: light-dark(rgb(255 200 120 / .22), rgb(150 165 255 / .12));
+
+      /* sklo (navigace a ovládání) */
+      --glass: light-dark(rgb(8 24 60 / .26), rgb(255 255 255 / .07));
+      --glass-strong: light-dark(rgb(8 24 60 / .36), rgb(255 255 255 / .10));
+      /* plovoucí sklo nad posouvaným obsahem (spodní lišta, kulaté hledání, toast): pod ním může ležet
+         i bílá nebo zlatá plocha, proto silný tón. Nad oblohou vypadá stejně jako dřívější --glass
+         (barva naladěná na vykreslené sklo nad --sky-3 se sytostí 170 %), nad bílou má bílý text
+         5,6 : 1 (ráno) a 6,4 : 1 (noc), tlumený 4,8 : 1 a 5,4 : 1 */
+      --glass-float: light-dark(rgb(18 82 172 / .88), rgb(32 53 113 / .80));
+      /* spodní panely a dialogy: sklo, ale skoro neprůhledné, aby text nad obsahem zůstal čitelný */
+      --sheet: light-dark(rgb(18 52 104 / .86), rgb(18 26 56 / .88));
+
+      /* závoj (obsah, bez rozostření) */
+      --veil: light-dark(rgb(0 55 200 / .38), rgb(60 85 210 / .25));
+      --veil-strong: light-dark(rgb(0 40 150 / .38), rgb(110 130 255 / .12));
+
+      /* plné náhrady (omezená průhlednost, prohlížeč bez backdrop-filter) */
+      --solid: light-dark(#1D4A85, #18213D);
+      --solid-strong: light-dark(#173E72, #1E2847);
+
+      /* blok hodiny: plný, aby jím neprosvítaly čáry časové osy */
+      --blk: light-dark(#44669A, #3C4766);
+      /* najetí myší na blok: ráno ztmavit (světlejší podklad by tlumený text a korál stáhl pod hranici),
+         v noci zesvětlit jako dřív brightness(1.08); tlumený text 5,6 : 1 a 6,7 : 1 */
+      --blk-hover: light-dark(#3D5D8F, #434F70);
+    }
+  }
+  /* náhrada bez light-dark() (iOS 16.4–17.4, starší prohlížeče): stejné hodnoty napevno, shodu s větvemi
+     výše hlídá test/g-tokens-fallback.test.js. Noc je výchozí stejně jako color-scheme, kiosk je vždy noc,
+     náhledy oblohy v nastavení mají vlastní motiv. :where() drží specifičnost na úrovni :root, aby
+     omezená průhlednost a náhrada skla níže vyhrály pořadím jako v prohlížeči s light-dark(). */
+  @supports not (color: light-dark(#000, #fff)) {
+    :root, .set-theme-sky--dark, .set-theme-sky--system::after {
+      --sky-1: #050A1A; --sky-2: #0B1430; --sky-3: #15224B; --glow: rgb(150 165 255 / .12);
+      --glass: rgb(255 255 255 / .07); --glass-strong: rgb(255 255 255 / .10); --glass-float: rgb(32 53 113 / .80);
+      --sheet: rgb(18 26 56 / .88);
+      --veil: rgb(60 85 210 / .25); --veil-strong: rgb(110 130 255 / .12);
+      --solid: #18213D; --solid-strong: #1E2847; --blk: #3C4766; --blk-hover: #434F70;
+    }
+    :root:where([data-theme="light"]:not([data-kiosk])), .set-theme-sky--light, .set-theme-sky--system::before {
+      --sky-1: #14407D; --sky-2: #255A9F; --sky-3: #3769AA; --glow: rgb(255 200 120 / .22);
+      --glass: rgb(8 24 60 / .26); --glass-strong: rgb(8 24 60 / .36); --glass-float: rgb(18 82 172 / .88);
+      --sheet: rgb(18 52 104 / .86);
+      --veil: rgb(0 55 200 / .38); --veil-strong: rgb(0 40 150 / .38);
+      --solid: #1D4A85; --solid-strong: #173E72; --blk: #44669A; --blk-hover: #3D5D8F;
+    }
+    /* omezená průhlednost a zvýšený kontrast v náhledu oblohy: rámeček vybraného náhledu (--sheet) jako s light-dark() */
+    :root[data-transparency="reduced"] :is(.set-theme-sky--light, .set-theme-sky--dark) { --sheet: var(--solid-strong); }
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      :root:not([data-transparency="normal"]) :is(.set-theme-sky--light, .set-theme-sky--dark) { --sheet: var(--solid-strong); }
+    }
+  }
+  /* závoj pod dialogem: Safari < 17.4 do ::backdrop vlastní vlastnosti nedědí */
+  :root, ::backdrop { --backdrop: rgb(2 8 24 / .45); }
+
   /* omezená průhlednost: systémem (Chrome/Edge 118+, Samsung 25+) i přepínačem v nastavení (Safari media query nemá) */
   @media (prefers-reduced-transparency: reduce) {
     :root:not([data-transparency="normal"]) {
-      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-blur: none;
+      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
       --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
     }
   }
   :root[data-transparency="reduced"] {
-    --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-blur: none;
+    --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
     --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
   }
+  /* zvýšený kontrast (iOS a macOS „Zvýšit kontrast“, Safari ho umí): plné plochy jako při omezené
+     průhlednosti (pokud si uživatel v nastavení výslovně nenechal sklo), tlumený text plně bílý, výraznější okraje */
+  @media (prefers-contrast: more) {
+    :root:not([data-transparency="normal"]) {
+      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
+      --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
+    }
+    :root { --tx-2: var(--tx); --rim: rgb(255 255 255 / .45); --hair: rgb(255 255 255 / .32); }
+  }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    :root { --glass: var(--solid); --glass-strong: var(--solid-strong); --sheet: var(--solid-strong); }
+    :root { --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --sheet: var(--solid-strong); }
   }
 }

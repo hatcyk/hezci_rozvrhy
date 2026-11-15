@@ -212,7 +212,7 @@
   dialog .toast-container { position: sticky; left: auto; right: auto; bottom: 0; padding: 8px 12px 12px; }
   .toast {
     pointer-events: auto; width: 100%; max-width: 440px; padding: 8px 4px 8px 16px; border-radius: 24px;
-    color: var(--tx);
+    color: var(--tx); background: var(--glass-float); /* pluje nad obsahem jako spodní lišta */
   }
   .toast-icon { display: grid; place-items: center; flex: none; --is: 20px; }
   .toast-change .toast-icon { color: var(--sub); }
@@ -224,7 +224,7 @@
   .toast-close { display: grid; place-items: center; flex: none; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--tx-2); --is: 18px; }
   .toast-close:hover { color: var(--tx); background: var(--chip); }
   @media (min-width: 1080px) {
-    .toast-container { left: auto; right: 24px; bottom: 24px; width: min(420px, calc(100vw - 48px)); justify-items: end; }
+    .toast-container { left: auto; right: 24px; bottom: calc(24px + env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 48px)); justify-items: end; }
   }
 }
 

@@ -2,8 +2,10 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
-    <!-- Zooming must stay possible (WCAG 1.4.4): no user-scalable / maximum-scale limits -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Zooming must stay possible (WCAG 1.4.4): no user-scalable / maximum-scale limits.
+         viewport-fit=cover: the installed app draws under the black-translucent status bar and the CSS
+         keeps clear of it with env(safe-area-inset-*), which is 0 without this -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Lepší Rozvrh</title>
     <meta name="description" content="Přehledné rozvrhy tříd, učitelů a učeben SPŠD včetně změn a upozornění.">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon.png">
@@ -30,7 +32,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Rozvrhy">
-    <link rel="stylesheet" href="css/app.css?v=6473f0482f">
+    <link rel="stylesheet" href="css/app.css?v=9bf1ec1e83">
 </head>
 <body>
 
@@ -98,16 +100,9 @@
                 <span class="who-name" id="valueDropdownLabel">Načítám…</span><span class="vh">, změnit rozvrh</span>
                 <svg class="i who-chev" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>
             </button>
-            <div class="tb-head">
-                <h1 class="tb-title" id="ttTitle">Rozvrh</h1>
-                <p class="tb-sub" id="ttSub"></p>
-            </div>
-
+            <!-- Pořadí v DOM = pořadí fokusu na počítači po řádcích lišty: rozvrh, týden a „Jen změny“, akce;
+                 pak nadpis, Den / Týden a Dnes ‹ › (na mobilu je nástrojová část skrytá) -->
             <div class="tb-tools" id="ttTools">
-                <div class="g-seg sh-ctl tb-layout" id="layoutSeg" role="group" aria-label="Rozvržení">
-                    <button type="button" data-layout="day" aria-pressed="false">Den</button>
-                    <button type="button" data-layout="week-view" aria-pressed="true">Týden</button>
-                </div>
                 <div class="tt-controls" id="ttControls">
                     <div class="g-seg sh-ctl tt-sched" role="group" aria-label="Týden">
                         <button type="button" class="schedule-type-btn" data-schedule="permanent" aria-pressed="false">Stálý</button>
@@ -121,14 +116,9 @@
                 </div>
             </div>
 
-            <div class="tb-nav">
-                <button type="button" class="g-btn g-btn--small sh-ctl" id="todayBtn">Dnes</button>
-                <button type="button" class="g-circle sh-ctl" id="prevBtn" aria-label="Předchozí týden">
-                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-left"></use></svg>
-                </button>
-                <button type="button" class="g-circle sh-ctl" id="nextBtn" aria-label="Další týden">
-                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg>
-                </button>
+            <div class="tb-head">
+                <h1 class="tb-title" id="ttTitle">Rozvrh</h1>
+                <p class="tb-sub" id="ttSub"></p>
             </div>
 
             <div class="tb-actions">
@@ -161,6 +151,21 @@
                 </button>
                 <button type="button" class="g-circle sh-ctl" id="settingsToggle" aria-label="Nastavení" aria-haspopup="dialog">
                     <svg class="i" aria-hidden="true"><use href="icons.svg#settings"></use></svg>
+                </button>
+            </div>
+
+            <div class="g-seg sh-ctl tb-layout" id="layoutSeg" role="group" aria-label="Rozvržení">
+                <button type="button" data-layout="day" aria-pressed="false">Den</button>
+                <button type="button" data-layout="week-view" aria-pressed="true">Týden</button>
+            </div>
+
+            <div class="tb-nav">
+                <button type="button" class="g-btn g-btn--small sh-ctl" id="todayBtn">Dnes</button>
+                <button type="button" class="g-circle sh-ctl" id="prevBtn" aria-label="Předchozí týden">
+                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-left"></use></svg>
+                </button>
+                <button type="button" class="g-circle sh-ctl" id="nextBtn" aria-label="Další týden">
+                    <svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg>
                 </button>
             </div>
         </header>
@@ -641,6 +646,6 @@
         });
     </script>
 
-    <script type="module" src="js/app.js?v=554f037d01"></script>
+    <script type="module" src="js/app.js?v=0d5062959d"></script>
 </body>
 </html>

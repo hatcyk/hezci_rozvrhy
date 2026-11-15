@@ -10,6 +10,9 @@
 @layer shell {
 
   /* ---------- kostra ---------- */
+  /* fokus z klávesnice se nesmí schovat pod plovoucí lištu (WCAG 2.4.11): prohlížeč posune
+     prvek nad ni, i když je ještě ve viewportu */
+  html { scroll-padding-bottom: calc(var(--tabbar-h) + 26px + env(safe-area-inset-bottom)); }
   .app-container {
     width: 100%; max-width: 720px; margin-inline: auto; min-height: 100dvh;
     padding:
@@ -40,7 +43,7 @@
     bottom: calc(18px + env(safe-area-inset-bottom));
     display: grid; grid-template-columns: repeat(4, 1fr); height: var(--tabbar-h); padding: 4px;
     border-radius: calc(var(--tabbar-h) / 2);
-    background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    background: var(--glass-float); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
     border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
   }
   .view-nav a {
@@ -48,7 +51,9 @@
     border-radius: calc(var(--tabbar-h) / 2 - 4px); text-decoration: none;
     font-size: 11px; font-weight: 600; color: var(--tx-2); --is: 22px;
   }
-  .view-nav a[aria-current] { background: var(--chip); color: var(--tx); box-shadow: inset 0 1px 0 rgb(255 255 255 / .18); }
+  /* aktuální záložka: bílá plocha s tmavým písmem jako ostatní vybrané prvky (čip, den v pásu týdne);
+     samotný světlejší čip se od ostatních lišil jen 1,2–1,3 : 1 */
+  .view-nav a[aria-current] { background: var(--tx); color: var(--now-ink); }
   .view-nav a:not([aria-current]):hover { color: var(--tx); }
   .view-nav a, .wk-day, .who, .tt-only, .sr-pick, .side-item { position: relative; }
   .vn-icon { position: relative; display: grid; place-items: center; }
@@ -61,10 +66,11 @@
     right: var(--edge); bottom: calc(18px + env(safe-area-inset-bottom));
     display: grid; place-items: center; width: var(--tabbar-h); height: var(--tabbar-h); border-radius: 50%;
     color: var(--tx); --is: 22px;
-    background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    background: var(--glass-float); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
     border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
   }
-  .search-fab:hover { background: var(--glass-strong); }
+  /* najetí myší ztmaví (světlejší tón by nad světlým obsahem snížil kontrast) */
+  .search-fab:hover { background: var(--solid-strong); }
 
   /* ---------- horní lišta (mobil) ---------- */
   .topbar { display: flex; align-items: center; gap: 10px; min-height: 52px; margin-bottom: 4px; }
@@ -86,7 +92,7 @@
   .tb-title:focus-visible { outline: 3px solid var(--now); outline-offset: 4px; border-radius: 6px; }
   .tb-sub { margin-top: 2px; font-size: var(--fs-body); font-weight: 500; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tb-sub:empty { display: none; }
-  .tb-tools, .tb-nav { display: none; }
+  .tb-tools, .tb-nav, .tb-layout { display: none; }
   .tb-actions { position: relative; display: flex; gap: 10px; margin-left: auto; flex: none; }
   .tb-bell { display: none; }
   .tb-bell .bell-off-icon, .tb-bell.disabled .bell-icon { display: none; }
@@ -101,7 +107,7 @@
   :root[data-screen="day"] .tb-title { font-size: var(--fs-title); }
 
   /* jiné pohledy: jen nastavení (a zvonek na počítači) */
-  :root:not([data-view="timetable"]) :is(.who, .tb-back, .tb-head, .tb-tools, .tb-nav, .tb-more) { display: none; }
+  :root:not([data-view="timetable"]) :is(.who, .tb-back, .tb-head, .tb-tools, .tb-layout, .tb-nav, .tb-more) { display: none; }
 
   /* ---------- nabídka „⋯“ ---------- */
   .menu {
@@ -204,9 +210,11 @@
   .wk-dot { width: 5px; height: 5px; border-radius: 50%; }
   .wk-dot.on { background: var(--tx-2); }
 
-  .pane { display: grid; gap: 10px; min-width: 0; }
+  /* jeden sloupec minmax(0, 1fr): široký potomek (ovládání, tabulka) nesmí roztáhnout celý panel */
+  .pane { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
   .pane-tools:empty { display: none; }
-  .tt-controls { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  /* úzký telefon (320–360 px): „Jen změny“ se zalomí pod přepínač týdne, místo aby stránka přetekla */
+  .tt-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
   .pane-tools .tt-controls { justify-content: space-between; }
   .pane-tools .tt-sched > button { padding: 0 10px; }
   .tt-only { min-height: var(--tap); padding: 0 12px; }
@@ -216,13 +224,15 @@
 
   /* ---------- počítač ---------- */
   @media (min-width: 1080px) {
+    html { scroll-padding-bottom: 0; }
     .app-container {
       max-width: none; margin: 0;
-      padding: 16px 16px 16px calc(var(--side-w) + 32px);
+      padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) calc(var(--side-w) + 32px);
     }
 
     .side {
-      position: fixed; z-index: var(--z-sticky); left: 16px; top: 16px; bottom: 16px; width: var(--side-w);
+      position: fixed; z-index: var(--z-sticky); left: 16px; width: var(--side-w);
+      top: calc(16px + env(safe-area-inset-top)); bottom: calc(16px + env(safe-area-inset-bottom));
       display: flex; flex-direction: column; padding: 16px 12px 12px; border-radius: var(--r-panel);
       background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
       border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
@@ -254,7 +264,7 @@
       border-radius: 11px; font-size: var(--fs-body); font-weight: 500; color: var(--tx); --is: 18px;
     }
     .view-nav a:not([aria-current]):hover { background: var(--hover-strong); }
-    .view-nav a[aria-current] { font-weight: 600; box-shadow: inset 0 1px 0 rgb(255 255 255 / .14); }
+    .view-nav a[aria-current] { font-weight: 600; }
     .vn-icon { display: contents; }
     .vn-count { position: static; order: 3; margin-left: auto; }
     .vn-long { display: inline; }
@@ -269,10 +279,10 @@
       color: var(--tx); font-size: var(--fs-body); font-weight: 500; text-align: left; --is: 18px;
     }
     .side-item:hover { background: var(--hover-strong); }
-    .side-item[aria-current] { background: var(--chip); font-weight: 600; box-shadow: inset 0 1px 0 rgb(255 255 255 / .14); }
+    .side-item[aria-current] { background: var(--tx); color: var(--now-ink); font-weight: 600; }
     .side-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .side-item small { margin-left: auto; flex: none; font-size: var(--fs-foot); color: var(--tx-2); }
-    .side-item[aria-current] small { color: var(--tx); }
+    .side-item[aria-current] small { color: inherit; }
     .side-empty { padding: 4px 10px; font-size: var(--fs-foot); color: var(--tx-2); line-height: 1.35; }
 
     /* karta „teď“: text na čipu je plně bílý */
@@ -311,7 +321,7 @@
     .tb-sub { display: none; }
     .tb-tools { display: contents; }
     .tt-controls { grid-area: tools; }
-    .tb-layout { grid-area: layout; }
+    .tb-layout { grid-area: layout; display: inline-flex; }
     .tb-nav { grid-area: nav; display: flex; align-items: center; gap: 8px; }
     .tb-nav .g-btn { min-height: var(--tap); padding: 0 18px; }
     .tb-actions { grid-area: actions; }
@@ -319,7 +329,7 @@
     .menu-mobile { display: none; }
     :root:not([data-view="timetable"]) .topbar { grid-template-areas: "actions actions actions actions"; justify-items: end; }
     /* ostatní pohledy: zvonek a nastavení nedrží vlastní prázdný řádek, sedí v řádku nadpisu pohledu (integrace R + V) */
-    :root:not([data-view="timetable"]) .topbar { position: absolute; top: 16px; right: 16px; margin: 0; padding: 0; z-index: var(--z-sticky); }
+    :root:not([data-view="timetable"]) .topbar { position: absolute; top: calc(16px + env(safe-area-inset-top)); right: 16px; margin: 0; padding: 0; z-index: var(--z-sticky); }
     :root:not([data-view="timetable"]) .view-head { padding-right: calc(2 * var(--tap) + 24px); min-height: var(--tap); }
 
     :root[data-screen="overview"] .tb-back { display: none; }

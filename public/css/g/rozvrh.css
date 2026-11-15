@@ -155,11 +155,17 @@
     height: calc(var(--d) / var(--range) * (100% - 2 * var(--pad)));
     left: calc(var(--i) * (100% + var(--gap)) / var(--n));
     width: calc((100% - (var(--n) - 1) * var(--gap)) / var(--n));
-    display: flex; flex-direction: column; gap: 3px; padding: 6px 10px 0 12px;
+    display: flex; flex-flow: column wrap; align-content: flex-start; gap: 3px 40px; padding: 6px 10px 0 12px;
     border-radius: var(--r-block); background: var(--blk); color: var(--tx); text-align: left; z-index: 1;
   }
+  /* řádek, který se do výšky bloku celý nevejde, se zalomí do dalšího sloupce mimo blok a schová
+     se celý (dřív ho flexbox stlačil a byl vidět jen horní půlkou); přednost má 1. řádek, pak 2., pak 3. */
+  .ev-l1, .ev-l2, .ev-l3 { flex: none; width: 100%; }
   .ev.g-bar::before { border-radius: var(--r-block) 0 0 var(--r-block); }
-  .ev:hover { filter: brightness(1.08); }
+  /* najetí myší mění jen podklad: filtr brightness() zesvětlil i bílý text, který světlejší být nemůže,
+     a tlumený text klesl ráno na 4,42 : 1 */
+  .ev:hover { background: var(--blk-hover); }
+  .ev.is-cancelled:hover { background: var(--hover); }
   .ev:focus-visible { z-index: 3; outline-offset: 2px; }
   .ev-l1 { display: flex; gap: 8px; min-width: 0; font-size: var(--fs-body); font-weight: 600; line-height: 1.2; }
   .ev-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -177,6 +183,13 @@
   /* dělená hodina: místo vyučujícího stačí stav, když nějaký je */
   .ev.is-split .g-st ~ .ev-w { display: none; }
   .ev.is-split .ev-l2 { flex-wrap: wrap; row-gap: 2px; }
+  /* úzká dělená hodina: slovo stavu, které se vedle ikony nevejde, se zalomí pod ni a skryje
+     (zůstane ikona, slovo čte čtečka); vyučující se zkrátí trojtečkou místo nového řádku */
+  .ev.is-split .ev-l2 .g-st {
+    flex: 1 1 var(--is); min-width: var(--is); max-width: max-content;
+    flex-wrap: wrap; align-content: flex-start; height: 1.35em; overflow: hidden;
+  }
+  .ev.is-split .ev-w { flex: 1 1 0; }
   .ev.current-time { --bar: var(--now); }
   .ev.is-cancelled { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--cancel) 72%, transparent); }
   .ev.is-cancelled .ev-s, .ev.is-cancelled .ev-r { text-decoration: line-through; text-decoration-thickness: 2px; }
@@ -194,6 +207,12 @@
   }
   .nowline::before {
     content: ""; position: absolute; left: -5px; top: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--now);
+  }
+  /* kroužek kolem bodu (pod ním): „dýchá“ jen průhledností a měřítkem, což běží v kompozitoru bez
+     překreslování (dřív animovaný box-shadow překresloval 60× za sekundu) */
+  .nowline::after {
+    content: ""; position: absolute; left: -11px; top: -12px; z-index: -1; width: 22px; height: 22px; border-radius: 50%;
+    background: color-mix(in srgb, var(--now) 25%, transparent); opacity: 0; transform: scale(.45);
   }
   .now-pill {
     position: absolute; right: calc(100% + 8px); top: -11px; padding: 1px 6px; border-radius: 8px;
@@ -223,10 +242,10 @@
     position: relative; box-sizing: border-box;
     height: max(calc(var(--range) * 1.1px + 2 * var(--pad)), calc(100dvh - 216px));
   }
-  .wg-col { border-left: 1px solid var(--hair); container-type: inline-size; }
+  .wg-col { border-left: 1px solid var(--hair); container: wg-col / inline-size; }
   /* úzký sloupec (malý notebook): zkratka předmětu místo celého názvu */
   .ev-s .sh { display: none; }
-  @container (max-width: 150px) {
+  @container wg-col (max-width: 150px) {
     .ev-s .fl { display: none; }
     .ev-s .sh { display: inline; }
     .wg-col .ev:not(.is-split) .ev-s { -webkit-line-clamp: 1; }
@@ -243,6 +262,12 @@
   .wg-col .ev-l1 { font-size: 14px; }
   .wg-col .ev-l2 { font-size: var(--fs-caption); }
   .wg-col .ev:not(.is-split) .ev-s { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  /* nízký blok (krátké okno, např. 1366 × 650): název na jeden řádek, aby se pod něj vešel
+     řádek se stavem (2 řádky názvu + stav potřebují asi 60 px) */
+  .wg-col .ev { container: ev / size; }
+  @container ev (max-height: 60px) {
+    .wg-col .ev:not(.is-split) .ev-s { -webkit-line-clamp: 1; }
+  }
   .wg-col .nowline::before { left: -5px; }
   .wg-free {
     position: absolute; inset: 0; display: grid; place-items: center;
@@ -324,7 +349,9 @@
   .card-dot.active { width: 18px; background: var(--tx); }
 
   /* ---------- Jen změny ---------- */
-  .oc-wrapper { display: grid; gap: 12px; }
+  .oc-wrapper { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  /* kontejner pro úzké rozložení tabulky změn (@container v views.css), stejně jako .chg-class */
+  .oc-day { container-type: inline-size; min-width: 0; }
   .oc-title { font-size: var(--fs-title3); font-weight: 600; }
   .oc-day-title { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; font-size: var(--fs-em); font-weight: 600; }
   .oc-day-title .chg-count { font-size: var(--fs-foot); font-weight: 500; color: var(--tx-2); }
@@ -405,10 +432,10 @@
 
 @layer motion {
   @media (prefers-reduced-motion: no-preference) {
-    .ev, .ls-row, .ov-h, .wr, .wg-dh, .ov-tile, .card-main, .card-half { transition: background-color var(--t-fast) ease, filter var(--t-fast) ease, transform var(--t-fast) ease; }
+    .ev, .ls-row, .ov-h, .wr, .wg-dh, .ov-tile, .card-main, .card-half { transition: background-color var(--t-fast) ease, transform var(--t-fast) ease; }
     .ev:active, .ov-h:active, .card-main:active, .card-half:active { transform: scale(.98); }
-    .nowline::before { animation: rz-breathe 2.8s ease-in-out infinite; }
-    @keyframes rz-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--now) 25%, transparent); } }
+    .nowline::after { animation: rz-breathe 2.8s ease-in-out infinite; }
+    @keyframes rz-breathe { 50% { opacity: 1; transform: none; } }
     .ev.deep-highlight, .ls-row.deep-highlight, .card-main.deep-highlight, .card-half.deep-highlight { animation: rz-pulse 1.4s ease-in-out 3; }
     @keyframes rz-pulse { 50% { box-shadow: 0 0 0 6px var(--now); } }
   }
@@ -416,6 +443,9 @@
     .ev, .ls-row, .card-main, .card-half, .ov-h, .wr { border: 1px solid CanvasText; forced-color-adjust: auto; }
     .nowline { border-top-color: Highlight; }
     .nowline::before, .now-pill, .wr-dot { background: Highlight; color: HighlightText; }
+    /* bez forced-color-adjust: none nakreslí Chrome pod čas podložku a HighlightText na ní zmizí */
+    .now-pill { forced-color-adjust: none; }
+    .nowline::after { display: none; }
     .wr-bar i { background: CanvasText; }
     .wr-bar i.k-x { background: Canvas; box-shadow: inset 0 0 0 1.5px CanvasText; }
   }

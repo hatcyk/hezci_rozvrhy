@@ -129,8 +129,10 @@
     font-size: 14px; font-weight: 500; color: var(--tx-2); text-decoration: none;
     display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
   }
+  /* vybraný segment: bílá plocha s tmavým písmem jako vybraný čip; světlejší čip se od nevybraných
+     segmentů lišil jen 1,5 : 1 (WCAG 1.4.11 chce pro stav 3 : 1) */
   .g-seg > [aria-pressed="true"], .g-seg > [aria-selected="true"], .g-seg > [aria-current], .g-seg > .active {
-    background: var(--chip); color: var(--tx); font-weight: 600; box-shadow: inset 0 1px 0 rgb(255 255 255 / .16);
+    background: var(--tx); color: var(--now-ink); font-weight: 600;
   }
   .g-seg > button:not([aria-pressed="true"]):not([aria-selected="true"]):not(.active):hover { color: var(--tx); }
 
