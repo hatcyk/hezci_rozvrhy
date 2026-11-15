@@ -177,6 +177,11 @@
                 <svg class="i" aria-hidden="true"><use href="icons.svg#triangle-alert"></use></svg>
                 <span id="outageBannerText">Data z Bakalářů se teď nedaří aktualizovat – zobrazuji poslední stažená.</span>
             </div>
+            <div id="updateBanner" class="g-banner sh-banner hidden" role="status">
+                <svg class="i" aria-hidden="true"><use href="icons.svg#refresh-cw"></use></svg>
+                <span>Je k dispozici nová verze.</span>
+                <button type="button" class="g-btn g-btn--small" id="updateReload">Obnovit</button>
+            </div>
             <div class="g-banner g-banner--error sh-banner sh-banner--error" id="errorBox">
                 <svg class="i" aria-hidden="true"><use href="icons.svg#circle-alert"></use></svg>
                 <div id="error" class="error hidden" role="alert"></div>
@@ -551,7 +556,7 @@
                 <h3 class="sheet-group-title" id="setAboutTitle">O aplikaci</h3>
                 <div class="set-list">
                     <div class="set-row set-about">
-                        <img class="set-app-icon" src="icon-192.png" alt="" width="40" height="40">
+                        <img class="set-app-icon" src="icon-192.png" alt="" width="40" height="40" loading="lazy">
                         <span class="set-row-text">
                             <span class="set-row-title">Lepší Rozvrh</span>
                             <span class="set-row-desc">Verze 2.0. Rozvrhy tříd, vyučujících a učeben SPŠD.</span>
@@ -636,6 +641,6 @@
         });
     </script>
 
-    <script type="module" src="js/app.js?v=78a24186b2"></script>
+    <script type="module" src="js/app.js?v=554f037d01"></script>
 </body>
 </html>

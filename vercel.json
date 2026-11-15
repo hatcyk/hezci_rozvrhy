@@ -8,6 +8,12 @@
   "headers": [
     {
       "source": "/css/app.css",
+      "has": [
+        {
+          "type": "query",
+          "key": "v"
+        }
+      ],
       "headers": [
         {
           "key": "Cache-Control",
@@ -17,6 +23,12 @@
     },
     {
       "source": "/js/app.js",
+      "has": [
+        {
+          "type": "query",
+          "key": "v"
+        }
+      ],
       "headers": [
         {
           "key": "Cache-Control",
@@ -29,16 +41,25 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
+          "value": "no-cache"
         }
       ]
     },
     {
-      "source": "/(.*)\\.(png|ico|webmanifest)",
+      "source": "/(.*)\\.webmanifest",
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=604800, stale-while-revalidate=86400"
+          "value": "no-cache"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(png|ico)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=3600, stale-while-revalidate=86400"
         }
       ]
     },

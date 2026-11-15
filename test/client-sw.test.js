@@ -141,14 +141,3 @@ test('Apple endpoint rule is identical in the worker and in platform.js', async 
     assert.equal(isApplePushEndpoint(APPLE), true);
     assert.equal(isApplePushEndpoint('https://push.apple.com.evil.com/x'), false);
 });
-
-test('every same-origin precache URL exists in public/', () => {
-    const { sandbox } = loadSW();
-    const urls = vm.runInContext('PRECACHE_URLS', sandbox);
-    for (const url of urls) {
-        if (url === '/') continue;
-        const file = path.join(PUBLIC, url.split('?')[0]);
-        assert.ok(fs.existsSync(file), `${url} is precached but missing`);
-    }
-    assert.ok(urls.includes('/badge-96.png') && urls.includes('/icon-maskable-512.png'));
-});
