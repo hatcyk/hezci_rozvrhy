@@ -3,6 +3,7 @@
  * Downloads all timetable data from Bakalari API and stores in Firebase
  */
 
+const crypto = require('node:crypto');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { getFirestore } = require('./firebase-admin-init');
@@ -458,8 +459,37 @@ function snapshotFromDoc(doc) {
     if (!doc.exists) return null;
     const data = doc.data() || {};
     if (!Array.isArray(data.data)) return null;
-    return { lessons: data.data, weekStart: data.weekStart ?? null, daysOff: Array.isArray(data.daysOff) ? data.daysOff : null };
+    return {
+        lessons: data.data,
+        weekStart: data.weekStart ?? null,
+        daysOff: Array.isArray(data.daysOff) ? data.daysOff : null,
+        lastUpdate: data.lastUpdate ?? null,
+    };
 }
+
+/**
+ * Deterministic ID of a change document: the timetable + a hash of the
+ * baseline snapshot's version (its lastUpdate) and of what changed.
+ * Two runs that overlap (a crontab without a lock, a slow Bakaláři) load the
+ * same baseline and find the same changes → the same ID, and the second
+ * create() fails instead of sending the notification twice. The same change
+ * happening again later (on → off → on) starts from another baseline version
+ * and gets its own document.
+ */
+function changeDocId(docKey, baseline, weekStart, changes) {
+    const fingerprint = changes.map(c => [
+        c.type, c.day, c.hour,
+        c.lesson ? [c.lesson.group || '', c.lesson.subject || '', c.lesson.teacher || '', c.lesson.room || ''] : null,
+        c.change ? [c.change.oldValue ?? null, c.change.newValue ?? null] : null,
+    ]);
+    const hash = crypto.createHash('sha1')
+        .update(JSON.stringify([baseline.lastUpdate ?? null, baseline.weekStart ?? null, weekStart, fingerprint]))
+        .digest('hex')
+        .slice(0, 20);
+    return `${docKey}_${hash}`;
+}
+
+const isAlreadyExists = (error) => !!error && (error.code === 6 || /ALREADY_EXISTS/i.test(String(error.message)));
 
 /**
  * Write the four aggregate documents, each only when its content changed
@@ -807,6 +837,7 @@ async function prefetchAllData(options = {}) {
                     });
 
                     let note = '';
+                    let changeWrite = null; // { ref, data, count } stored together with the snapshot below
                     if (baseline) {
                         const metadata = {
                             type: task.type,
@@ -830,21 +861,20 @@ async function prefetchAllData(options = {}) {
                             newWeekStart: weekStart,
                         });
 
-                        // Store detected changes
+                        // Detected changes: written below, in one batch with the snapshot
                         if (changes.length > 0) {
-                            const changeId = `${docKey}_${Date.now()}`;
-                            await db.collection('changes').doc(changeId).set({
-                                timetable: metadata,
-                                weekStart,
-                                changes: changes,
-                                timestamp: new Date().toISOString(),
-                                sent: false
-                            });
-                            stats.changeDocs++;
-                            stats.changesDetected += changes.length;
-
-                            console.log(`${progress} 🔔 ${changes.length} changes detected for ${task.entity.name}` +
-                                (source === 'previousNext' ? ' (vs. last run\'s Next of the same week)' : ''));
+                            changeWrite = {
+                                ref: db.collection('changes').doc(changeDocId(docKey, baseline, weekStart, changes)),
+                                data: {
+                                    timetable: metadata,
+                                    weekStart,
+                                    changes: changes,
+                                    timestamp: new Date().toISOString(),
+                                    sent: false
+                                },
+                                count: changes.length,
+                                vsNext: source === 'previousNext',
+                            };
                         }
                     } else if (previous && previous.lessons.length > 0) {
                         // e.g. the first run after deploying S2 ('previous_without_week'), or
@@ -860,20 +890,46 @@ async function prefetchAllData(options = {}) {
                         && stableStringify(previous.daysOff || []) === stableStringify(daysOff)
                         && stableStringify(previous.lessons) === stableStringify(timetableData);
 
-                    if (!isDataIdentical) {
-                        await db.collection('timetables').doc(docKey).set({
-                            type: task.type,
-                            id: task.entity.id,
-                            name: task.entity.name,
-                            scheduleType: task.scheduleType,
-                            weekStart,
-                            // Holidays of this week ({day, date, name}): the app can label the
-                            // day and the reminder job skips it.
-                            daysOff,
-                            data: timetableData,
-                            lessonCount: timetableData.length,
-                            lastUpdate: new Date().toISOString(),
-                        });
+                    const snapshotRef = db.collection('timetables').doc(docKey);
+                    const snapshotDoc = isDataIdentical ? null : {
+                        type: task.type,
+                        id: task.entity.id,
+                        name: task.entity.name,
+                        scheduleType: task.scheduleType,
+                        weekStart,
+                        // Holidays of this week ({day, date, name}): the app can label the
+                        // day and the reminder job skips it.
+                        daysOff,
+                        data: timetableData,
+                        lessonCount: timetableData.length,
+                        lastUpdate: new Date().toISOString(),
+                    };
+
+                    // The change document and the snapshot it was computed from go in
+                    // ONE batch: with two separate writes a failed snapshot write left
+                    // the old snapshot behind and the next run reported (and sent) the
+                    // same change again. create(): the ID is deterministic, so a change
+                    // another (overlapping) run already stored is not stored twice.
+                    if (changeWrite) {
+                        try {
+                            const batch = db.batch();
+                            batch.create(changeWrite.ref, changeWrite.data);
+                            if (snapshotDoc) batch.set(snapshotRef, snapshotDoc);
+                            await batch.commit();
+                            stats.changeDocs++;
+                            stats.changesDetected += changeWrite.count;
+                            console.log(`${progress} 🔔 ${changeWrite.count} changes detected for ${task.entity.name}` +
+                                (changeWrite.vsNext ? ' (vs. last run\'s Next of the same week)' : ''));
+                        } catch (error) {
+                            if (!isAlreadyExists(error)) throw error;
+                            console.log(`${progress} ⏭️  ${label}: changes already recorded by another run`);
+                            if (snapshotDoc) await snapshotRef.set(snapshotDoc);
+                        }
+                    } else if (snapshotDoc) {
+                        await snapshotRef.set(snapshotDoc);
+                    }
+
+                    if (snapshotDoc) {
                         latestSnapshots.set(docKey, { lessons: timetableData, weekStart, daysOff });
                         stats.timetablesWritten++;
                         stats.successCount++;

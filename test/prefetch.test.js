@@ -41,9 +41,25 @@ function fakeFirestore(initial = {}) {
         },
         async get() { return snap(`${collection}/${id}`); },
     });
+    const alreadyExists = (path) => Object.assign(new Error(`6 ALREADY_EXISTS: Document already exists: ${path}`), { code: 6 });
     return {
         store,
         writes,
+        // Atomic like Firestore: either every operation is applied or none.
+        batch() {
+            const ops = [];
+            const batch = {
+                set(r, data) { ops.push({ r, data, create: false }); return batch; },
+                create(r, data) { ops.push({ r, data, create: true }); return batch; },
+                async commit() {
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                    const clash = ops.find(op => op.create && store.has(op.r.path));
+                    if (clash) throw alreadyExists(clash.r.path);
+                    for (const op of ops) await op.r.set(op.data);
+                },
+            };
+            return batch;
+        },
         collection: (collection) => ({
             doc: (id) => ref(collection, id),
             where: (field, op, value) => ({
@@ -316,7 +332,7 @@ test('pondělní běh: nový Actual se porovná se starým Next téhož týdne �
     // jediný dokument změn: Class_C1_Actual, jen nové suplování po 1. hod.
     const docs = changeDocs(db);
     assert.equal(docs.length, 1, docs.join(', '));
-    assert.match(docs[0], /^changes\/Class_C1_Actual_\d+$/);
+    assert.match(docs[0], /^changes\/Class_C1_Actual_[0-9a-f]{20}$/);
     const changeDoc = db.store.get(docs[0]);
     assert.equal(changeDoc.weekStart, W46);
     assert.equal(changeDoc.sent, false);
@@ -667,4 +683,70 @@ test('přihlašovací stránka místo rozvrhů i po novém přihlášení → ch
     assert.match(result.error, /login page/);
     assert.equal(bak.calls.filter(c => c.method === 'POST').length, 2, 'one re-login per run, not one per page');
     assert.equal(db.store.get('timetables/Room_R1_Actual').weekStart, W45, 'snapshot kept');
+});
+
+// ─── dokument změn: nejvýš jednou, atomicky se snímkem ──────────────────────
+
+test('dva překryté běhy (cron bez zámku) zapíší tutéž změnu jen jednou', async (t) => {
+    quiet(t);
+    fakeBakalari(t);
+    const db = fakeFirestore(initialStore());
+    // The second run starts while the first is still downloading: both load the same old snapshots.
+    const [a, b] = await Promise.all([run(db), run(db)]);
+    assert.equal(a.status, 'ok');
+    assert.equal(b.status, 'ok');
+    assert.equal(changeDocs(db).length, 1, changeDocs(db).join(', '));
+    assert.equal(a.changeDocs + b.changeDocs, 1, 'only the run that created the document counts it');
+    assert.equal(db.store.get(changeDocs(db)[0]).sent, false);
+});
+
+test('změna, která se vrátí a nastane znovu, dostane nový dokument (jiný výchozí snímek)', async (t) => {
+    quiet(t);
+    const db = fakeFirestore(initialStore());
+    const withSub = defaultPages();
+    const without = { ...defaultPages(), 'Actual/Class/C1': page(W46, N46_OLD) };
+    for (const pages of [withSub, without, withSub]) {
+        t.mock.restoreAll();
+        quiet(t);
+        fakeBakalari(t, { pages });
+        assert.equal((await run(db)).status, 'ok');
+        await new Promise(resolve => setTimeout(resolve, 2)); // distinct lastUpdate stamps
+    }
+    const all = changeDocs(db).map(p => db.store.get(p).changes.map(c => c.type).join('+'));
+    assert.deepEqual(all.sort(), ['substitution', 'substitution', 'substitution'], 'on, off (back to the original teacher), on again');
+});
+
+test('zápis změny a snímku je atomický: selhání zápisu nenechá změnu bez snímku ani ji příště nezdvojí', async (t) => {
+    quiet(t);
+    fakeBakalari(t);
+    // mid-week: the stored Actual snapshot is already this week's (without the new substitution)
+    const store = initialStore();
+    store['timetables/Class_C1_Actual'] = storedDoc('Class', 'C1', 'Actual', N46_OLD, W46,
+        { permanent: store['timetables/Class_C1_Permanent'].data });
+    const db = fakeFirestore(store);
+    const realBatch = db.batch;
+    let failOnce = true;
+    db.batch = () => {
+        const batch = realBatch();
+        const commit = batch.commit;
+        let touchesActual = false;
+        const set = batch.set;
+        batch.set = (r, data) => { if (r.path === 'timetables/Class_C1_Actual') touchesActual = true; return set(r, data); };
+        batch.commit = async () => {
+            if (touchesActual && failOnce) { failOnce = false; throw new Error('DEADLINE_EXCEEDED (synthetic)'); }
+            return commit();
+        };
+        return batch;
+    };
+    const before = db.store.get('timetables/Class_C1_Actual');
+    const first = await run(db);
+    assert.equal(first.errorCount, 1);
+    assert.deepEqual(changeDocs(db), [], 'no change document without its snapshot');
+    assert.deepEqual(db.store.get('timetables/Class_C1_Actual'), before);
+
+    const second = await run(db);
+    assert.equal(second.errorCount, 0);
+    assert.equal(changeDocs(db).length, 1);
+    assert.deepEqual(db.store.get(changeDocs(db)[0]).changes.map(c => c.type), ['substitution']);
+    assert.notDeepEqual(db.store.get('timetables/Class_C1_Actual'), before);
 });

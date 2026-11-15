@@ -137,6 +137,20 @@ test('crontab upomínek pokryje okna všech hodin (dřív „7-15“, 11. a 12. 
     }
 });
 
+test('crontab: sběr i odesílání změn běží pod zámkem flock -n (běhy se nepřekryjí)', () => {
+    const lines = fs.readFileSync(path.join(__dirname, '../deploy/crontab.example'), 'utf8')
+        .split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+    const locks = [];
+    for (const script of ['run-prefetch.js', 'process-notifications.js']) {
+        const line = lines.find(l => l.includes(script));
+        const m = line.match(/flock -n (\S+\.lock) /);
+        assert.ok(m, `${script}: ${line}`);
+        assert.ok(line.indexOf('flock') < line.indexOf('node'), 'the lock wraps the job');
+        locks.push(m[1]);
+    }
+    assert.notEqual(locks[0], locks[1], 'separate locks: sending must not wait for a long prefetch');
+});
+
 test('zábor upomínky přes create(): ze souběžných pokusů vyhraje právě jeden', async () => {
     const results = await Promise.all(Array.from({ length: 5 }, () => claimReminder('u-claim', '2026-11-04', 3)));
     assert.equal(results.filter(Boolean).length, 1);
