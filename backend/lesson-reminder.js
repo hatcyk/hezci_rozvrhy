@@ -305,6 +305,12 @@ function formatLessonNotification(lesson, startTime, minutesUntilLesson) {
     };
 }
 
+/** Lifetime of an undelivered reminder: until two minutes into the lesson, at least a minute. */
+function reminderTtlSeconds(minutesUntilLesson) {
+    const minutes = Number.isFinite(minutesUntilLesson) ? minutesUntilLesson : 0;
+    return Math.max(60, (minutes + 2) * 60);
+}
+
 /**
  * Lessons of one user in one hour slot, across the watched timetables that
  * have reminders switched on (a room watched only for its changes used to
@@ -473,7 +479,11 @@ async function sendLessonReminders(options = {}) {
                     }
 
                     try {
-                        const result = await sendNotificationToTokens(user.tokens, notification);
+                        // "Za 5 minut" is worthless once the lesson has begun: a phone
+                        // that was offline must not get it hours later.
+                        const result = await sendNotificationToTokens(user.tokens, notification, {
+                            ttlSeconds: reminderTtlSeconds(lessonWindow.minutesUntilLesson),
+                        });
                         totalSent += result.successCount;
                         totalUsers++;
                         console.log(`📨 [SEND] User ${user.userId}: ${notification.title} (${result.successCount}/${user.tokens.length})`);
@@ -527,5 +537,6 @@ module.exports = {
     lessonTimes,
     mapWithConcurrency,
     isDayOff,
+    reminderTtlSeconds,
     getTodaysTimetableForUser,
 };

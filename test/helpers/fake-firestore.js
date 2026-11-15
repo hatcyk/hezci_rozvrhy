@@ -51,6 +51,15 @@ function matches(data, { field, op, value }) {
     }
 }
 
+/** FieldValue.arrayRemove / arrayUnion of firebase-admin; anything else is stored as is. */
+function applyTransform(current, value) {
+    const kind = value && value.constructor && value.constructor.name;
+    const list = Array.isArray(current) ? current : [];
+    if (kind === 'ArrayRemoveTransform') return list.filter(x => !value.elements.includes(x));
+    if (kind === 'ArrayUnionTransform') return [...list, ...value.elements.filter(x => !list.includes(x))];
+    return clone(value);
+}
+
 let autoId = 0;
 
 function createFakeFirestore(initial = {}) {
@@ -88,7 +97,7 @@ function createFakeFirestore(initial = {}) {
                 log.push({ op: 'update', path: ref.path });
                 if (!store.has(ref.path)) throw notFound(ref.path);
                 const next = clone(store.get(ref.path));
-                for (const [k, v] of Object.entries(data)) setPath(next, k, clone(v));
+                for (const [k, v] of Object.entries(data)) setPath(next, k, applyTransform(getPath(next, k), v));
                 store.set(ref.path, next);
             },
             async delete() { log.push({ op: 'delete', path: ref.path }); store.delete(ref.path); },
@@ -169,6 +178,7 @@ function createFakeFirestore(initial = {}) {
         };
     }
 
+    let txQueue = Promise.resolve();
     const db = {
         collection(name) {
             return {
@@ -193,20 +203,26 @@ function createFakeFirestore(initial = {}) {
             };
         },
         // Writes are buffered and applied after the callback, like Firestore.
-        // No isolation between concurrent transactions - tests that need
-        // atomicity use create().
-        async runTransaction(fn) {
-            const ops = [];
-            const tx = {
-                get: (ref) => ref.get(),
-                set(ref, data, opts) { ops.push(() => ref.set(data, opts)); return tx; },
-                create(ref, data) { ops.push(() => ref.create(data)); return tx; },
-                update(ref, data) { ops.push(() => ref.update(data)); return tx; },
-                delete(ref) { ops.push(() => ref.delete()); return tx; },
+        // Transactions run one after another: Firestore retries a transaction
+        // whose reads were overwritten meanwhile, which for the read-then-write
+        // transactions of the backend comes to the same result.
+        runTransaction(fn) {
+            const execute = async () => {
+                const ops = [];
+                const tx = {
+                    get: (ref) => ref.get(),
+                    set(ref, data, opts) { ops.push(() => ref.set(data, opts)); return tx; },
+                    create(ref, data) { ops.push(() => ref.create(data)); return tx; },
+                    update(ref, data) { ops.push(() => ref.update(data)); return tx; },
+                    delete(ref) { ops.push(() => ref.delete()); return tx; },
+                };
+                const result = await fn(tx);
+                for (const op of ops) await op();
+                return result;
             };
-            const result = await fn(tx);
-            for (const op of ops) await op();
-            return result;
+            const run = txQueue.then(execute, execute);
+            txQueue = run.catch(() => {});
+            return run;
         },
 
         // ── test helpers ──

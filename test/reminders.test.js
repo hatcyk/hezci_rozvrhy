@@ -173,6 +173,8 @@ test('dva souběžné běhy upomínek pošlou upomínku jen jednou', async () =>
         assert.equal(a.sent + b.sent, 1);
         assert.equal(a.skipped + b.skipped, 1);
         assert.match(sent[0].data.title, /Za 4 minuty: MAT/);
+        // undelivered after the lesson has started → dropped by the push service
+        assert.deepEqual(sent[0].webpush, { headers: { TTL: '360', Urgency: 'high' } });
 
         const record = db._get(`lesson_notifications_sent/${USER}_2026-11-04_1`);
         assert.equal(record.status, 'sent');
@@ -214,7 +216,14 @@ test('mapWithConcurrency drží limit souběhu a pořadí výsledků', async () 
     assert.deepEqual(await mapWithConcurrency([], 3, async () => 1), []);
 });
 
-const { isDayOff } = require('../backend/lesson-reminder');
+const { isDayOff, reminderTtlSeconds } = require('../backend/lesson-reminder');
+
+test('TTL upomínky: do dvou minut po začátku hodiny, nejméně minutu', () => {
+    assert.equal(reminderTtlSeconds(5), 420);
+    assert.equal(reminderTtlSeconds(1), 180);
+    assert.equal(reminderTtlSeconds(-3), 60);
+    assert.equal(reminderTtlSeconds(undefined), 120);
+});
 
 test('isDayOff: den volna platí jen ve svém datu', () => {
     const off = [{ day: 3, date: '2026-11-05', name: 'ředitelské volno' }];
