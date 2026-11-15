@@ -162,7 +162,10 @@
      se celý (dřív ho flexbox stlačil a byl vidět jen horní půlkou); přednost má 1. řádek, pak 2., pak 3. */
   .ev-l1, .ev-l2, .ev-l3 { flex: none; width: 100%; }
   .ev.g-bar::before { border-radius: var(--r-block) 0 0 var(--r-block); }
-  .ev:hover { filter: brightness(1.08); }
+  /* najetí myší mění jen podklad: filtr brightness() zesvětlil i bílý text, který světlejší být nemůže,
+     a tlumený text klesl ráno na 4,42 : 1 */
+  .ev:hover { background: var(--blk-hover); }
+  .ev.is-cancelled:hover { background: var(--hover); }
   .ev:focus-visible { z-index: 3; outline-offset: 2px; }
   .ev-l1 { display: flex; gap: 8px; min-width: 0; font-size: var(--fs-body); font-weight: 600; line-height: 1.2; }
   .ev-s { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -204,6 +207,12 @@
   }
   .nowline::before {
     content: ""; position: absolute; left: -5px; top: -6px; width: 10px; height: 10px; border-radius: 50%; background: var(--now);
+  }
+  /* kroužek kolem bodu (pod ním): „dýchá“ jen průhledností a měřítkem, což běží v kompozitoru bez
+     překreslování (dřív animovaný box-shadow překresloval 60× za sekundu) */
+  .nowline::after {
+    content: ""; position: absolute; left: -11px; top: -12px; z-index: -1; width: 22px; height: 22px; border-radius: 50%;
+    background: color-mix(in srgb, var(--now) 25%, transparent); opacity: 0; transform: scale(.45);
   }
   .now-pill {
     position: absolute; right: calc(100% + 8px); top: -11px; padding: 1px 6px; border-radius: 8px;
@@ -423,10 +432,10 @@
 
 @layer motion {
   @media (prefers-reduced-motion: no-preference) {
-    .ev, .ls-row, .ov-h, .wr, .wg-dh, .ov-tile, .card-main, .card-half { transition: background-color var(--t-fast) ease, filter var(--t-fast) ease, transform var(--t-fast) ease; }
+    .ev, .ls-row, .ov-h, .wr, .wg-dh, .ov-tile, .card-main, .card-half { transition: background-color var(--t-fast) ease, transform var(--t-fast) ease; }
     .ev:active, .ov-h:active, .card-main:active, .card-half:active { transform: scale(.98); }
-    .nowline::before { animation: rz-breathe 2.8s ease-in-out infinite; }
-    @keyframes rz-breathe { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--now) 25%, transparent); } }
+    .nowline::after { animation: rz-breathe 2.8s ease-in-out infinite; }
+    @keyframes rz-breathe { 50% { opacity: 1; transform: none; } }
     .ev.deep-highlight, .ls-row.deep-highlight, .card-main.deep-highlight, .card-half.deep-highlight { animation: rz-pulse 1.4s ease-in-out 3; }
     @keyframes rz-pulse { 50% { box-shadow: 0 0 0 6px var(--now); } }
   }
@@ -434,6 +443,9 @@
     .ev, .ls-row, .card-main, .card-half, .ov-h, .wr { border: 1px solid CanvasText; forced-color-adjust: auto; }
     .nowline { border-top-color: Highlight; }
     .nowline::before, .now-pill, .wr-dot { background: Highlight; color: HighlightText; }
+    /* bez forced-color-adjust: none nakreslí Chrome pod čas podložku a HighlightText na ní zmizí */
+    .now-pill { forced-color-adjust: none; }
+    .nowline::after { display: none; }
     .wr-bar i { background: CanvasText; }
     .wr-bar i.k-x { background: Canvas; box-shadow: inset 0 0 0 1.5px CanvasText; }
   }

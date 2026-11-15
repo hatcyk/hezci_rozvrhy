@@ -115,6 +115,9 @@
 
       /* blok hodiny: plný, aby jím neprosvítaly čáry časové osy */
       --blk: light-dark(#44669A, #3C4766);
+      /* najetí myší na blok: ráno ztmavit (světlejší podklad by tlumený text a korál stáhl pod hranici),
+         v noci zesvětlit jako dřív brightness(1.08); tlumený text 5,6 : 1 a 6,7 : 1 */
+      --blk-hover: light-dark(#3D5D8F, #434F70);
     }
   }
   /* náhrada bez light-dark() (iOS 16.4–17.4, starší prohlížeče): stejné hodnoty napevno, shodu s větvemi
@@ -127,18 +130,18 @@
       --glass: rgb(255 255 255 / .07); --glass-strong: rgb(255 255 255 / .10); --glass-float: rgb(32 53 113 / .80);
       --sheet: rgb(18 26 56 / .88);
       --veil: rgb(60 85 210 / .25); --veil-strong: rgb(110 130 255 / .12);
-      --solid: #18213D; --solid-strong: #1E2847; --blk: #3C4766;
+      --solid: #18213D; --solid-strong: #1E2847; --blk: #3C4766; --blk-hover: #434F70;
     }
     :root:where([data-theme="light"]:not([data-kiosk])), .set-theme-sky--light, .set-theme-sky--system::before {
       --sky-1: #14407D; --sky-2: #255A9F; --sky-3: #3769AA; --glow: rgb(255 200 120 / .22);
       --glass: rgb(8 24 60 / .26); --glass-strong: rgb(8 24 60 / .36); --glass-float: rgb(18 82 172 / .88);
       --sheet: rgb(18 52 104 / .86);
       --veil: rgb(0 55 200 / .38); --veil-strong: rgb(0 40 150 / .38);
-      --solid: #1D4A85; --solid-strong: #173E72; --blk: #44669A;
+      --solid: #1D4A85; --solid-strong: #173E72; --blk: #44669A; --blk-hover: #3D5D8F;
     }
-    /* omezená průhlednost v náhledu oblohy: rámeček vybraného náhledu (--sheet) jako s light-dark() */
+    /* omezená průhlednost a zvýšený kontrast v náhledu oblohy: rámeček vybraného náhledu (--sheet) jako s light-dark() */
     :root[data-transparency="reduced"] :is(.set-theme-sky--light, .set-theme-sky--dark) { --sheet: var(--solid-strong); }
-    @media (prefers-reduced-transparency: reduce) {
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
       :root:not([data-transparency="normal"]) :is(.set-theme-sky--light, .set-theme-sky--dark) { --sheet: var(--solid-strong); }
     }
   }
@@ -155,6 +158,15 @@
   :root[data-transparency="reduced"] {
     --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
     --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
+  }
+  /* zvýšený kontrast (iOS a macOS „Zvýšit kontrast“, Safari ho umí): plné plochy jako při omezené
+     průhlednosti (pokud si uživatel v nastavení výslovně nenechal sklo), tlumený text plně bílý, výraznější okraje */
+  @media (prefers-contrast: more) {
+    :root:not([data-transparency="normal"]) {
+      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
+      --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
+    }
+    :root { --tx-2: var(--tx); --rim: rgb(255 255 255 / .45); --hair: rgb(255 255 255 / .32); }
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     :root { --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --sheet: var(--solid-strong); }

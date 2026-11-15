@@ -60,6 +60,7 @@ for (const mode of ['light', 'dark']) {
         'plovoucí sklo nad zlatou': over(t('glass-float'), t('now').c),
         'plovoucí sklo nad oblohou': over(t('glass-float'), sky3),
         'blok hodiny': t('blk').c,
+        'blok hodiny při najetí myší': t('blk-hover').c,
         'plná náhrada': t('solid').c,
         'plná náhrada silnější': t('solid-strong').c,
     };
@@ -78,7 +79,7 @@ for (const mode of ['light', 'dark']) {
     for (const acc of ['now', 'sub', 'room', 'cancel', 'extra']) {
         // akcenty (ikony stavů, proužky, body) leží vždy na bloku, závoji nebo skle, nikdy přímo na obloze
         // (korál přímo na ranní obloze má jen 2,9 : 1)
-        for (const name of ['blok hodiny', 'závoj', 'závoj silnější', 'sklo', 'spodní panel']) {
+        for (const name of ['blok hodiny', 'blok hodiny při najetí myší', 'závoj', 'závoj silnější', 'sklo', 'spodní panel']) {
             test(`${mode}: ${acc} (ikona, proužek) na ploše „${name}“ ≥ 3`, () => {
                 const r = ratio(t(acc).c, surfaces[name]);
                 assert.ok(r >= 3, `${r.toFixed(2)} : 1`);
