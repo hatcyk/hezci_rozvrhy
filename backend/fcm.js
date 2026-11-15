@@ -264,14 +264,27 @@ async function getUsersWatchingTimetable(timetable) {
 // lesson turning into cancelled/absent, which is what the "Odpadlé hodiny"
 // switch means to the user - without this mapping those (the most important
 // notifications there are) matched no preference and were silently dropped.
-const PREFERENCE_KEY_BY_CHANGE_TYPE = {
-    type_change: 'lesson_removed',
+// 'lesson_restored' (the cancellation was called off) goes to the same people
+// as the cancellation. 'lesson_replaced' (another subject AND another teacher
+// instead of the original lesson) is at once a cancelled lesson, a substitution
+// and a subject change, so any of those three switches lets it through; the
+// meaning of the stored switches for every other change stays as it was.
+const PREFERENCE_KEYS_BY_CHANGE_TYPE = {
+    type_change: ['lesson_removed'],
+    lesson_restored: ['lesson_removed'],
+    lesson_replaced: ['substitution', 'lesson_removed', 'subject_change'],
 };
 
 const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
 
+/** Switches that let a change type through (any one of them is enough). */
+function preferenceKeysForChange(changeType) {
+    return PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+}
+
+/** The main switch of a change type. */
 function preferenceKeyForChange(changeType) {
-    return PREFERENCE_KEY_BY_CHANGE_TYPE[changeType] || changeType;
+    return preferenceKeysForChange(changeType)[0];
 }
 
 function filterChangesByPreferences(changes, notificationTypes) {
@@ -282,8 +295,7 @@ function filterChangesByPreferences(changes, notificationTypes) {
 
     const userPrefs = notificationTypes.changes;
 
-    return changes.filter(change => {
-        const typeKey = preferenceKeyForChange(change.type);
+    return changes.filter(change => preferenceKeysForChange(change.type).some(typeKey => {
         const isEnabled = userPrefs[typeKey];
 
         // Preference never stored (older user doc): fall back to the important ones.
@@ -291,8 +303,8 @@ function filterChangesByPreferences(changes, notificationTypes) {
             return DEFAULT_ENABLED_CHANGES.includes(typeKey);
         }
 
-        return isEnabled;
-    });
+        return !!isEnabled;
+    }));
 }
 
 /**
@@ -538,6 +550,7 @@ module.exports = {
     buildChangeNotification,
     filterChangesByPreferences,
     preferenceKeyForChange,
+    preferenceKeysForChange,
     sendNotificationToTokens,
     getUsersWatchingTimetable,
     processPendingChanges,
