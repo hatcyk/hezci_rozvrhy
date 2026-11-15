@@ -54,6 +54,11 @@ for (const mode of ['light', 'dark']) {
         'závoj silnější': over(t('veil-strong'), sky3),
         'spodní panel': over(t('sheet'), sky3),
         'čip na závoji': over(t('chip'), over(t('veil'), sky3)),
+        // plovoucí sklo (spodní lišta, hledání, toast) leží nad posouvaným obsahem: nejhorší je bílá
+        // plocha (buňka „volno pro všechny“, vybraný čip) a zlatá (dnešek, štítek „teď“)
+        'plovoucí sklo nad bílou': over(t('glass-float'), white),
+        'plovoucí sklo nad zlatou': over(t('glass-float'), t('now').c),
+        'plovoucí sklo nad oblohou': over(t('glass-float'), sky3),
         'blok hodiny': t('blk').c,
         'plná náhrada': t('solid').c,
         'plná náhrada silnější': t('solid-strong').c,
@@ -83,6 +88,13 @@ for (const mode of ['light', 'dark']) {
     test(`${mode}: text na zlaté ≥ 4,5`, () => {
         const r = ratio(t('now-ink').c, t('now').c);
         assert.ok(r >= 4.5, `${r.toFixed(2)} : 1`);
+    });
+    test(`${mode}: vybraný segment a záložka (bílá plocha, tmavé písmo) ≥ 3 proti sklu, písmo ≥ 4,5`, () => {
+        assert.ok(ratio(t('now-ink').c, white) >= 4.5);
+        for (const name of ['sklo', 'sklo silnější', 'plovoucí sklo nad oblohou', 'plovoucí sklo nad bílou', 'spodní panel']) {
+            const r = ratio(white, surfaces[name]);
+            assert.ok(r >= 3, `${name}: ${r.toFixed(2)} : 1`);
+        }
     });
     test(`${mode}: zlatý fokus proti závoji i bloku ≥ 3`, () => {
         assert.ok(ratio(t('now').c, surfaces['závoj']) >= 3);

@@ -40,7 +40,7 @@
     bottom: calc(18px + env(safe-area-inset-bottom));
     display: grid; grid-template-columns: repeat(4, 1fr); height: var(--tabbar-h); padding: 4px;
     border-radius: calc(var(--tabbar-h) / 2);
-    background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    background: var(--glass-float); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
     border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
   }
   .view-nav a {
@@ -48,7 +48,9 @@
     border-radius: calc(var(--tabbar-h) / 2 - 4px); text-decoration: none;
     font-size: 11px; font-weight: 600; color: var(--tx-2); --is: 22px;
   }
-  .view-nav a[aria-current] { background: var(--chip); color: var(--tx); box-shadow: inset 0 1px 0 rgb(255 255 255 / .18); }
+  /* aktuální záložka: bílá plocha s tmavým písmem jako ostatní vybrané prvky (čip, den v pásu týdne);
+     samotný světlejší čip se od ostatních lišil jen 1,2–1,3 : 1 */
+  .view-nav a[aria-current] { background: var(--tx); color: var(--now-ink); }
   .view-nav a:not([aria-current]):hover { color: var(--tx); }
   .view-nav a, .wk-day, .who, .tt-only, .sr-pick, .side-item { position: relative; }
   .vn-icon { position: relative; display: grid; place-items: center; }
@@ -61,10 +63,11 @@
     right: var(--edge); bottom: calc(18px + env(safe-area-inset-bottom));
     display: grid; place-items: center; width: var(--tabbar-h); height: var(--tabbar-h); border-radius: 50%;
     color: var(--tx); --is: 22px;
-    background: var(--glass); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    background: var(--glass-float); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
     border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--hi), var(--shadow-float);
   }
-  .search-fab:hover { background: var(--glass-strong); }
+  /* najetí myší ztmaví (světlejší tón by nad světlým obsahem snížil kontrast) */
+  .search-fab:hover { background: var(--solid-strong); }
 
   /* ---------- horní lišta (mobil) ---------- */
   .topbar { display: flex; align-items: center; gap: 10px; min-height: 52px; margin-bottom: 4px; }
@@ -256,7 +259,7 @@
       border-radius: 11px; font-size: var(--fs-body); font-weight: 500; color: var(--tx); --is: 18px;
     }
     .view-nav a:not([aria-current]):hover { background: var(--hover-strong); }
-    .view-nav a[aria-current] { font-weight: 600; box-shadow: inset 0 1px 0 rgb(255 255 255 / .14); }
+    .view-nav a[aria-current] { font-weight: 600; }
     .vn-icon { display: contents; }
     .vn-count { position: static; order: 3; margin-left: auto; }
     .vn-long { display: inline; }
@@ -271,10 +274,10 @@
       color: var(--tx); font-size: var(--fs-body); font-weight: 500; text-align: left; --is: 18px;
     }
     .side-item:hover { background: var(--hover-strong); }
-    .side-item[aria-current] { background: var(--chip); font-weight: 600; box-shadow: inset 0 1px 0 rgb(255 255 255 / .14); }
+    .side-item[aria-current] { background: var(--tx); color: var(--now-ink); font-weight: 600; }
     .side-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .side-item small { margin-left: auto; flex: none; font-size: var(--fs-foot); color: var(--tx-2); }
-    .side-item[aria-current] small { color: var(--tx); }
+    .side-item[aria-current] small { color: inherit; }
     .side-empty { padding: 4px 10px; font-size: var(--fs-foot); color: var(--tx-2); line-height: 1.35; }
 
     /* karta „teď“: text na čipu je plně bílý */

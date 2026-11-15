@@ -212,7 +212,7 @@
   dialog .toast-container { position: sticky; left: auto; right: auto; bottom: 0; padding: 8px 12px 12px; }
   .toast {
     pointer-events: auto; width: 100%; max-width: 440px; padding: 8px 4px 8px 16px; border-radius: 24px;
-    color: var(--tx);
+    color: var(--tx); background: var(--glass-float); /* pluje nad obsahem jako spodní lišta */
   }
   .toast-icon { display: grid; place-items: center; flex: none; --is: 20px; }
   .toast-change .toast-icon { color: var(--sub); }

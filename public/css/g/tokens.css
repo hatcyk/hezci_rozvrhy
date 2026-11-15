@@ -26,6 +26,11 @@
     --glass: light-dark(rgb(8 24 60 / .26), rgb(255 255 255 / .07));
     --glass-strong: light-dark(rgb(8 24 60 / .36), rgb(255 255 255 / .10));
     --glass-blur: blur(26px) saturate(170%);
+    /* plovoucí sklo nad posouvaným obsahem (spodní lišta, kulaté hledání, toast): pod ním může ležet
+       i bílá nebo zlatá plocha, proto silný tón. Nad oblohou vypadá stejně jako dřívější --glass
+       (barva naladěná na vykreslené sklo nad --sky-3 se sytostí 170 %), nad bílou má bílý text
+       5,6 : 1 (ráno) a 6,4 : 1 (noc), tlumený 4,8 : 1 a 5,4 : 1 */
+    --glass-float: light-dark(rgb(18 82 172 / .88), rgb(32 53 113 / .80));
     /* spodní panely a dialogy: sklo, ale skoro neprůhledné, aby text nad obsahem zůstal čitelný */
     --sheet: light-dark(rgb(18 52 104 / .86), rgb(18 26 56 / .88));
     --backdrop: rgb(2 8 24 / .45);
@@ -110,15 +115,15 @@
   /* omezená průhlednost: systémem (Chrome/Edge 118+, Samsung 25+) i přepínačem v nastavení (Safari media query nemá) */
   @media (prefers-reduced-transparency: reduce) {
     :root:not([data-transparency="normal"]) {
-      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-blur: none;
+      --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
       --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
     }
   }
   :root[data-transparency="reduced"] {
-    --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-blur: none;
+    --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --glass-blur: none;
     --veil: var(--solid); --veil-strong: var(--solid-strong); --sheet: var(--solid-strong);
   }
   @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    :root { --glass: var(--solid); --glass-strong: var(--solid-strong); --sheet: var(--solid-strong); }
+    :root { --glass: var(--solid); --glass-strong: var(--solid-strong); --glass-float: var(--solid); --sheet: var(--solid-strong); }
   }
 }
