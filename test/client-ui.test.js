@@ -108,11 +108,14 @@ test('setPressed: one active button, aria-pressed mirrors .active', async () => 
 });
 
 test('lesson name + status icon: change/cancellation is not conveyed by colour only', async () => {
-    const { lessonAccessibleName, lessonStatusIcon } = await import('../public/js/utils.js');
+    const { lessonStatusIcon } = await import('../public/js/utils.js');
+    const { lessonSentence } = await import('../public/js/rozvrh-core.js');
     const base = { hour: 3, subject: 'Matematika', teacher: 'Ukázková Jana', room: 'U12', group: null, type: 'normal', changed: false };
-    assert.equal(lessonAccessibleName(base), '3. hodina (9:45-10:30), Matematika, vyučující Ukázková Jana, učebna U12');
-    assert.match(lessonAccessibleName({ ...base, changed: true }), /, změna$/);
-    assert.match(lessonAccessibleName({ ...base, type: 'removed', changed: true }), /, zrušeno$/);
+    const name = (lesson, kind = '') => lessonSentence({ lesson, kind, before: null });
+    assert.equal(name(base), '3. hodina, 9:45–10:30, Matematika, vyučující Ukázková Jana, učebna U12');
+    // The name uses the words of the screen, not a generic „změna“ / „zrušeno“
+    assert.match(name({ ...base, changed: true }, 'room'), /, jiná učebna$/);
+    assert.match(name({ ...base, type: 'removed', changed: true }, 'cancel'), /, odpadá$/);
     assert.equal(lessonStatusIcon(base), '');
     assert.match(lessonStatusIcon({ ...base, changed: true }), /is-changed[^>]*aria-hidden="true"/);
     assert.match(lessonStatusIcon({ ...base, type: 'removed' }), /is-removed/);

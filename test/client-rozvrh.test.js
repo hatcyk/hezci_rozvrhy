@@ -161,3 +161,108 @@ test('hledání: bez diakritiky, seskupené, nejlepší shoda první', async () 
     const a = searchItems(items, 'a');
     assert.deepEqual(a.Room.map(x => x.id), ['RA1', 'RL1'], 'A101 začíná na „a“, LAB1 jen obsahuje');
 });
+
+/* ── opravy po revizi 15. 11. 2026 ──────────────────────────────────────── */
+
+test('skupiny ze staré podoby stránky („1. sk“) neztratí číslo a nejsou třída', async () => {
+    const { groupText, classOf } = await import('../public/js/rozvrh-core.js');
+    assert.equal(groupText('1. sk'), '1. sk');
+    assert.equal(groupText('2. sk'), '2. sk');
+    assert.equal(groupText('2.A 1. sk'), '1. sk');
+    assert.equal(groupText('2.A 1.sk'), '1. sk');
+    assert.equal(groupText('2.A celá'), '');
+    assert.equal(classOf({ group: '1. sk' }), '');
+    assert.equal(classOf({ group: '2.A 1.sk' }), '2.A');
+    assert.equal(classOf({ group: '10.A celá' }), '10.A');
+});
+
+test('dělená hodina, jedné skupině odpadá: „teď“ zná všechny skupiny i odpadlou', async () => {
+    const { nowState, slotGroups } = await import('../public/js/next-lesson.js');
+    const day = [
+        L({ hour: 1, group: '1.sk', type: 'removed', changed: true, changeInfo: { description: 'Zrušeno - Nemoc vyučujícího' } }),
+        L({ hour: 1, group: '2.sk', subject: 'Fyzika', teacher: 'Libor Návrhový', room: 'U11' }),
+        L({ hour: 2 }),
+    ];
+    const st = nowState(day, { now: new Date(2026, 10, 4, 8, 20) });
+    assert.equal(st.kind, 'lesson');
+    assert.equal(st.current.items.length, 1);
+    assert.equal(st.current.all.length, 2, 'i odpadlá skupina');
+    const g = slotGroups(st.current);
+    assert.equal(g.split, true);
+    assert.deepEqual(g.live.map(x => [x.group, x.lesson.subject, x.lesson.room]), [['2. sk', 'Fyzika', 'U11']]);
+    assert.deepEqual(g.off.map(x => [x.group, x.lesson.subject]), [['1. sk', 'Matematika']]);
+    // celá třída: žádné skupiny
+    const whole = slotGroups(st.next);
+    assert.equal(whole.split, false);
+    assert.equal(whole.off.length, 0);
+});
+
+test('celodenní akce a den, kdy vše odpadá, nejsou „po vyučování“', async () => {
+    const { nowState } = await import('../public/js/next-lesson.js');
+    const tomorrow = L({ day: 3, hour: 1 });
+    const trip = [1, 2, 3, 4, 5].map(hour => L({ hour, subject: 'Exkurze', teacher: '', room: null, type: 'absent', changed: true }));
+    const at = (h, m) => new Date(2026, 10, 4, h, m);
+
+    const allDay = nowState([...trip, tomorrow], { now: at(7, 30) });
+    assert.equal(allDay.kind, 'noneToday');
+    assert.equal(allDay.dayOff, 'event');
+    assert.deepEqual(allDay.event, { name: 'Exkurze', from: 1, to: 5 });
+    assert.equal(allDay.next.day, 3);
+
+    const removed = [1, 2, 3].map(hour => L({ hour, type: 'removed', changed: true }));
+    const off = nowState([...removed, tomorrow], { now: at(7, 30) });
+    assert.equal(off.kind, 'noneToday');
+    assert.equal(off.dayOff, 'cancelled');
+    assert.equal(off.event, null);
+
+    const free = nowState([tomorrow], { now: at(7, 30) });
+    assert.equal(free.kind, 'noneToday');
+    assert.equal(free.dayOff, 'free');
+
+    // akce jen v 1.–3. hodině, pak se učí
+    const part = [...trip.slice(0, 3), L({ hour: 4 }), L({ hour: 5 })];
+    const before = nowState(part, { now: at(7, 30) });
+    assert.equal(before.kind, 'before');
+    assert.deepEqual(before.event, { name: 'Exkurze', from: 1, to: 3 });
+    const during = nowState(part, { now: at(8, 20) });
+    assert.equal(during.kind, 'before');
+    assert.deepEqual(during.event, { name: 'Exkurze', from: 1, to: 3 });
+    assert.equal(during.next.hour, 4);
+    const lesson = nowState(part, { now: at(10, 55) });
+    assert.equal(lesson.kind, 'lesson');
+    assert.equal(lesson.event, null);
+});
+
+test('týden dat proti dnešku: tento, minulý, bez datumů', async () => {
+    const { weekOffset, isThisWeek } = await import('../public/js/rozvrh-core.js');
+    const data = [L({ day: 2, date: '2026-11-04' })];
+    assert.equal(weekOffset(data, new Date(2026, 10, 4, 8, 20)), 0);
+    assert.equal(weekOffset(data, new Date(2026, 10, 8, 23, 0)), 0, 'neděle patří k uplynulému týdnu');
+    assert.equal(weekOffset(data, new Date(2026, 10, 9, 8, 20)), -1);
+    assert.equal(weekOffset(data, new Date(2026, 9, 30, 8, 20)), 1);
+    assert.equal(weekOffset([L()], new Date(2026, 10, 9, 8, 20)), null);
+    assert.equal(weekOffset([L({ day: 0, date: '2026-03-30' })], new Date(2026, 2, 27, 12, 0)), 1, 'přes změnu času');
+    assert.equal(isThisWeek(new Date(2026, 10, 2), new Date(2026, 10, 4, 8, 20)), true);
+    assert.equal(isThisWeek(new Date(2026, 10, 2), new Date(2026, 10, 9, 8, 20)), false);
+    assert.equal(isThisWeek(null), false);
+});
+
+test('název hodiny pro čtečku říká totéž co obrazovka', async () => {
+    const { lessonSentence, slotSentence, slotLessons } = await import('../public/js/rozvrh-core.js');
+    const one = (rows) => slotLessons(rows)[0];
+    assert.equal(lessonSentence(one([WED[0]])), '1. hodina, 8:00–8:45, Matematika, vyučující Mgr. Marta Cvičná, učebna A101');
+    assert.equal(lessonSentence(one([WED[2], WED[3]])),
+        '3. hodina, 9:45–10:30, Matematika, vyučující Adam Šablonový, učebna U15, suplování, původně Programování, Mgr. Jana Ukázková');
+    assert.match(lessonSentence(one([L({ hour: 4, room: 'LAB2', changed: true, changeInfo: { description: 'Změna místnosti: A101 → LAB2' } })])), /učebna LAB2, jiná učebna, původně A101$/);
+    assert.match(lessonSentence(one([WED[5]])), /učebna A102, odpadá, nemoc vyučujícího$/);
+    assert.equal(lessonSentence(one([L({ hour: 2, subject: 'Exkurze', teacher: '', room: null, type: 'absent', changed: true })])), '2. hodina, 8:50–9:35, Exkurze, akce');
+    assert.doesNotMatch(lessonSentence(one([WED[5]])), /zrušeno|změna/);
+    assert.match(lessonSentence({ lesson: L({ group: '2.A 1.sk' }), kind: '', before: null }), /Matematika, třída 2\.A, 1\. sk, vyučující/);
+    // dělená hodina: živé skupiny, pak odpadlá
+    const split = slotLessons([
+        L({ hour: 1, group: '1.sk', type: 'removed', changed: true, changeInfo: { description: 'Hodina odpadla' } }),
+        L({ hour: 1, group: '2.sk', subject: 'Fyzika', teacher: 'Libor Návrhový', room: 'U11' }),
+    ]);
+    assert.equal(slotSentence(split),
+        '1. hodina, 8:00–8:45, dělená hodina: Fyzika, 2. sk, vyučující Libor Návrhový, učebna U11; Matematika, 1. sk, vyučující Mgr. Marta Cvičná, učebna A101, odpadá');
+});
