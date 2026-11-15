@@ -6,16 +6,22 @@
  * čistá logika (testovaná v Node) a pravidelné obnovování.
  *
  * Dělené hodiny: když má hodina víc skupin, vrátí se všechny (hrdina ukáže
- * obě učebny vedle sebe), odpadlé skupiny se nepočítají.
+ * obě učebny vedle sebe). Odpadlé skupiny se nepočítají jako výuka, ale
+ * zůstávají v `all`: přehled u nich napíše „1. sk odpadá“, aby student
+ * poznal, že zbylá hodina není jeho.
  */
 
 import { lessonTimes } from './constants.js';
 import { getTodayIndex } from './utils.js';
-import { slotLessons, startMin, endMin, minutesOfDay } from './rozvrh-core.js';
+import { slotLessons, startMin, endMin, minutesOfDay, groupText } from './rozvrh-core.js';
 
 let intervalId = null;
 
-/** Hodiny dne jako [{ hour, start, end, items (bez odpadlých), cancelled }] seřazené. */
+/**
+ * Hodiny dne jako [{ hour, start, end, items (bez odpadlých), all, cancelled,
+ * event }] seřazené. `event` je název akce, když se v hodině neučí a aspoň
+ * jedna položka je akce (type absent).
+ */
 export function dayTimeline(data, day) {
     const byHour = new Map();
     for (const l of data || []) {
@@ -29,9 +35,36 @@ export function dayTimeline(data, day) {
         if (s == null) continue;
         const all = slotLessons(rows);
         const items = all.filter(it => it.kind !== 'cancel' && it.lesson.type !== 'absent' && it.lesson.subject && String(it.lesson.subject).trim());
-        out.push({ hour, start: s, end: endMin(hour), items, all, cancelled: items.length === 0 });
+        const absent = items.length ? null : all.find(it => it.lesson.type === 'absent' && String(it.lesson.subject || '').trim());
+        out.push({ hour, start: s, end: endMin(hour), items, all, cancelled: items.length === 0, event: absent ? String(absent.lesson.subject).trim() : null });
     }
     return out.sort((a, b) => a.start - b.start);
+}
+
+/**
+ * Skupiny jednoho slotu pro přehled.
+ * @param {{ items: Array, all?: Array }} slot - slot z dayTimeline / nowState
+ * @returns {{ split: boolean, live: Array<{lesson, group, kind}>, off: Array<{lesson, group, kind}> }}
+ *   split = hodina je rozdělená mezi víc skupin; live = skupiny, které hodinu
+ *   mají; off = skupiny, kterým odpadá nebo mají akci.
+ */
+export function slotGroups(slot) {
+    const items = (slot && slot.items) || [];
+    const all = (slot && slot.all) || items;
+    const row = (it) => ({ lesson: it.lesson, group: groupText(it.lesson.group), kind: it.kind });
+    const split = new Set(all.map(it => groupText(it.lesson.group)).filter(Boolean)).size > 1;
+    return { split, live: items.map(row), off: all.filter(it => !items.includes(it)).map(row) };
+}
+
+/** První akce mezi sloty a kam až souvisle sahá: { name, from, to } nebo null. */
+function eventBlock(slots) {
+    const first = slots.find(s => s.event);
+    if (!first) return null;
+    let to = first;
+    for (const s of slots) {
+        if (s.start > to.start && s.event === first.event && s.hour === to.hour + 1) to = s;
+    }
+    return { name: first.event, from: first.hour, to: to.hour };
 }
 
 function firstLive(data, day) {
@@ -43,18 +76,23 @@ function firstLive(data, day) {
  * @param {Array} data - lekce aktuálního týdne
  * @param {{ now?: Date, nextWeek?: Array|null }} [opts] - nextWeek: lekce příštího týdne (víkend, pátek odpoledne)
  * @returns {{
- *   kind: 'lesson'|'break'|'before'|'after'|'weekend'|'empty',
+ *   kind: 'lesson'|'break'|'before'|'after'|'noneToday'|'weekend'|'empty',
  *   today: number,
- *   current: null | { hour, start, end, items },
+ *   current: null | { hour, start, end, items, all },
  *   cancelledNow: null | { hour, all },
- *   next: null | { hour, start, end, items, day, dayOffset, nextWeek: boolean },
- *   lastToday: boolean
+ *   next: null | { hour, start, end, items, all, day, dayOffset, nextWeek: boolean },
+ *   lastToday: boolean,
+ *   event: null | { name, from, to },
+ *   dayOff: null | 'event'|'cancelled'|'free'
  * }}
+ * `noneToday`: dnes se neučí vůbec (`dayOff`: celodenní akce, všechno odpadá,
+ * nebo den bez hodin); `after` je jen den, kdy výuka byla a skončila.
+ * `event`: akce, která běží nebo začne dřív než další hodina (hodiny from–to).
  */
 export function nowState(data, { now = new Date(), nextWeek = null } = {}) {
     const today = getTodayIndex(now);
     const m = minutesOfDay(now);
-    const res = { kind: 'empty', today, current: null, cancelledNow: null, next: null, lastToday: false };
+    const res = { kind: 'empty', today, current: null, cancelledNow: null, next: null, lastToday: false, event: null, dayOff: null };
 
     const findNextFrom = (fromDay) => {
         for (let d = fromDay; d <= 4; d++) {
@@ -79,7 +117,7 @@ export function nowState(data, { now = new Date(), nextWeek = null } = {}) {
     const tl = dayTimeline(data, today);
     const live = tl.filter(s => !s.cancelled);
     const cur = tl.find(s => m >= s.start && m < s.end);
-    if (cur && !cur.cancelled) res.current = { hour: cur.hour, start: cur.start, end: cur.end, items: cur.items };
+    if (cur && !cur.cancelled) res.current = { hour: cur.hour, start: cur.start, end: cur.end, items: cur.items, all: cur.all };
     else if (cur) res.cancelledNow = { hour: cur.hour, all: cur.all };
 
     const laterToday = live.find(s => s.start > m);
@@ -90,13 +128,20 @@ export function nowState(data, { now = new Date(), nextWeek = null } = {}) {
         res.kind = 'lesson';
         res.lastToday = !laterToday;
     } else if (!live.length) {
-        res.kind = res.next ? 'after' : 'empty';
+        // Dnes se neučí: akce, všechno odpadá, nebo den bez hodin – ne „výuka skončila“
+        res.event = eventBlock(tl);
+        res.dayOff = res.event ? 'event' : (tl.length ? 'cancelled' : 'free');
+        res.kind = tl.length || res.next ? 'noneToday' : 'empty';
     } else if (m < live[0].start) {
         res.kind = 'before';
     } else if (laterToday) {
         res.kind = 'break';
     } else {
         res.kind = res.next ? 'after' : 'empty';
+    }
+    // Akce místo výuky, která běží nebo začne dřív než další hodina dne
+    if ((res.kind === 'before' || res.kind === 'break') && laterToday) {
+        res.event = eventBlock(tl.filter(s => s.cancelled && s.end > m && s.start < laterToday.start));
     }
     return res;
 }

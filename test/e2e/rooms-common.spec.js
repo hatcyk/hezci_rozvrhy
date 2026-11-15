@@ -31,7 +31,7 @@ test.describe('Volné učebny', () => {
     await expect(page.locator(`#roomsResult .room-link[data-room="${id}"]`)).toHaveCount(0);
   });
 
-  test('výběr dne a hodiny se propíše do adresy, proklik otevře rozvrh učebny a Zpět vrátí pohled', async ({ page, app }) => {
+  test('výběr dne a hodiny se propíše do adresy, proklik otevře rozvrh učebny a Zpět vrátí pohled', async ({ page, app, isMobile }) => {
     await app.open('/?view=rooms');
     await expect(slotTitles(page).first()).toBeVisible();
     await page.selectOption('#roomsDay', '2026-11-05');
@@ -47,6 +47,15 @@ test.describe('Volné učebny', () => {
     // Návrh G nemá typové záložky (typy řeší hledání): otevřený rozvrh je rozvrh učebny
     expect(await page.evaluate(() => localStorage.getItem('selectedType'))).toBe('Room');
 
+    if (isMobile) {
+      // Mobil: proklik otevřel Den učebny se záznamem v historii, systémové Zpět
+      // proto nejdřív vrátí na Přehled (DOKUMENTACE.md, Rám) a teprve pak do pohledu
+      await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
+      expect(await page.evaluate(() => history.state && history.state.screen)).toBe('day');
+      await page.goBack();
+      await expect(page.locator('html')).toHaveAttribute('data-screen', 'overview');
+      await expect(page.locator('html')).toHaveAttribute('data-view', 'timetable');
+    }
     await page.goBack();
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.view)).toBe('rooms');
   });

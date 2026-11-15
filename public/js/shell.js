@@ -106,13 +106,22 @@ export async function openDay(day, { schedule = 'actual', from = null } = {}) {
     }
     const { createDaySelector } = await import('./timetable.js');
     const { applyLayout } = await import('./layout-manager.js');
+    // Rychlé Zpět během načítání: záznam Dne už v historii není, Den se neotevře
+    // (jinak by zůstal zobrazený bez záznamu a další Zpět by odešlo z aplikace)
+    const stillWanted = () => !!history.state && history.state.screen === 'day';
+    if (!stillWanted()) return;
     await transition(async () => {
+        if (!stillWanted()) return;
         setScreen('day');
         if (!needsLoad) {
             createDaySelector();
             await applyLayout();
         }
     }, from);
+    if (!stillWanted()) {
+        if (state.screen === 'day') setScreen('overview');
+        return;
+    }
     if (needsLoad) await loadSchedule(schedule);
     // Fokus na nadpis dne – jen když ho uživatel mezitím nepřesunul jinam
     const title = $('ttTitle');
@@ -121,6 +130,19 @@ export async function openDay(day, { schedule = 'actual', from = null } = {}) {
         title.focus({ preventScroll: true });
     }
     window.scrollTo({ top: 0, behavior: 'auto' });
+}
+
+/**
+ * Den otevřený odkazem (notifikace, „Rozvrh“ u třídy ve Změnách, učebna ve
+ * Volných učebnách): na mobilu dostane vlastní záznam v historii nad
+ * přehledem, takže systémové Zpět vrátí na Přehled stejně jako u dne
+ * otevřeného z přehledu.
+ */
+export function showDayScreen() {
+    if (isMobile() && !(history.state && history.state.screen === 'day')) {
+        history.pushState({ view: 'timetable', screen: 'day' }, '', location.pathname + location.search);
+    }
+    setScreen('day');
 }
 
 /** Zpět na přehled (tlačítko ‹, opětovné klepnutí na záložku Rozvrh). */
@@ -219,9 +241,12 @@ async function step(dir) {
 async function goToday() {
     const t = getTodayIndex();
     const { selectDay } = await import('./timetable.js');
-    if (t >= 0) updateState('selectedDayIndex', t);
-    const loaded = await loadSchedule('actual');
-    if (!loaded && t >= 0) await selectDay(t);
+    // O víkendu je „dnes“ nejbližší školní den: pondělí příštího týdne, stejný
+    // týden, jaký aplikace o víkendu vybírá sama a jaký ukazuje modul Týden
+    const day = t >= 0 ? t : 0;
+    updateState('selectedDayIndex', day);
+    const loaded = await loadSchedule(t >= 0 ? 'actual' : 'next');
+    if (!loaded) await selectDay(day);
     // Na časové ose rovnou k čáře „teď“
     const line = document.querySelector('.nowline:not([hidden])');
     if (line) line.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });

@@ -19,6 +19,7 @@ import { esc, abbreviateSubject, addLessonDescription, getLessonTimeClass, getTo
 import {
     icon, KINDS, statusHtml, daySlots, slotLessons, timeRange, axisHours, startMin, endMin, fmtMin, hourRange,
     minutesOfDay, DAY_NAMES, DAY_SHORT, addDays, czDate, groupText, teacherShort, classOf, dayChangeEntries,
+    lessonSentence, isThisWeek,
 } from './rozvrh-core.js';
 import { removalReason, czPlural } from './changes-core.js';
 
@@ -28,6 +29,7 @@ let navigationController = null;
 let daySwipeController = null;
 /** Lekce vykreslených tlačítek (data-ref = index). */
 let lessonRefs = [];
+let itemRefs = []; // položky slotLessons ke stejným indexům (název pro čtečku)
 
 /**
  * Cleanup all event listeners from previous layouts
@@ -61,8 +63,11 @@ function mondayOfShown() {
     return monday;
 }
 
-const isToday = (day) => state.selectedScheduleType === 'actual' && day === getTodayIndex();
-const tracksTime = () => state.selectedScheduleType === 'actual';
+// „Dnes“, čára „teď“ a zašednutí proběhlých hodin jen u týdne, do kterého
+// dnešek opravdu patří: rozhoduje datum dat, ne přepínač Aktuální / Příští
+// (dokument Actual může být po výpadku sběru ještě z minulého týdne).
+const tracksTime = () => isThisWeek(mondayOfShown());
+const isToday = (day) => day === getTodayIndex() && tracksTime();
 
 /* ── obsah bloku hodiny ────────────────────────────────────────────────── */
 
@@ -113,6 +118,7 @@ function lessonAttrs(item, day, base) {
     }
     if (l.changed || l.type === 'removed' || l.type === 'absent') attrs += ' data-changed="true"';
     const ref = lessonRefs.push(l) - 1;
+    itemRefs[ref] = item;
     attrs += ` data-ref="${ref}"`;
     return { cls: cls.join(' '), attrs };
 }
@@ -178,7 +184,7 @@ function bindLessons(root) {
     root.querySelectorAll('.lesson[data-ref]').forEach((btn) => {
         const lesson = lessonRefs[Number(btn.dataset.ref)];
         if (!lesson) return;
-        addLessonDescription(btn, lesson);
+        addLessonDescription(btn, lessonSentence(itemRefs[Number(btn.dataset.ref)] || { lesson, kind: '', before: null }));
     });
     root.addEventListener('click', (e) => {
         const btn = e.target.closest && e.target.closest('.lesson[data-ref]');
@@ -197,6 +203,7 @@ export function renderDayLayout() {
     const root = target();
     if (!root) return;
     lessonRefs = [];
+    itemRefs = [];
 
     const day = state.selectedDayIndex ?? 0;
     const slots = daySlots(state.currentTimetableData, day);
@@ -242,6 +249,7 @@ export function renderWeekLayout() {
     const root = target();
     if (!root) return;
     lessonRefs = [];
+    itemRefs = [];
 
     const data = state.currentTimetableData || [];
     const perDay = [0, 1, 2, 3, 4].map(d => daySlots(data, d));
@@ -345,6 +353,7 @@ export function renderCompactListLayout() {
     const root = target();
     if (!root) return;
     lessonRefs = [];
+    itemRefs = [];
 
     const day = state.selectedDayIndex ?? 0;
     const slots = daySlots(state.currentTimetableData, day);
@@ -399,6 +408,7 @@ export function renderCardLayout() {
     const root = target();
     if (!root) return;
     lessonRefs = [];
+    itemRefs = [];
 
     const day = state.selectedDayIndex ?? 0;
     const slots = daySlots(state.currentTimetableData, day);

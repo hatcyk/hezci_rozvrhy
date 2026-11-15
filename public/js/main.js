@@ -311,9 +311,11 @@ async function init() {
         if (deepLink) {
             console.log('🔗 Opening from notification deep link:', deepLink);
             await showView('timetable', {}, { history: 'none', focus: false });
-            await applyDeepLink(deepLink);
-            // Clean the URL so a refresh doesn't re-trigger the deep link.
+            // Clean the URL so a refresh doesn't re-trigger the deep link. Before
+            // the link is applied: on phones it adds the history entry of the
+            // day, which must keep its state (Back returns to the overview).
             history.replaceState(null, '', location.pathname);
+            await applyDeepLink(deepLink);
             return;
         }
 

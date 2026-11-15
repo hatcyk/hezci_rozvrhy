@@ -103,6 +103,11 @@ export async function applyDeepLink(link) {
     const { populateValueSelect, loadTimetable, selectDay } = await import('./timetable.js');
     const { setDropdownValue } = await import('./dropdown.js');
 
+    // A timetable link opened from another view (toast of a foreground
+    // notification, message from the service worker) shows the timetable view
+    const { getCurrentView, showView } = await import('./view-router.js');
+    if (getCurrentView() && getCurrentView() !== 'timetable') await showView('timetable', {}, { focus: false });
+
     // Entity type (Class/Teacher/Room)
     updateState('selectedType', link.type);
     setActiveButton(dom.typeButtons, 'type', link.type);
@@ -129,8 +134,8 @@ export async function applyDeepLink(link) {
 
     // Phones: a link to a day (or to a change) opens that day, not the overview
     if (link.day !== null && link.day !== undefined || link.highlight) {
-        const { setScreen } = await import('./shell.js');
-        setScreen('day');
+        const { showDayScreen } = await import('./shell.js');
+        showDayScreen();
     }
 
     if (link.highlight) await pulseChangedLessons();

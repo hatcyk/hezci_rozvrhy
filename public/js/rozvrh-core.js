@@ -10,8 +10,8 @@
  */
 
 import { lessonTimes } from './constants.js';
-import { esc, standardizeGroupName, abbreviateTeacherName, parseGroupName } from './utils.js';
-import { mergeChangeItems, czPlural, originalFromDescription, classifyPair } from './changes-core.js';
+import { esc, standardizeGroupName, abbreviateTeacherName } from './utils.js';
+import { mergeChangeItems, czPlural, originalFromDescription, classifyPair, removalReason } from './changes-core.js';
 
 /* ── ikony ze spritu ────────────────────────────────────────────────────── */
 
@@ -102,11 +102,22 @@ const groupNum = (l) => {
 };
 const groupKeyOf = (l) => String(l.group || '').toLowerCase().replace(/\s+/g, '');
 
+/**
+ * "2.A 1.sk" → { classId: "2.A", groupName: "1.sk" }. Třída se oddělí jen
+ * tehdy, když první slovo jako třída vypadá (stejně jako normalizeGroup na
+ * serveru): skupina ze staré podoby stránky ("1. sk") zůstane celá.
+ */
+function splitGroup(group) {
+    const text = String(group || '').trim();
+    const m = text.match(/^(\S+)\s+(.+)$/);
+    if (m && /^\d+\.[A-Za-zÁ-Ž]+$/.test(m[1]) && !/^\d+\.sk$/i.test(m[1])) return { classId: m[1], groupName: m[2] };
+    return { classId: '', groupName: text };
+}
+
 /** "1.sk" → "1. sk", "2.A celá" → "" (celá třída), jinak původní text. */
 export function groupText(group) {
     if (!group) return '';
-    const parsed = parseGroupName(group);
-    const raw = parsed ? parsed.groupName : group;
+    const raw = splitGroup(group).groupName;
     const std = standardizeGroupName(raw);
     if (!std) return '';
     return std.replace(/^(\d+)\.sk$/i, '$1. sk');
@@ -224,6 +235,30 @@ export function weekMonday(data, fallbackMonday) {
     return fallbackMonday || null;
 }
 
+/** Pondělí (0:00) týdne, do kterého patří `now` (víkend k uplynulému týdnu). */
+export function mondayOf(now = new Date()) {
+    const d = new Date(now);
+    const dow = d.getDay();
+    d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+/**
+ * O kolik týdnů se data liší od týdne s `now`: 0 = tento týden, -1 = minulý,
+ * 1 = příští; null, když lekce datum nemají (stálý rozvrh, stará data).
+ */
+export function weekOffset(data, now = new Date()) {
+    const monday = weekMonday(data, null);
+    if (!monday) return null;
+    return Math.round((monday - mondayOf(now)) / (7 * 24 * 60 * 60 * 1000));
+}
+
+/** Je `monday` pondělí týdne, do kterého patří `now`? */
+export function isThisWeek(monday, now = new Date()) {
+    return !!monday && Math.round((monday - mondayOf(now)) / (24 * 60 * 60 * 1000)) === 0;
+}
+
 /* ── texty ──────────────────────────────────────────────────────────────── */
 
 /** "a" před poslední položkou: ["a", "b", "c"] → "a, b a c" */
@@ -270,8 +305,73 @@ export const teacherShort = (name, map) => (name ? abbreviateTeacherName(name, m
 
 /** Třída z pole group u rozvrhu vyučujícího / učebny ("2.A 1.sk" → "2.A"). */
 export function classOf(lesson) {
-    const p = parseGroupName(lesson && lesson.group);
-    return p ? p.classId : '';
+    return splitGroup(lesson && lesson.group).classId;
+}
+
+/* ── název hodiny pro čtečku ────────────────────────────────────────────── */
+
+/** Co se změnilo, slovy jako na obrazovce: „původně …“, důvod odpadnutí. */
+function changeNoteText(item) {
+    const l = item.lesson;
+    if (item.kind === 'sub' && item.before) {
+        const b = item.before;
+        const subject = (b.subject || '') === (l.subject || '') ? '' : b.subject;
+        const rest = [subject, b.teacher].filter(Boolean).join(', ');
+        return rest ? `původně ${rest}` : '';
+    }
+    if (item.kind === 'cancel') {
+        const reason = removalReason(descOf(l));
+        return reason ? reason.charAt(0).toLowerCase() + reason.slice(1) : '';
+    }
+    if (item.kind === 'room') {
+        const m = /:\s*([^→]+?)\s*→\s*(.+)$/.exec(descOf(l));
+        if (m && m[1].trim() !== m[2].trim()) return `původně ${m[1].trim()}`;
+    }
+    return '';
+}
+
+/** Části věty o jedné hodině bez pořadí a času. */
+function sentenceParts(item) {
+    const l = item.lesson;
+    const parts = [l.subject || 'Neznámý předmět'];
+    const cls = classOf(l);
+    if (cls) parts.push(`třída ${cls}`);
+    const group = groupText(l.group);
+    if (group) parts.push(group);
+    if (l.teacher) parts.push(`vyučující ${l.teacher}`);
+    if (l.room) parts.push(`učebna ${l.room}`);
+    const k = KINDS[item.kind];
+    if (k) parts.push(k.word);
+    const note = changeNoteText(item);
+    if (note) parts.push(note);
+    return parts;
+}
+
+const hourLead = (hour) => [`${hour}. hodina`, hourRange(hour)].filter(Boolean);
+
+/**
+ * Celý název hodiny pro čtečku: „3. hodina, 9:45–10:30, Matematika,
+ * vyučující …, učebna U15, suplování, původně Programování, …“. Stav říká
+ * stejným slovem jako obrazovka (KINDS), ne obecným „změna“.
+ * @param {{ lesson: Object, kind: string, before: Object|null }} item - položka slotLessons
+ */
+export function lessonSentence(item) {
+    if (!item || !item.lesson) return '';
+    return [...hourLead(item.lesson.hour), ...sentenceParts(item)].join(', ');
+}
+
+/**
+ * Název celého slotu (pás hodin v přehledu). U dělené hodiny nejdřív skupiny,
+ * které hodinu mají, potom ty, kterým odpadá.
+ * @param {Array} items - slotLessons jednoho slotu
+ */
+export function slotSentence(items) {
+    const list = (items || []).filter(it => it && it.lesson);
+    if (!list.length) return '';
+    if (list.length === 1) return lessonSentence(list[0]);
+    const off = (it) => it.kind === 'cancel' || it.lesson.type === 'absent';
+    const ordered = [...list.filter(it => !off(it)), ...list.filter(off)];
+    return `${hourLead(list[0].lesson.hour).join(', ')}, dělená hodina: ${ordered.map(it => sentenceParts(it).join(', ')).join('; ')}`;
 }
 
 export { isCancelled };
