@@ -7,6 +7,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+// The client logs to stdout ("✅ Authenticated with Firebase"), which the test
+// runner also uses for its own binary messages; a log line can break that
+// stream ("Unable to deserialize cloned data"). Same guard as test/auth.test.js.
+console.log = () => {};
+
 const store = new Map();
 globalThis.localStorage = {
     getItem: (k) => (store.has(k) ? store.get(k) : null),
@@ -171,6 +176,41 @@ test('restored session for the stored anon ID: waits for it and makes no /api/au
         assert.equal(await fc.authenticateWithFirebase(), true);
         assert.equal(listeners, 1, 'waited for Firebase to restore the session');
         assert.equal(calls.length, 0);
+    } finally {
+        globalThis.firebase = saved;
+    }
+});
+
+test('start of a 1.x user: restored legacy session, no force → ID migrated with its ID token', async () => {
+    const saved = globalThis.firebase;
+    const LEGACY = 'anonymous-1731111111111';
+    const MIGRATED = 'anon-33333333-4444-4555-8666-777777777777';
+    localStorage.setItem('userId', LEGACY);
+    let user = null;
+    globalThis.firebase = {
+        ...saved,
+        auth: () => ({
+            get currentUser() { return user; },
+            // The session version 1.x left in the browser comes back asynchronously.
+            onAuthStateChanged(cb) {
+                setTimeout(() => { user = { uid: LEGACY, getIdToken: async () => `id-${LEGACY}` }; cb(user); }, 10);
+                return () => {};
+            },
+            async signInWithCustomToken(token) { user = { uid: token.replace(/^custom-/, ''), getIdToken: async () => 'x' }; },
+        }),
+    };
+    try {
+        const fc = await import('../public/js/firebase-client.js?legacy-start');
+        routes = { '/api/auth': (c) => [200, { token: `custom-${MIGRATED}`, userId: MIGRATED, migratedFrom: c.body.userId }] };
+        calls.length = 0;
+        // Exactly what public/js/main.js does at boot: no `force`.
+        assert.equal(await fc.authenticateWithFirebase(), true);
+        assert.equal(calls.length, 1, 'a restored LEGACY session must not be taken for a finished sign-in');
+        assert.equal(calls[0].url, '/api/auth');
+        assert.equal(calls[0].body.userId, LEGACY);
+        assert.equal(calls[0].auth, `Bearer id-${LEGACY}`);
+        assert.equal(localStorage.getItem('userId'), MIGRATED);
+        assert.equal(user.uid, MIGRATED);
     } finally {
         globalThis.firebase = saved;
     }
