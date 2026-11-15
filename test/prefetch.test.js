@@ -182,7 +182,7 @@ function defaultPages() {
  * Install the Bakaláři fake on axios for one test.
  * @returns {{ calls: Array, maxInFlight: () => Number }}
  */
-function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = DEFINITIONS_PAGE, failures = {} } = {}) {
+function fakeBakalari(t, { pages = defaultPages(), login = 'ok', relogin = login, definitions = DEFINITIONS_PAGE, failures = {} } = {}) {
     const calls = [];
     let logins = 0;
     let inFlight = 0;
@@ -210,7 +210,8 @@ function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = D
             throw failure.status ? httpError(failure.status) : netError(failure.code);
         }
         if (path === '/login') {
-            if (login === 'network') throw netError('ECONNRESET');
+            // `relogin`: how the server treats a login after the first successful one
+            if ((logins > 0 ? relogin : login) === 'network') throw netError('ECONNRESET');
             return { status: 200, headers: { 'set-cookie': ['pre=1; path=/'] }, data: LOGIN_FORM };
         }
         if (path === '/Timetable/Public/Actual/Class/ZL') return { status: 200, headers: {}, data: definitions };
@@ -222,10 +223,11 @@ function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = D
     t.mock.method(axios, 'post', (url) => respond(() => {
         calls.push({ method: 'POST', url });
         logins++;
-        if (login === 'ok') return { status: 302, headers: { location: '/dashboard', 'set-cookie': ['BakaAuth=c2Vzc2lvbg==; path=/; HttpOnly'] }, data: '' };
-        if (login === 'wrong_password') return { status: 200, headers: {}, data: `<p>Neplatné přihlašovací údaje</p>${LOGIN_FORM}` };
-        if (login === 'redirect_login') return { status: 302, headers: { location: '/login?error=1' }, data: '' };
-        if (login === 'no_cookie') return { status: 302, headers: { location: '/dashboard' }, data: '' };
+        const mode = logins > 1 ? relogin : login;
+        if (mode === 'ok') return { status: 302, headers: { location: '/dashboard', 'set-cookie': ['BakaAuth=c2Vzc2lvbg==; path=/; HttpOnly'] }, data: '' };
+        if (mode === 'wrong_password') return { status: 200, headers: {}, data: `<p>Neplatné přihlašovací údaje</p>${LOGIN_FORM}` };
+        if (mode === 'redirect_login') return { status: 302, headers: { location: '/login?error=1' }, data: '' };
+        if (mode === 'no_cookie') return { status: 302, headers: { location: '/dashboard' }, data: '' };
         throw new Error('unexpected');
     }));
     return { calls, maxInFlight: () => maxInFlight };
@@ -716,6 +718,60 @@ test('přihlašovací stránka místo rozvrhů i po novém přihlášení → ch
     assert.match(result.error, /login page/);
     assert.equal(bak.calls.filter(c => c.method === 'POST').length, 2, 'one re-login per run, not one per page');
     assert.equal(db.store.get('timetables/Room_R1_Actual').weekStart, W45, 'snapshot kept');
+});
+
+for (const [relogin, why, expected] of [
+    ['wrong_password', 'Bakaláři ho odmítnou', { posts: 2, loginPages: 2, error: /login rejected/ }],
+    ['network', '/login neodpovídá', { posts: 1, loginPages: 2, error: /ECONNRESET/ }],
+]) {
+    test(`relace vyprší a nové přihlášení selže (${why}) → jediný pokus, zbytek běhu se už nepřihlašuje ani nestahuje`, async (t) => {
+        quiet(t);
+        const FORM_PAGES = ['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1', 'Actual/Room/R2', 'Next/Room/R2'];
+        const pages = defaultPages();
+        for (const key of FORM_PAGES) pages[key] = LOGIN_FORM;
+        const bak = fakeBakalari(t, { pages, relogin });
+        const db = fakeFirestore(initialStore());
+        const result = await run(db);
+
+        // 1 login at the start + exactly one attempt to log in again
+        // (used to be 7× POST /login, or 19× GET /login when the server did not answer)
+        assert.equal(bak.calls.filter(c => c.method === 'POST').length, expected.posts);
+        assert.equal(bak.calls.filter(c => c.method === 'GET' && c.url.endsWith('/login')).length, expected.loginPages);
+        // without a session the remaining pages are not requested at all
+        const formRequests = bak.calls.filter(c => FORM_PAGES.some(key => c.url.endsWith(`/Timetable/Public/${key}`))).length;
+        assert.ok(formRequests >= 1 && formRequests <= CONCURRENT_REQUESTS, `${formRequests} requests for pages behind the lost session`);
+
+        assert.equal(result.status, 'partial', 'the class pages did download');
+        assert.equal(result.success, false);
+        assert.equal(result.errorCount, 6);
+        assert.equal(result.successCount, 2);
+        assert.match(result.error, /session lost/);
+        assert.match(result.error, expected.error);
+        assert.equal(changeDocs(db).length, 1, 'what was downloaded before is processed as usual');
+
+        // the lost session is not carried over: the next run (server healthy again) is a normal one
+        t.mock.restoreAll();
+        quiet(t);
+        fakeBakalari(t);
+        const next = await run(db);
+        assert.equal(next.status, 'ok');
+        assert.equal(next.errorCount, 0);
+    });
+}
+
+test('relace vyprší hned po přihlášení a nové přihlášení selže → login_failed (nic se nestáhlo), síťová chyba → network', async (t) => {
+    for (const [relogin, status] of [['wrong_password', 'login_failed'], ['network', 'network']]) {
+        t.mock.restoreAll();
+        quiet(t);
+        const pages = Object.fromEntries(Object.keys(defaultPages()).map(key => [key, LOGIN_FORM]));
+        const bak = fakeBakalari(t, { pages, relogin });
+        const db = fakeFirestore(initialStore());
+        const result = await run(db);
+        assert.equal(result.status, status);
+        assert.ok(bak.calls.filter(c => c.method === 'POST').length <= 2, 'one login + at most one re-login');
+        assert.equal(bak.calls.filter(c => c.method === 'GET' && c.url.endsWith('/login')).length, 2);
+        assert.deepEqual(db.writes, []);
+    }
 });
 
 // ─── dokument změn: nejvýš jednou, atomicky se snímkem ──────────────────────
