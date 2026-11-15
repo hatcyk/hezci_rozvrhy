@@ -205,7 +205,8 @@
 
   /* ---------- toast ---------- */
   .toast-container {
-    position: fixed; z-index: var(--z-toast); left: 16px; right: 16px;
+    position: fixed; z-index: var(--z-toast);
+    left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
     bottom: calc(var(--tabbar-h) + 30px + env(safe-area-inset-bottom));
     display: grid; justify-items: center; gap: 8px; pointer-events: none;
   }
@@ -224,7 +225,7 @@
   .toast-close { display: grid; place-items: center; flex: none; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--tx-2); --is: 18px; }
   .toast-close:hover { color: var(--tx); background: var(--chip); }
   @media (min-width: 1080px) {
-    .toast-container { left: auto; right: 24px; bottom: calc(24px + env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 48px)); justify-items: end; }
+    .toast-container { left: auto; right: max(24px, env(safe-area-inset-right)); bottom: calc(24px + env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 48px)); justify-items: end; }
   }
 }
 
