@@ -41,6 +41,43 @@ test('formátování: minuty, trvání, data v pražském čase, odkaz jen na Gi
     assert.equal(f.formatCounts({ sent: 4, users: 3, nested: { x: 1 } }), 'sent 4, users 3');
 });
 
+test('každý stav běhu a každý typ změny má český popisek (žádné „partial“ ani „lesson_replaced“ v tabulce)', async () => {
+    const f = await load('format.js');
+    const { RUN_STATUSES } = require('../backend/cron');
+    const { isDescribableChange } = require('../backend/change-detector');
+    const czech = (label, key) => {
+        assert.equal(typeof label, 'string', `${key}: no label`);
+        assert.ok(label.length > 2 && !/_/.test(label) && label !== key, `${key}: "${label}"`);
+    };
+    for (const status of RUN_STATUSES) czech(f.STATUS_LABELS[status], status);
+    assert.equal(f.STATUS_LABELS.partial, 'částečný sběr');
+
+    // every type the sender can put into words (= every type the prefetch writes), plus the admin API's own 'unknown'
+    const CHANGE_TYPES = ['substitution', 'room_change', 'lesson_removed', 'lesson_added', 'subject_change', 'type_change', 'lesson_replaced', 'lesson_restored'];
+    for (const type of CHANGE_TYPES) {
+        assert.equal(isDescribableChange({ type, day: 0, hour: 1, lesson: { subject: 'Fyzika' } }), true, type);
+        czech(f.CHANGE_TYPE_LABELS[type], type);
+    }
+    czech(f.CHANGE_TYPE_LABELS.unknown, 'unknown');
+    assert.equal(f.CHANGE_TYPE_LABELS.lesson_replaced, 'jiná hodina');
+    assert.equal(f.CHANGE_TYPE_LABELS.lesson_restored, 'koná se');
+    assert.equal(new Set(Object.values(f.CHANGE_TYPE_LABELS)).size, Object.keys(f.CHANGE_TYPE_LABELS).length, 'labels tell the types apart');
+});
+
+test('odznak stavu běhu: partial je varování, ne chyba; vždy symbol i text', async () => {
+    const { statusBadgeState } = await load('format.js');
+    assert.deepEqual(statusBadgeState('ok'), { level: 'ok', text: '✓ v pořádku' });
+    assert.deepEqual(statusBadgeState('partial'), { level: 'warn', text: '▲ částečný sběr' });
+    assert.deepEqual(statusBadgeState('network'), { level: 'bad', text: '✗ chyba sítě' });
+    assert.deepEqual(statusBadgeState('login_failed'), { level: 'bad', text: '✗ přihlášení selhalo' });
+    assert.deepEqual(statusBadgeState('something_new'), { level: 'bad', text: '✗ something_new' });
+    assert.deepEqual(statusBadgeState(undefined), { level: 'bad', text: '✗ ?' });
+    // admin.css has a class for every level, and admin.js uses this function
+    const css = fs.readFileSync(path.join(PUBLIC, 'admin', 'admin.css'), 'utf8');
+    for (const level of ['ok', 'warn', 'bad']) assert.match(css, new RegExp(`\\.badge-${level}\\b`));
+    assert.match(adminJs, /statusBadgeState\(status\)/);
+});
+
 test('chartModel: bod na každý rozestup, osa omezená, dlouhé mezery nahoře', async () => {
     const { chartModel } = await load('chart.js');
     const t = (min) => new Date(Date.parse('2026-11-04T09:00:00Z') - min * 60000).toISOString();
@@ -58,6 +95,11 @@ test('chartModel: bod na každý rozestup, osa omezená, dlouhé mezery nahoře'
     assert.equal(m.xTicks.length, 7);
     assert.ok(m.xTicks.every(x => x.x > m.pad.left));
     assert.match(m.points[0].title, /rozestup 15 min/);
+    // the tooltip names the status in Czech, not by its key
+    assert.match(m.points.at(-1).title, /, stav chyba sítě$/);
+    const partial = chartModel([{ startedAt: t(30), status: 'ok' }, { startedAt: t(15), status: 'partial' }], { since: t(100), now: t(0) });
+    assert.match(partial.points.at(-1).title, /, stav částečný sběr$/);
+    assert.doesNotMatch(m.points[0].title, /stav/);
     assert.deepEqual(chartModel([], { since: t(100), now: t(0) }).points, []);
 });
 

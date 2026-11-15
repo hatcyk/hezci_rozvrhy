@@ -4,7 +4,7 @@
  * chartModel() is pure (tested in Node); renderChart() draws it.
  */
 
-import { formatDateTime, formatDay, formatMinutes, TRIGGER_LABELS } from './format.js';
+import { formatDateTime, formatDay, formatMinutes, TRIGGER_LABELS, STATUS_LABELS } from './format.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -51,7 +51,7 @@ export function chartModel(runs, { since, now, width = 720, height = 260 }) {
             capped: p.gap > yMax,
             kind: p.run.status && p.run.status !== 'ok' ? 'failed' : (p.run.trigger === 'schedule' ? 'schedule' : 'other'),
             title: `${formatDateTime(p.run.startedAt)} – rozestup ${formatMinutes(p.gap)}, ${TRIGGER_LABELS[p.run.trigger] || p.run.trigger || '?'}` +
-                (p.run.status && p.run.status !== 'ok' ? `, stav ${p.run.status}` : ''),
+                (p.run.status && p.run.status !== 'ok' ? `, stav ${STATUS_LABELS[p.run.status] || p.run.status}` : ''),
         })),
         refLines: [15, 60].filter(v => v <= yMax).map(v => ({ y: sy(v), label: `${v} min` })),
     };
