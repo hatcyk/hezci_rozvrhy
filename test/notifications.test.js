@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { filterChangesByPreferences, preferenceKeyForChange, preferenceKeysForChange } = require('../backend/fcm');
-const { createChangeSummary, createDetailedChangeSummary } = require('../backend/change-detector');
+const { createChangeSummary, createDetailedChangeSummary, isDescribableChange } = require('../backend/change-detector');
 
 const change = (type, extra = {}) => ({
     type,
@@ -42,8 +42,10 @@ test('other change types keep their own switches', () => {
 
     assert.deepEqual(filterChangesByPreferences([sub, room, added], DEFAULTS), [sub, room]);
     assert.deepEqual(filterChangesByPreferences([sub, room, added], prefs({ ...DEFAULTS.changes, lesson_added: true })), [sub, room, added]);
-    // No preferences stored at all → send everything (unchanged behaviour)
-    assert.deepEqual(filterChangesByPreferences([added], null), [added]);
+    // No preferences stored at all → the app's defaults, like a switch that was never stored
+    assert.deepEqual(filterChangesByPreferences([sub, room, added, change('subject_change')], null), [sub, room]);
+    assert.deepEqual(filterChangesByPreferences([sub, added], undefined), [sub]);
+    assert.deepEqual(filterChangesByPreferences([change('type_change'), added], { reminders: { next_lesson_room: true } }), [change('type_change')]);
 });
 
 test('a substitution with another subject (lesson_replaced) reaches users with the default switches', () => {
@@ -94,6 +96,19 @@ test('a lesson put where a cancelled one was: its own wording, old documents kee
     assert.deepEqual(preferenceKeysForChange('lesson_restored', change('lesson_restored')), ['lesson_removed']);
     assert.deepEqual(filterChangesByPreferences([withSubstitute], prefs({ ...ALL_OFF.changes, substitution: true })), [withSubstitute]);
     assert.deepEqual(filterChangesByPreferences([withSubstitute], ALL_OFF), []);
+});
+
+test('texts do not break on a change without `lesson` or `change` (documents of an older prefetch)', () => {
+    const bare = (type) => ({ type, day: 0, dayName: 'Po', hour: 3 });
+    for (const type of ['substitution', 'room_change', 'lesson_removed', 'lesson_added', 'subject_change', 'type_change', 'lesson_replaced', 'lesson_restored']) {
+        assert.doesNotThrow(() => createChangeSummary([bare(type)]), type);
+        assert.doesNotThrow(() => createDetailedChangeSummary([bare(type)]), type);
+        assert.doesNotMatch(createChangeSummary([{ ...bare(type), lesson: { subject: 'Fyzika' } }]), /undefined|null|\(\)/, type);
+        assert.equal(isDescribableChange(bare(type)), true, type);
+    }
+    assert.equal(isDescribableChange({ type: 'lesson_moved', lesson: { subject: 'Fyzika' } }), false);
+    assert.equal(isDescribableChange({}), false);
+    assert.equal(isDescribableChange(null), false);
 });
 
 test('a cancelled lesson produces readable notification text', () => {

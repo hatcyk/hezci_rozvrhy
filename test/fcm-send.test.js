@@ -132,8 +132,8 @@ test('filtr předvoleb a skupin: každý dostane jen své změny, kdo nemá žá
     assert.equal(got('t-group1'), '1: Po 1.h: Angličtina - supluje C. Třetí');
     assert.equal(got('t-added'), '1: Po 3.h: Přidána Fyzika');
     assert.equal(got('t-off'), null);
-    // no stored switches → everything; old single groupFilter still honoured
-    assert.equal(got('t-legacy'), '2: Po 2.h: Matematika - učebna B5; Po 3.h: Přidána Fyzika');
+    // no stored switches → the app's defaults (not "everything"); old single groupFilter still honoured
+    assert.equal(got('t-legacy'), '1: Po 2.h: Matematika - učebna B5');
     assert.equal(got('t-other'), null, 'watches another class');
     assert.equal(got('t-next'), null, 'watches the next week of this class');
     assert.equal(sent.length, 5);
@@ -141,6 +141,104 @@ test('filtr předvoleb a skupin: každý dostane jen své změny, kdo nemá žá
     const doc = db._get('changes/c1');
     assert.equal(doc.sentToUsers, 6, 'watchers with a token');
     assert.equal(doc.sentToDevices, 5);
+});
+
+// ─── kompatibilita sběru a odesílače (běží z různých větví, viz prefetch.yml) ──
+
+test('typ změny, který odesílač nezná (novější sběr), se zahodí se záznamem do logu; prázdná zpráva neodejde', async (t) => {
+    quiet(t);
+    const noPrefs = { ...user(['t-noprefs']), preferences: { watchedTimetables: [{ ...TT }] } };
+    reset({
+        'users/defaults': user(['t-defaults']),
+        'users/noprefs': noPrefs,                          // used to get every type, with an empty text for unknown ones
+        'changes/only-unknown': changeDoc({ changes: [change('lesson_moved', 4, {}, { change: { oldValue: 'Po', newValue: 'Út' } })] }),
+        'changes/mixed': changeDoc({ changes: [change('lesson_moved', 4), CHANGES[1], { hour: 5 }, null] }),
+    });
+    const result = await processPendingChanges();
+
+    assert.equal(result.processedCount, 2);
+    assert.equal(sent.length, 2, 'one message per user, from the mixed document only');
+    for (const message of sent) {
+        assert.equal(message.data.body, 'Po 2.h: Matematika - učebna B5');
+        assert.equal(message.data.changeCount, '1');
+        assert.notEqual(message.data.detailedBody.trim(), '');
+    }
+    const warnings = console.warn.mock.calls.map(call => String(call.arguments[0]));
+    assert.ok(warnings.some(w => /only-unknown: dropping 1 change\(s\) of unknown type \(lesson_moved\)/.test(w)), warnings.join('\n'));
+    assert.ok(warnings.some(w => /mixed: dropping 3 change\(s\) of unknown type \(lesson_moved, no type\)/.test(w)), warnings.join('\n'));
+
+    // claimed and recorded, so it is neither retried forever nor shown as "sending"
+    const unknown = db._get('changes/only-unknown');
+    assert.equal(unknown.sent, true);
+    assert.equal(unknown.sentToUsers, 0);
+    assert.equal(unknown.sentToDevices, 0);
+    assert.equal(db._get('changes/mixed').sentToDevices, 2);
+});
+
+test('uživatel bez uložených předvoleb dostane výchozí typy, ne všechno', async (t) => {
+    quiet(t);
+    reset({
+        'users/noprefs': { ...user(['t-noprefs']), preferences: { watchedTimetables: [{ ...TT }] } },
+        'users/reminders-only': { ...user(['t-rem']), preferences: { watchedTimetables: [{ ...TT, notificationTypes: { reminders: { next_lesson_room: true } } }] } },
+        'changes/c1': changeDoc({ changes: [
+            ...CHANGES,                                                             // substitution, room change, lesson_added
+            change('subject_change', 4, {}, { change: { oldValue: 'Matematika', newValue: 'Chemie' } }),
+            change('type_change', 5, {}, { change: { oldValue: 'normal', newValue: 'removed' } }),
+        ] }),
+        'changes/only-added': changeDoc({ changes: [CHANGES[2]] }),
+    });
+    await processPendingChanges();
+    for (const token of ['t-noprefs', 't-rem']) {
+        const messages = sentTo(token);
+        assert.equal(messages.length, 1, `${token}: nothing for the document with only an added lesson`);
+        assert.equal(messages[0].data.changeCount, '3');
+        assert.equal(messages[0].data.detailedBody,
+            'Po 9. 11.:\n  1.h: Angličtina - A. První → C. Třetí\n  2.h: Matematika - učebna A102 → B5\n  5.h: Matematika odpadla');
+    }
+});
+
+test('dokument změn zapsaný starým sběrem (bez nových polí) nový odesílač odešle se smysluplným textem', async (t) => {
+    quiet(t);
+    // As prefetch 1.x / 2.0 before the fixes stored it: timestamp in the ID, no
+    // weekStart, lessons without `date`, a swapped lesson as subject_change AND
+    // substitution, added / removed lessons without a `change` object.
+    const oldLesson = (subject, teacher, room) => ({ day: 1, dayName: 'Út', hour: 2, subject, teacher, room, group: null, theme: null, type: 'normal', changed: true, changeInfo: null });
+    const oldEntry = (type, hour, lesson, change) => ({
+        type, timetable: TT, lesson: { ...lesson, hour }, day: 1, dayName: 'Út', hour,
+        ...(change ? { change: { ...change, type } } : {}),
+        description: 'x', timestamp: '2026-11-03T07:00:00.000Z',
+    });
+    reset({
+        'users/defaults': user(['t-defaults']),
+        'users/all': user(['t-all'], { changes: { lesson_removed: true, substitution: true, room_change: true, lesson_added: true, subject_change: true } }),
+        'changes/Class_ZL_Actual_1762153200000': {
+            timetable: TT, timestamp: '2026-11-03T07:00:00.000Z', sent: false,
+            changes: [
+                oldEntry('subject_change', 2, oldLesson('Fyzika', 'P. Novák', 'A102'), { field: 'subject', oldValue: 'Matematika', newValue: 'Fyzika' }),
+                oldEntry('substitution', 2, oldLesson('Fyzika', 'P. Novák', 'A102'), { field: 'teacher', oldValue: 'J. Ukázková', newValue: 'P. Novák' }),
+                oldEntry('type_change', 3, { ...oldLesson('Dějepis', 'M. Dlouhá', 'D4'), type: 'removed' }, { field: 'type', oldValue: 'normal', newValue: 'removed' }),
+                oldEntry('lesson_removed', 4, oldLesson('Chemie', 'L. Nová', 'C3')),
+                oldEntry('lesson_added', 5, oldLesson('Seminář', 'E. Pátá', 'E1')),
+                oldEntry('room_change', 6, oldLesson('Angličtina', 'A. První', null), { field: 'room', oldValue: 'A102', newValue: null }),
+            ],
+        },
+    });
+    const result = await processPendingChanges();
+    assert.equal(result.processedCount, 1);
+    assert.equal(console.warn.mock.calls.length, 0, 'every old type is known');
+
+    assert.equal(sentTo('t-defaults')[0].data.detailedBody, [
+        'Út:',
+        '  2.h: Fyzika - J. Ukázková → P. Novák',
+        '  3.h: Dějepis odpadla',
+        '  4.h: Chemie odpadla',
+        '  6.h: Angličtina - učebna A102 → žádná',
+    ].join('\n'));
+    assert.equal(sentTo('t-defaults')[0].data.body, 'Út 2.h: Fyzika - supluje P. Novák; Út 3.h: Dějepis odpadla; a 2 další změny');
+    assert.equal(sentTo('t-defaults')[0].data.day, '1');
+    assert.equal(sentTo('t-all')[0].data.changeCount, '6');
+    assert.match(sentTo('t-all')[0].data.detailedBody, /2\.h: Matematika → Fyzika\n.*\n.*\n.*\n  5\.h: Přidána Seminář \(E\. Pátá\)/);
+    assert.equal(db._get('changes/Class_ZL_Actual_1762153200000').sentToDevices, 2);
 });
 
 test('úklid tokenů: smaže se jen token, který FCM označí za neplatný', async (t) => {
