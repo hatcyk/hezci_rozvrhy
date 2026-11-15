@@ -5,7 +5,7 @@ import { getTodayIndex, getMondayOfWeek, setPressed } from './utils.js';
 import { fetchTimetable } from './api.js';
 import { populateDropdown, getDropdownValue } from './dropdown.js';
 import { refreshNextLessonWidget } from './next-lesson.js';
-import { DAY_SHORT, addDays, czDate, weekMonday, dayChangeEntries } from './rozvrh-core.js';
+import { DAY_SHORT, addDays, czDate, weekMonday, dayChangeEntries, isThisWeek } from './rozvrh-core.js';
 import { czPlural } from './changes-core.js';
 
 /* ── načítání: zástupné bloky (g-skel) podle rozvržení ─────────────────── */
@@ -98,9 +98,12 @@ export function shownMonday() {
     return weekMonday(state.currentTimetableData, fallback);
 }
 
-/** Je zobrazený den dnešek (aktuální týden)? */
+/**
+ * Je zobrazený den dnešek? Rozhoduje datum zobrazených dat: týden z minulého
+ * týdne (výpadek sběru, stará kopie offline) dnešek nemá.
+ */
 export function isShownToday(dayIndex) {
-    return state.selectedScheduleType === 'actual' && dayIndex === getTodayIndex();
+    return dayIndex === getTodayIndex() && isThisWeek(shownMonday());
 }
 
 // Week strip ("pás týdne"): circles with the dates, today in gold
@@ -130,7 +133,7 @@ export function createDaySelector() {
             + (changes ? `<span class="vh">, ${czPlural(changes, ['změna', 'změny', 'změn'])}</span>` : '');
         if (!date) btn.classList.add('no-date');
         btn.title = date ? `${days[index]} ${czDate(date)}` : days[index];
-        if (index === todayIndex && state.selectedScheduleType === 'actual') {
+        if (isShownToday(index)) {
             btn.classList.add('today-btn');
             btn.setAttribute('aria-current', 'date');
         }

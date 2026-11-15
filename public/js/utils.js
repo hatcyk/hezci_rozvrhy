@@ -70,38 +70,21 @@ export function lessonStatusIcon(lesson) {
 }
 
 /**
- * Give a lesson element its full description for screen readers. Appended as
- * visually hidden text instead of aria-label: the name must still contain the
- * visible (abbreviated) text, otherwise voice-control users cannot say what
- * they see (WCAG 2.5.3 Label in Name).
+ * Give a lesson button its name for screen readers: one sentence that says
+ * the same as the screen (rozvrh-core.js lessonSentence / slotSentence). The
+ * visible parts (abbreviation, room, status word) are hidden from assistive
+ * tech, otherwise the subject, teacher and room would be read twice and the
+ * abbreviation would be spelled out before the full name.
  * @param {Element} el
- * @param {Object} lesson
+ * @param {string} sentence
  */
-export function addLessonDescription(el, lesson) {
-    if (!el || !lesson || typeof document === 'undefined') return;
+export function addLessonDescription(el, sentence) {
+    if (!el || !sentence || typeof document === 'undefined') return;
+    for (const child of el.children) child.setAttribute('aria-hidden', 'true');
     const span = document.createElement('span');
     span.className = 'sr-only';
-    span.textContent = `, ${lessonAccessibleName(lesson)}`;
+    span.textContent = sentence;
     el.appendChild(span);
-}
-
-/**
- * Accessible name for a lesson slot. Screen readers otherwise read the
- * abbreviated subject and teacher initials; the status words also make sure a
- * change or cancellation is not conveyed by colour alone (WCAG 1.4.1).
- */
-export function lessonAccessibleName(lesson) {
-    if (!lesson) return '';
-    const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
-    const parts = [`${lesson.hour}. hodina${timeInfo ? ` (${timeInfo.label})` : ''}`];
-    parts.push(lesson.subject || 'Neznámý předmět');
-    if (lesson.group) parts.push(`skupina ${lesson.group}`);
-    if (lesson.teacher) parts.push(`vyučující ${lesson.teacher}`);
-    if (lesson.room) parts.push(`učebna ${lesson.room}`);
-    if (lesson.type === 'removed') parts.push('zrušeno');
-    else if (lesson.type === 'absent') parts.push('nekoná se');
-    else if (lesson.changed) parts.push('změna');
-    return parts.join(', ');
 }
 
 // Function to abbreviate subject names
