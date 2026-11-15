@@ -243,3 +243,49 @@ test('stored ID without its own session: no foreign ID token is sent, the server
         globalThis.firebase = saved;
     }
 });
+
+test('1.x migration: a failed Firebase sign-in keeps the old ID, the retry migrates it with its ID token', async () => {
+    const saved = globalThis.firebase;
+    const savedError = console.error;
+    console.error = () => {};
+    const LEGACY = 'anonymous-1732222222222';
+    const MIGRATED = 'anon-44444444-5555-4666-8777-888888888888';
+    localStorage.setItem('userId', LEGACY);
+    let user = { uid: LEGACY, getIdToken: async () => `id-${LEGACY}` };
+    let failing = true;
+    globalThis.firebase = {
+        ...saved,
+        auth: () => ({
+            get currentUser() { return user; },
+            async signInWithCustomToken(token) {
+                if (failing) throw new Error('auth/network-request-failed');
+                user = { uid: token.replace(/^custom-/, ''), getIdToken: async () => 'x' };
+            },
+        }),
+    };
+    try {
+        const fc = await import('../public/js/firebase-client.js?migration-retry');
+        // Like the server: the migrated ID only for the legacy ID proven by its token
+        routes = {
+            '/api/auth': (c) => (c.body.userId === LEGACY && c.auth === `Bearer id-${LEGACY}`
+                ? [200, { token: `custom-${MIGRATED}`, userId: MIGRATED, migratedFrom: LEGACY }]
+                : [200, { token: `custom-${NEW_ID}`, userId: NEW_ID }]),
+        };
+        calls.length = 0;
+        await assert.rejects(fc.authenticateWithFirebase(), /network-request-failed/);
+        assert.equal(localStorage.getItem('userId'), LEGACY, 'the new ID is stored only once its session exists');
+        assert.equal(user.uid, LEGACY);
+
+        // Next start
+        failing = false;
+        assert.equal(await fc.authenticateWithFirebase(), true);
+        assert.equal(calls.length, 2);
+        assert.equal(calls[1].body.userId, LEGACY);
+        assert.equal(calls[1].auth, `Bearer id-${LEGACY}`, 'still proves the old identity');
+        assert.equal(localStorage.getItem('userId'), MIGRATED, 'the settings moved with the migrated ID');
+        assert.equal(user.uid, MIGRATED);
+    } finally {
+        globalThis.firebase = saved;
+        console.error = savedError;
+    }
+});
