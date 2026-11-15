@@ -247,7 +247,7 @@ function stubModule(rel, exportsObj) {
 
 /**
  * Replace backend/firebase-admin-init.js with the fake.
- * ID tokens are "valid:<uid>"; anything else fails verification.
+ * ID tokens are "valid:<uid>" (optionally "#<auth_time>"); anything else fails verification.
  */
 function stubFirebase(db = createFakeFirestore(), extra = {}) {
     const sent = [];
@@ -267,7 +267,11 @@ function stubFirebase(db = createFakeFirestore(), extra = {}) {
         getMessaging: () => messaging,
         createCustomToken: async (uid) => `custom:${uid}`,
         verifyIdToken: async (token) => {
-            if (typeof token === 'string' && token.startsWith('valid:')) return { uid: token.slice(6) };
+            // "valid:<uid>" or "valid:<uid>#<auth_time>" (seconds; the sign-in time of the session)
+            if (typeof token === 'string' && token.startsWith('valid:')) {
+                const [uid, authTime] = token.slice(6).split('#');
+                return { uid, auth_time: authTime ? Number(authTime) : 1762000000 };
+            }
             const err = new Error('Firebase ID token has invalid signature');
             err.code = 'auth/argument-error';
             throw err;

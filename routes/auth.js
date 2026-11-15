@@ -6,7 +6,8 @@
  * - `anon-<uuid>` + ID token of that uid      → a new custom token for it
  * - `anonymous-<ms>` + ID token of that uid   → one-time move of users/{legacy}
  *   to a new ID (1.x clients signed in with a custom token for the legacy uid,
- *   so the owner's browser still holds that Firebase session)
+ *   so the owner's browser still holds that Firebase session); the same
+ *   session asking again (lost response) gets the same new ID
  * - anything else: no ID, unknown format, or an ID the caller cannot prove
  *                                             → a fresh, empty `anon-<uuid>`
  *
@@ -21,40 +22,81 @@ const { isValidUserId, isLegacyUserId, newUserId, bearerToken } = require('../ba
 
 const router = express.Router();
 
+// userMigrations/{legacyId} = { migratedTo, migratedAt, authTime, moved }:
+// which new ID a legacy one became. Kept so that a repeated request is answered
+// with the same ID. Server-only (the deny-all rule in firestore.rules).
+const MIGRATIONS_COLLECTION = 'userMigrations';
+
 /**
- * Move users/{legacyId} to users/{newId} in one transaction (copy + delete),
- * so a crash cannot leave the settings in both places or in neither.
- * @returns {Promise<boolean>} true when a document was moved
+ * Move users/{legacyId} to users/{newId} in one transaction (copy + delete +
+ * migration record), so a crash cannot leave the settings in both places or
+ * in neither.
+ *
+ * Repeatable: when the response of the first call is lost (weak Wi-Fi, a
+ * closed tab, a failing token signature), the browser still holds the legacy
+ * ID and asks again. It used to get a second, empty identity while the moved
+ * settings stayed orphaned under the first one. Now the recorded ID is handed
+ * out again - but only to the very Firebase session that did the migration
+ * (same `auth_time`, the sign-in time carried by every ID token of a
+ * session). Another session of the legacy uid gets a fresh empty identity,
+ * as before; legacy IDs were guessable and 1.x signed a token for any of them.
+ *
+ * Device tokens are NOT moved: the owner's browser registers its token again
+ * (notificationsEnabled tells it to), and a foreign session of the legacy ID
+ * cannot take over notifications to somebody's phone.
+ *
+ * @param {Object} db
+ * @param {String} legacyId
+ * @param {String} newId - the ID to use when this is the first migration
+ * @param {Number|null} authTime - `auth_time` of the proving ID token
+ * @returns {Promise<{ userId: String, moved: Boolean, repeated: Boolean }>}
  */
-async function migrateLegacyUser(db, legacyId, newId) {
+async function migrateLegacyUser(db, legacyId, newId, authTime = null) {
     const legacyRef = db.collection('users').doc(legacyId);
     const newRef = db.collection('users').doc(newId);
+    const recordRef = db.collection(MIGRATIONS_COLLECTION).doc(legacyId);
+    const session = Number.isFinite(authTime) ? authTime : null;
 
     return db.runTransaction(async (tx) => {
-        const snap = await tx.get(legacyRef);
-        if (!snap.exists) return false;
-        tx.create(newRef, {
-            ...snap.data(),
-            migratedFrom: legacyId,
-            migratedAt: new Date().toISOString(),
-            lastUpdated: new Date().toISOString(),
-        });
-        tx.delete(legacyRef);
-        return true;
+        const [record, snap] = [await tx.get(recordRef), await tx.get(legacyRef)];
+
+        if (record.exists) {
+            const done = record.data() || {};
+            const sameSession = session !== null && done.authTime === session && isValidUserId(done.migratedTo);
+            return { userId: sameSession ? done.migratedTo : newId, moved: false, repeated: sameSession };
+        }
+
+        const now = new Date().toISOString();
+        if (snap.exists) {
+            const { tokens, ...settings } = snap.data();
+            tx.create(newRef, {
+                ...settings,
+                tokens: [],
+                // 1.x had no such flag: "has a token" meant "notifications on".
+                notificationsEnabled: settings.notificationsEnabled ?? (Array.isArray(tokens) && tokens.length > 0),
+                migratedFrom: legacyId,
+                migratedAt: now,
+                lastUpdated: now,
+            });
+            tx.delete(legacyRef);
+        }
+        tx.create(recordRef, { migratedTo: newId, migratedAt: now, authTime: session, moved: snap.exists });
+        return { userId: newId, moved: snap.exists, repeated: false };
     });
 }
 
 /**
- * The uid of the caller's Firebase session, or null when the request carries
- * no valid ID token. An invalid or expired token is not an error here: the
- * caller just cannot prove any identity and gets a new one.
+ * The caller's Firebase session ({ uid, authTime }), or null when the request
+ * carries no valid ID token. An invalid or expired token is not an error
+ * here: the caller just cannot prove any identity and gets a new one.
  */
-async function provenUid(req) {
+async function provenSession(req) {
     const idToken = bearerToken(req);
     if (!idToken) return null;
     try {
         const decoded = await verifyIdToken(idToken);
-        return decoded && typeof decoded.uid === 'string' ? decoded.uid : null;
+        if (!decoded || typeof decoded.uid !== 'string') return null;
+        return { uid: decoded.uid, authTime: Number.isFinite(decoded.auth_time) ? decoded.auth_time : null };
     } catch {
         return null;
     }
@@ -64,7 +106,8 @@ router.post('/auth', async (req, res) => {
     try {
         const requested = req.body && typeof req.body.userId === 'string' ? req.body.userId : null;
         const knownFormat = isValidUserId(requested) || isLegacyUserId(requested);
-        const owned = knownFormat && (await provenUid(req)) === requested;
+        const session = knownFormat ? await provenSession(req) : null;
+        const owned = !!session && session.uid === requested;
 
         let userId;
         let migratedFrom;
@@ -72,10 +115,11 @@ router.post('/auth', async (req, res) => {
         if (owned && isValidUserId(requested)) {
             userId = requested;
         } else if (owned) {
-            userId = newUserId();
-            const moved = await migrateLegacyUser(getFirestore(), requested, userId);
+            const result = await migrateLegacyUser(getFirestore(), requested, newUserId(), session.authTime);
+            userId = result.userId;
             migratedFrom = requested;
-            console.log(`🔁 Legacy user ${requested} → ${userId} (${moved ? 'settings moved' : 'no stored settings'})`);
+            console.log(`🔁 Legacy user ${requested} → ${userId} (${result.repeated ? 'repeated request'
+                : result.moved ? 'settings moved' : 'no stored settings'})`);
         } else {
             userId = newUserId();
         }
