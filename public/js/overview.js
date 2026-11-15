@@ -32,7 +32,7 @@ const model = {
     dataKey: '',      // type|id, kterému patří data v `actual` (i když se mají načíst znovu)
     actual: null,     // lekce aktuálního týdne
     sched: 'actual',  // ze kterého dokumentu `actual` je (po výpadku sběru může být tento týden v Next)
-    stale: '',        // '' | 'past' | 'other': data nejsou z tohoto týdne
+    stale: '',        // '' | 'past' (minulý týden) | 'old' (starší) | 'other': data nejsou z tohoto týdne
     next: null,       // lekce příštího týdne (když je potřeba)
     loading: null,    // Promise načítání
     signature: '',    // co je teď / další (změna → překreslit pás a týden)
@@ -77,7 +77,7 @@ async function loadData(force = false) {
                     actual = other;
                     sched = 'next';
                 } else {
-                    stale = offset < 0 ? 'past' : 'other';
+                    stale = offset === -1 ? 'past' : offset < -1 ? 'old' : 'other';
                 }
             } else {
                 const st = nowState(actual);
@@ -189,11 +189,25 @@ function whoLine(items) {
     return '';
 }
 
-/** Ze kterého týdne zastaralá data jsou („z minulého týdne (2.–6. listopadu)“). */
+/**
+ * Ze kterého týdne zastaralá data jsou: „z minulého týdne (2.–6. listopadu)“,
+ * u starších jen datum týdne („z týdne 2.–6. listopadu“).
+ */
 function staleText() {
     const mon = weekMonday(model.actual, null);
-    const range = mon ? ` (${weekTitle(mon).replace(/^Týden /, '')})` : '';
-    return `${model.stale === 'past' ? 'z minulého týdne' : 'z jiného týdne'}${range}`;
+    const range = mon ? weekTitle(mon).replace(/^Týden /, '') : '';
+    if (model.stale === 'old' && range) return `z týdne ${range}`;
+    return `${model.stale === 'past' ? 'z minulého týdne' : 'z jiného týdne'}${range ? ` (${range})` : ''}`;
+}
+
+/** Popisek dlaždice Změn u zastaralých dat: „minulý týden“, „v týdnu 2.–6. 11.“. */
+function staleWeekLabel() {
+    if (model.stale === 'past') return 'minulý týden';
+    const mon = model.stale === 'old' ? weekMonday(model.actual, null) : null;
+    if (!mon) return 'v zobrazeném týdnu';
+    const fri = addDays(mon, 4);
+    const from = mon.getMonth() === fri.getMonth() ? `${mon.getDate()}.` : `${mon.getDate()}. ${mon.getMonth() + 1}.`;
+    return `v týdnu ${from}–${fri.getDate()}. ${fri.getMonth() + 1}.`;
 }
 
 /** Stav místo nowState, když data nejsou z tohoto týdne: žádné „teď“ ani „dnes“. */
@@ -460,7 +474,7 @@ function weekChanges(now = new Date()) {
     const data = (upcoming ? model.next : model.actual) || [];
     let count = 0;
     for (let d = 0; d < 5; d++) count += dayChangeEntries(data.filter(l => l.day === d)).length;
-    const label = model.stale ? (model.stale === 'past' ? 'minulý týden' : 'v zobrazeném týdnu') : (upcoming ? 'příští týden' : 'tento týden');
+    const label = model.stale ? staleWeekLabel() : (upcoming ? 'příští týden' : 'tento týden');
     return { data, count, label, stale: !!model.stale };
 }
 

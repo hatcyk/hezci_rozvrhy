@@ -97,6 +97,37 @@ test.describe('Přehled: data z jiného týdne', () => {
     }
   });
 
+  // Pondělí 16. 11.: Actual je z 2.–6. 11. (o dva týdny zpět), Next z 9.–13. 11.
+  const TWO_WEEKS_LATER = '2026-11-16T08:20:00+01:00';
+
+  test('data stará dva týdny nejsou „z minulého týdne“, uvede se jejich týden', async ({ page, app, isMobile }) => {
+    await app.open('/', { time: TWO_WEEKS_LATER, docs: { 'timetables/Class_C2A_Next': null } });
+    await app.timetableReady();
+    const now = page.locator(isMobile ? '#ovHero' : '#nowCard');
+    await expect(now).toContainText(/rozvrh není aktuální/i);
+    await expect(now).toContainText('Data jsou z týdne 2.–6. listopadu');
+    await expect(now).not.toContainText(/minul/i);
+    if (isMobile) {
+      await expect(page.locator('.ov-tile').first()).toContainText('v týdnu 2.–6. 11.');
+      await expect(page.locator('.ov-tile').first()).not.toContainText(/minul/i);
+    }
+  });
+
+  test('Next existuje, ale také není z tohoto týdne: nevydává se za aktuální', async ({ page, app, isMobile }) => {
+    await app.open('/', { time: TWO_WEEKS_LATER });
+    await app.timetableReady();
+    const now = page.locator(isMobile ? '#ovHero' : '#nowCard');
+    await expect(now).toContainText(/rozvrh není aktuální/i);
+    await expect(now).toContainText('Data jsou z týdne 2.–6. listopadu');
+    await expect(now).not.toContainText(/teď, \d+\. hodina/i);
+    await expect(page.locator('#navChangesCount')).toBeHidden();
+    if (isMobile) {
+      await expect(page.locator('#ovWeekTitle')).toHaveText('Týden 2.–6. listopadu');
+      await expect(page.locator('.ov-weekrows .wr.today')).toHaveCount(0);
+      await expect(page.locator('#ovStrip')).toHaveCount(0);
+    }
+  });
+
   test('tento týden je už v dokumentu Next: přehled ho vezme jako aktuální', async ({ page, app, isMobile }) => {
     test.skip(!isMobile, 'Přehled je na mobilu');
     await app.open('/', { time: MONDAY });
