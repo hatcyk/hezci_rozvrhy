@@ -65,6 +65,11 @@ class BakalariLoginError extends Error {
 
 // Cache for session cookie (valid for the duration of prefetch run)
 let cachedSessionCookie = null;
+// Bumped with every successful login, so a request knows whether the session
+// it used is still the current one.
+let sessionGeneration = 0;
+// The one mid-run re-login of this run (a promise), see renewSession().
+let sessionRenewal = null;
 
 /**
  * Set-Cookie headers → { name: value }. Splits at the FIRST "=" only: session
@@ -179,6 +184,7 @@ async function loginToBakalari(retries = MAX_RETRIES) {
 
             // Cache the cookie for this prefetch run
             cachedSessionCookie = cookieString;
+            sessionGeneration++;
 
             return cookieString;
 
@@ -249,7 +255,7 @@ async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
  * (axios followed a redirect to /login) → the session was not accepted. Without
  * this the run ended as "0 definitions", hiding the real cause.
  */
-function assertNotLoginPage(response, what) {
+function isLoginPageResponse(response) {
     let finalPath = '';
     try {
         finalPath = new URL(String(response.request?.res?.responseUrl || ''), BAKALARI_BASE_URL).pathname;
@@ -257,10 +263,36 @@ function assertNotLoginPage(response, what) {
     const html = typeof response.data === 'string' ? response.data : '';
     // A page that has the class picker is the right page, whatever else it contains.
     const hasPicker = html.includes('selectedClass');
-    if (/^\/login(?:\/|$)/i.test(finalPath) || (!hasPicker && looksLikeLoginPage(html))) {
+    return /^\/login(?:\/|$)/i.test(finalPath) || (!hasPicker && looksLikeLoginPage(html));
+}
+
+function assertNotLoginPage(response, what) {
+    if (isLoginPageResponse(response)) {
         cachedSessionCookie = null;
         throw new BakalariLoginError(`Bakalari returned the login page for ${what} - session not accepted`);
     }
+}
+
+/**
+ * A timetable page came back as the login form: the session expired in the
+ * middle of the run. Log in again - ONCE per run, shared by the requests in
+ * flight - so one expiry does not cost the rest of the run, and a server that
+ * keeps refusing the session is not hit with a login per page.
+ * @param {Number} usedGeneration - sessionGeneration the failed request was sent with
+ * @returns {Promise<Boolean>} true when there is a newer session to retry with
+ */
+async function renewSession(usedGeneration) {
+    if (sessionGeneration === usedGeneration) {
+        if (!sessionRenewal) {
+            console.warn('⚠️  Bakaláři returned the login page mid-run - logging in again (once)');
+            cachedSessionCookie = null;
+            sessionRenewal = loginToBakalari().catch((error) => {
+                console.error(`❌ Re-login failed: ${error.message}`);
+            });
+        }
+        await sessionRenewal;
+    }
+    return sessionGeneration !== usedGeneration;
 }
 
 const NETWORK_CODES = new Set([
@@ -280,6 +312,25 @@ function classifyError(error) {
     const response = cause.response || error.response;
     if (response && (response.status >= 500 || response.status === 429)) return 'network';
     return 'error';
+}
+
+// A run in which more than this share of the timetables was not refreshed
+// (download errors + empty pages whose old snapshot was kept) is 'partial',
+// not 'ok': system/health.lastSuccessAt stays where it was, so /api/status
+// reports the data as stale once the age limit passes. A few failing pages are
+// everyday noise and must not raise an alarm.
+const PARTIAL_FAILURE_RATIO = 0.1;
+
+/**
+ * S4 status of a run that got as far as downloading timetables.
+ * @param {{ totalRequests: Number, errorCount: Number, emptyGuarded: Number }} stats
+ * @param {Error|null} [lastError] - decides the status when every task failed
+ * @returns {'ok'|'partial'|'login_failed'|'network'|'error'}
+ */
+function runStatus({ totalRequests = 0, errorCount = 0, emptyGuarded = 0 }, lastError = null) {
+    // Every single timetable failed → an outage, not a successful run.
+    if (totalRequests > 0 && errorCount === totalRequests) return classifyError(lastError);
+    return errorCount + emptyGuarded > totalRequests * PARTIAL_FAILURE_RATIO ? 'partial' : 'ok';
 }
 
 /**
@@ -342,16 +393,24 @@ async function fetchDefinitions() {
  * Fetch single timetable from Bakalari API
  */
 async function fetchTimetableHtml(type, id, scheduleType, date = null) {
-    // Get fresh login cookie (cached during prefetch run)
-    const cookie = await loginToBakalari();
-
     let url = `${BAKALARI_BASE_URL}/Timetable/Public/${scheduleType}/${type}/${id}`;
     if (date) {
         url += `?date=${date}`;
     }
 
-    const response = await fetchWithRetry(url, requestConfig({ Cookie: cookie }));
-    return response.data;
+    for (let attempt = 1; ; attempt++) {
+        // Get fresh login cookie (cached during prefetch run)
+        const cookie = await loginToBakalari();
+        const generation = sessionGeneration;
+
+        const response = await fetchWithRetry(url, requestConfig({ Cookie: cookie }));
+        // HTTP 200 with the login form parsed as "0 lessons", the single-page
+        // guard kept the old snapshot and the run still counted it as a success.
+        if (!isLoginPageResponse(response)) return response.data;
+        if (attempt > 1 || !(await renewSession(generation))) {
+            throw new BakalariLoginError(`Bakalari returned the login page for ${type}/${id}/${scheduleType} - session not accepted`);
+        }
+    }
 }
 
 // Logged once per run so a markup change / unpublished timetable is visible in the log
@@ -425,7 +484,7 @@ async function writeAggregates(db, aggregates) {
  * Main prefetch function - downloads all data and stores in Firebase.
  *
  * Never throws: the outcome is in `status` (S4) —
- * 'ok' | 'guard_no_definitions' | 'guard_no_lessons' | 'login_failed' | 'network' | 'error'.
+ * 'ok' | 'partial' | 'guard_no_definitions' | 'guard_no_lessons' | 'login_failed' | 'network' | 'error'.
  *
  * @param {Object} [options]
  * @param {Object} [options.db] - Firestore instance (tests pass a fake)
@@ -443,6 +502,7 @@ async function prefetchAllData(options = {}) {
 
     // Reset per-run state for a fresh login
     cachedSessionCookie = null;
+    sessionRenewal = null;
     emptyPageDiagnosticLogged = false;
 
     const stats = {
@@ -880,10 +940,13 @@ async function prefetchAllData(options = {}) {
             console.error('❌ Failed to write aggregates:', error.message);
         }
 
-        // Every single timetable failed → an outage, not a successful run.
-        const status = stats.totalRequests > 0 && stats.errorCount === stats.totalRequests
-            ? classifyError(lastTaskError)
-            : 'ok';
+        const status = runStatus(stats, lastTaskError);
+        const notRefreshed = stats.errorCount + stats.emptyGuarded;
+        const runError = status === 'partial'
+            ? `${notRefreshed} of ${stats.totalRequests} timetables not refreshed ` +
+                `(${stats.errorCount} errors, ${stats.emptyGuarded} empty pages kept)` +
+                (lastTaskError ? `; last error: ${lastTaskError.message}` : '')
+            : (lastTaskError ? lastTaskError.message : null);
 
         // Step 5: Update metadata
         await db.collection('metadata').doc('lastPrefetch').set({
@@ -898,7 +961,7 @@ async function prefetchAllData(options = {}) {
         // Summary
         const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
         console.log(`\n${'='.repeat(60)}`);
-        console.log(`${status === 'ok' ? '✅' : '❌'} Prefetch finished (${status}) in ${duration} minutes`);
+        console.log(`${status === 'ok' ? '✅' : status === 'partial' ? '⚠️ ' : '❌'} Prefetch finished (${status}) in ${duration} minutes`);
         console.log(`📊 Success: ${stats.successCount}/${stats.totalRequests}`);
         console.log(`❌ Errors: ${stats.errorCount}/${stats.totalRequests}`);
         console.log(`${'='.repeat(60)}\n`);
@@ -906,7 +969,7 @@ async function prefetchAllData(options = {}) {
         return finish(status, {
             definitionsCount: totalEntitiesFetched,
             ...(aggregatesError ? { aggregatesError } : {}),
-            ...(status !== 'ok' && lastTaskError ? { error: lastTaskError.message } : {}),
+            ...(status !== 'ok' && runError ? { error: runError } : {}),
         });
 
     } catch (error) {
@@ -927,6 +990,8 @@ module.exports = {
     parseSetCookies,
     fetchWithRetry,
     classifyError,
+    runStatus,
+    PARTIAL_FAILURE_RATIO,
     requestConfig,
     BakalariLoginError,
     DEFAULT_CONCURRENCY,

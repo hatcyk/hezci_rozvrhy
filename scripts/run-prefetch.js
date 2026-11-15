@@ -7,7 +7,7 @@
  * lastSuccessAt moves only when the prefetch really succeeded.
  *
  * Exit code: 0 for success and for the expected "Bakaláři unavailable" outcomes
- * (guard exits, login/network failures) - those are reported through
+ * (guard exits, login/network failures, a partial download) - those are reported through
  * /api/status?strict=1 instead of a failure e-mail every 15 minutes;
  * 1 for unexpected errors (bugs).
  */
@@ -16,7 +16,7 @@ require('dotenv').config();
 const { initializeFirebaseAdmin } = require('../backend/firebase-admin-init');
 const { runPrefetchJob } = require('../backend/cron');
 
-const EXPECTED_FAILURES = new Set(['guard_no_definitions', 'guard_no_lessons', 'login_failed', 'network']);
+const EXPECTED_FAILURES = new Set(['partial', 'guard_no_definitions', 'guard_no_lessons', 'login_failed', 'network']);
 
 async function main() {
     console.log('🚀 Starting prefetch...\n');

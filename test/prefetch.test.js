@@ -166,6 +166,7 @@ function defaultPages() {
  */
 function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = DEFINITIONS_PAGE, failures = {} } = {}) {
     const calls = [];
+    let logins = 0;
     let inFlight = 0;
     let maxInFlight = 0;
     const respond = async (fn) => {
@@ -196,11 +197,13 @@ function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = D
         }
         if (path === '/Timetable/Public/Actual/Class/ZL') return { status: 200, headers: {}, data: definitions };
         const key = path.replace('/Timetable/Public/', '');
-        if (pages[key] !== undefined) return { status: 200, headers: {}, data: pages[key] };
+        // a page may be a function of the session state (expired session → login form)
+        if (pages[key] !== undefined) return { status: 200, headers: {}, data: typeof pages[key] === 'function' ? pages[key]({ logins }) : pages[key] };
         throw httpError(404);
     }));
     t.mock.method(axios, 'post', (url) => respond(() => {
         calls.push({ method: 'POST', url });
+        logins++;
         if (login === 'ok') return { status: 302, headers: { location: '/dashboard', 'set-cookie': ['BakaAuth=c2Vzc2lvbg==; path=/; HttpOnly'] }, data: '' };
         if (login === 'wrong_password') return { status: 200, headers: {}, data: `<p>Neplatné přihlašovací údaje</p>${LOGIN_FORM}` };
         if (login === 'redirect_login') return { status: 302, headers: { location: '/login?error=1' }, data: '' };
@@ -416,7 +419,7 @@ test('opakování stahování: 503 a výpadek se zopakují, 404 ne', async (t) =
     }, pages: (() => { const p = defaultPages(); delete p['Next/Room/R2']; return p; })() });
     const db = fakeFirestore(initialStore());
     const result = await run(db);
-    assert.equal(result.status, 'ok');
+    assert.equal(result.status, 'partial', '1 of 8 pages (the 404) is over the 10 % limit of this tiny school');
     assert.equal(bak.calls.filter(c => c.url.endsWith('/Actual/Teacher/T1')).length, 2);
     assert.equal(bak.calls.filter(c => c.url.endsWith('/Next/Teacher/T1')).length, 3);
     assert.equal(bak.calls.filter(c => c.url.endsWith('/Next/Room/R2')).length, 1, '404 is not retried');
@@ -598,4 +601,70 @@ test('září: stálý rozvrh se zpracuje před aktuálním, takže Actual v té
     assert.equal(result.status, 'ok');
     assert.deepEqual(db.store.get('timetables/Class_C1_Actual').data.filter(l => l.type === 'removed'), [],
         'used to get "Matematika / Hodina odpadla" from the permanent schedule of the previous run');
+});
+
+// ─── částečně selhaný běh ───────────────────────────────────────────────────
+
+test('runStatus: ok do 10 % nepovedených stránek, pak partial, při 100 % chyb druh výpadku', () => {
+    const { runStatus } = prefetch;
+    const net = Object.assign(new Error('x'), { response: { status: 503 } });
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 0, emptyGuarded: 0 }), 'ok');
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 3, emptyGuarded: 2 }), 'ok', 'a few pages failing is everyday noise');
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 22, emptyGuarded: 0 }), 'ok', 'exactly 10 %');
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 20, emptyGuarded: 3 }), 'partial');
+    assert.equal(runStatus({ totalRequests: 9, errorCount: 7, emptyGuarded: 0 }), 'partial');
+    assert.equal(runStatus({ totalRequests: 7, errorCount: 0, emptyGuarded: 4 }), 'partial', 'kept snapshots are not fresh data');
+    assert.equal(runStatus({ totalRequests: 9, errorCount: 9, emptyGuarded: 0 }, net), 'network');
+    assert.equal(runStatus({ totalRequests: 0, errorCount: 0, emptyGuarded: 0 }), 'ok');
+});
+
+test('503 na stránkách učitelů a učeben (6 z 8) → status partial, ne ok; změny třídy se přesto uloží', async (t) => {
+    quiet(t);
+    const down = { status: 503, remaining: 99 };
+    fakeBakalari(t, { failures: Object.fromEntries(['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1', 'Actual/Room/R2', 'Next/Room/R2']
+        .map(key => [`/Timetable/Public/${key}`, { ...down }])) });
+    const db = fakeFirestore(initialStore());
+    const result = await run(db);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.success, false);
+    assert.equal(result.errorCount, 6);
+    assert.equal(result.successCount, 2);
+    assert.match(result.error, /6 of 8 timetables not refreshed/);
+    assert.equal(db.store.get('metadata/lastPrefetch').status, 'partial');
+    assert.equal(changeDocs(db).length, 1, 'what did download is processed as usual');
+});
+
+test('relace vyprší uprostřed běhu: jedno nové přihlášení a stránka se stáhne znovu → ok', async (t) => {
+    quiet(t);
+    // Until the second login the teacher/room pages come back as the login form (HTTP 200).
+    const pages = defaultPages();
+    for (const key of ['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1']) {
+        const html = pages[key];
+        pages[key] = ({ logins }) => (logins >= 2 ? html : LOGIN_FORM);
+    }
+    const bak = fakeBakalari(t, { pages });
+    const db = fakeFirestore(initialStore());
+    const result = await run(db);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.errorCount, 0);
+    assert.equal(result.emptyGuarded, 0);
+    assert.equal(bak.calls.filter(c => c.method === 'POST').length, 2, 'exactly one re-login');
+    assert.ok(db.store.has('timetables/Room_R1_Actual'));
+});
+
+test('přihlašovací stránka místo rozvrhů i po novém přihlášení → chyby a partial, žádné „prázdné stránky“', async (t) => {
+    quiet(t);
+    const pages = defaultPages();
+    for (const key of ['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1', 'Actual/Room/R2', 'Next/Room/R2']) pages[key] = LOGIN_FORM;
+    const bak = fakeBakalari(t, { pages });
+    const store = initialStore();
+    store['timetables/Room_R1_Actual'] = storedDoc('Room', 'R1', 'Actual', [A45[0]], W45);
+    const db = fakeFirestore(store);
+    const result = await run(db);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.errorCount, 6);
+    assert.equal(result.emptyGuarded, 0, 'used to be counted as successful "empty pages"');
+    assert.match(result.error, /login page/);
+    assert.equal(bak.calls.filter(c => c.method === 'POST').length, 2, 'one re-login per run, not one per page');
+    assert.equal(db.store.get('timetables/Room_R1_Actual').weekStart, W45, 'snapshot kept');
 });
