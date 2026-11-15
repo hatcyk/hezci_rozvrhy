@@ -97,7 +97,7 @@ export async function showView(view, params = {}, { history: mode = 'push', focu
 export async function openTimetable({ type, id, schedule = 'actual', day = null }) {
     await showView('timetable', {}, { history: 'push', focus: false });
     const { applyDeepLink } = await import('./deeplink.js');
-    await applyDeepLink({ type, id, schedule, day, highlight: false });
+    await applyDeepLink({ type, id, schedule, day, highlight: false, fromView: true });
     const main = document.getElementById('timetableView');
     if (main) main.focus({ preventScroll: true });
 }

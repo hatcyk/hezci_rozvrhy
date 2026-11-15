@@ -133,14 +133,20 @@ export async function openDay(day, { schedule = 'actual', from = null } = {}) {
 }
 
 /**
- * Den otevřený odkazem (notifikace, „Rozvrh“ u třídy ve Změnách, učebna ve
- * Volných učebnách): na mobilu dostane vlastní záznam v historii nad
- * přehledem, takže systémové Zpět vrátí na Přehled stejně jako u dne
- * otevřeného z přehledu.
+ * Den otevřený odkazem. Na mobilu:
+ * - zvenku (notifikace, adresa s ?type=…) dostane vlastní záznam v historii
+ *   nad přehledem, takže systémové Zpět vrátí na Přehled stejně jako u dne
+ *   otevřeného z přehledu;
+ * - z jiného pohledu aplikace („Rozvrh“ u třídy ve Změnách, učebna ve Volných
+ *   učebnách; `fromView`) je Dnem přímo záznam, který přidal přechod do
+ *   pohledu Rozvrh: Zpět vrátí jedním krokem tam, odkud se přišlo.
+ * @param {{ fromView?: boolean }} [opts]
  */
-export function showDayScreen() {
+export function showDayScreen({ fromView = false } = {}) {
     if (isMobile() && !(history.state && history.state.screen === 'day')) {
-        history.pushState({ view: 'timetable', screen: 'day' }, '', location.pathname + location.search);
+        const url = location.pathname + location.search;
+        if (fromView) history.replaceState({ view: 'timetable', screen: 'day', inPlace: true }, '', url);
+        else history.pushState({ view: 'timetable', screen: 'day' }, '', url);
     }
     setScreen('day');
 }
@@ -149,10 +155,14 @@ export function showDayScreen() {
 export async function backToOverview() {
     if (state.screen !== 'day') return;
     const day = state.selectedDayIndex;
-    if (history.state && history.state.screen === 'day') {
+    const entry = history.state;
+    if (entry && entry.screen === 'day' && !entry.inPlace) {
         history.back(); // popstate → view-router → syncScreenFromHistory()
         return;
     }
+    // Den bez vlastního záznamu (otevřený z jiného pohledu): přehled na místě,
+    // o krok zpět v historii je pohled, ze kterého se přišlo
+    if (entry && entry.screen === 'day') history.replaceState({ view: 'timetable' }, '', location.pathname + location.search);
     await transition(() => setScreen('overview'));
     const row = document.querySelector(`#overview .wr[data-day="${day}"]`);
     if (row) row.focus({ preventScroll: true });

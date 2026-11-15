@@ -310,7 +310,7 @@ test.describe('Historie Dne (mobil)', () => {
     await expect(page.locator('#ovHero')).toBeVisible();
   });
 
-  test('„Rozvrh“ u třídy ve Změnách: Zpět vrátí na Přehled a pak do Změn', async ({ page, app }) => {
+  test('„Rozvrh“ u třídy ve Změnách: Zpět vrátí jedním krokem do Změn', async ({ page, app }) => {
     await app.open('/?view=changes');
     const link = page.locator('#changesView a[data-open-class]').first();
     await link.click();
@@ -318,10 +318,27 @@ test.describe('Historie Dne (mobil)', () => {
     await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
     expect(await histScreen(page)).toBe('day');
     await page.goBack();
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'changes');
+    // Vpřed: zpátky na Den té třídy
+    await page.goForward();
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'timetable');
+    await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
+  });
+
+  test('učebna z Volných učeben: „‹“ ukáže Přehled učebny na místě, Zpět pak vrátí do Volných učeben', async ({ page, app }) => {
+    await app.open('/?view=rooms');
+    const link = page.locator('#roomsResult .room-link').first();
+    const name = (await link.innerText()).trim();
+    await link.click();
+    await app.timetableReady(name);
+    await expect(page.locator('html')).toHaveAttribute('data-screen', 'day');
+    await page.locator('#backBtn').click();
     await expect(page.locator('html')).toHaveAttribute('data-screen', 'overview');
     await expect(page.locator('html')).toHaveAttribute('data-view', 'timetable');
+    // Obrazovka a záznam historie se shodují
+    expect(await histScreen(page)).toBe(null);
     await page.goBack();
-    await expect(page.locator('html')).toHaveAttribute('data-view', 'changes');
+    await expect(page.locator('html')).toHaveAttribute('data-view', 'rooms');
   });
 
   test('rychlé Zpět po klepnutí na řádek týdne nenechá Den bez záznamu v historii', async ({ page, app }) => {
