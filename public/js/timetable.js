@@ -169,6 +169,8 @@ export async function selectDay(index) {
  */
 export function renderTimetable() {}
 
+let loadSeq = 0;
+
 // Load timetable
 export async function loadTimetable() {
     if (!dom.errorDiv || !dom.timetableGrid) {
@@ -179,6 +181,11 @@ export async function loadTimetable() {
     const id = getDropdownValue();
 
     if (!id) return;
+
+    // Pořadí požadavků: pozdní odpověď na starší volbu (jiný týden, jiný
+    // rozvrh) nesmí přepsat novější, která se už vykreslila nebo teprve načítá.
+    const seq = ++loadSeq;
+    const superseded = () => seq !== loadSeq;
 
     // Uložit do paměti pro příště
     try {
@@ -198,6 +205,7 @@ export async function loadTimetable() {
         const dateParam = monday.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
         const data = await fetchTimetable(state.selectedType, id, state.selectedScheduleType, dateParam);
+        if (superseded()) return;
 
         // Filter out "empty" absent lessons (placeholders)
         // These usually have the date as the subject and no teacher
@@ -226,10 +234,12 @@ export async function loadTimetable() {
         document.dispatchEvent(new CustomEvent('timetableloaded'));
 
     } catch (e) {
+        if (superseded()) return;
         dom.errorDiv.textContent = e.message;
         dom.errorDiv.classList.remove('hidden');
         document.dispatchEvent(new CustomEvent('timetableloaded', { detail: { error: e.message } }));
     } finally {
-        hideSkeleton();
+        // Zástupné bloky patří novějšímu požadavku, dokud ten neskončí
+        if (!superseded()) hideSkeleton();
     }
 }
