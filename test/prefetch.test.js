@@ -41,9 +41,25 @@ function fakeFirestore(initial = {}) {
         },
         async get() { return snap(`${collection}/${id}`); },
     });
+    const alreadyExists = (path) => Object.assign(new Error(`6 ALREADY_EXISTS: Document already exists: ${path}`), { code: 6 });
     return {
         store,
         writes,
+        // Atomic like Firestore: either every operation is applied or none.
+        batch() {
+            const ops = [];
+            const batch = {
+                set(r, data) { ops.push({ r, data, create: false }); return batch; },
+                create(r, data) { ops.push({ r, data, create: true }); return batch; },
+                async commit() {
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                    const clash = ops.find(op => op.create && store.has(op.r.path));
+                    if (clash) throw alreadyExists(clash.r.path);
+                    for (const op of ops) await op.r.set(op.data);
+                },
+            };
+            return batch;
+        },
         collection: (collection) => ({
             doc: (id) => ref(collection, id),
             where: (field, op, value) => ({
@@ -137,6 +153,8 @@ function initialStore({ withWeek = true } = {}) {
         'timetables/Room_R2_Permanent': storedDoc('Room', 'R2', 'Permanent', PERM.slice(0, 1), null),
         'timetables/Class_C1_Actual': storedDoc('Class', 'C1', 'Actual', A45, W45, { withWeek, permanent: permanentLessons }),
         'timetables/Class_C1_Next': storedDoc('Class', 'C1', 'Next', N46_OLD, W46, { withWeek }),
+        // permanent schedules already re-checked today (see the daily refresh tests)
+        'system/permanentRefresh': { date: '2026-11-09', checkedAt: '2026-11-09T00:05:00.000Z', pending: [] },
     };
 }
 
@@ -151,6 +169,10 @@ function defaultPages() {
         'Next/Room/R1': page(W47, [N47[0]]),
         'Actual/Room/R2': page(W46, []),
         'Next/Room/R2': page(W47, []),
+        'Permanent/Class/C1': page(null, PERM),
+        'Permanent/Teacher/T1': page(null, PERM),
+        'Permanent/Room/R1': page(null, PERM),
+        'Permanent/Room/R2': page(null, PERM.slice(0, 1)),
     };
 }
 
@@ -160,6 +182,7 @@ function defaultPages() {
  */
 function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = DEFINITIONS_PAGE, failures = {} } = {}) {
     const calls = [];
+    let logins = 0;
     let inFlight = 0;
     let maxInFlight = 0;
     const respond = async (fn) => {
@@ -190,11 +213,13 @@ function fakeBakalari(t, { pages = defaultPages(), login = 'ok', definitions = D
         }
         if (path === '/Timetable/Public/Actual/Class/ZL') return { status: 200, headers: {}, data: definitions };
         const key = path.replace('/Timetable/Public/', '');
-        if (pages[key] !== undefined) return { status: 200, headers: {}, data: pages[key] };
+        // a page may be a function of the session state (expired session → login form)
+        if (pages[key] !== undefined) return { status: 200, headers: {}, data: typeof pages[key] === 'function' ? pages[key]({ logins }) : pages[key] };
         throw httpError(404);
     }));
     t.mock.method(axios, 'post', (url) => respond(() => {
         calls.push({ method: 'POST', url });
+        logins++;
         if (login === 'ok') return { status: 302, headers: { location: '/dashboard', 'set-cookie': ['BakaAuth=c2Vzc2lvbg==; path=/; HttpOnly'] }, data: '' };
         if (login === 'wrong_password') return { status: 200, headers: {}, data: `<p>Neplatné přihlašovací údaje</p>${LOGIN_FORM}` };
         if (login === 'redirect_login') return { status: 302, headers: { location: '/login?error=1' }, data: '' };
@@ -307,7 +332,7 @@ test('pondělní běh: nový Actual se porovná se starým Next téhož týdne �
     // jediný dokument změn: Class_C1_Actual, jen nové suplování po 1. hod.
     const docs = changeDocs(db);
     assert.equal(docs.length, 1, docs.join(', '));
-    assert.match(docs[0], /^changes\/Class_C1_Actual_\d+$/);
+    assert.match(docs[0], /^changes\/Class_C1_Actual_[0-9a-f]{20}$/);
     const changeDoc = db.store.get(docs[0]);
     assert.equal(changeDoc.weekStart, W46);
     assert.equal(changeDoc.sent, false);
@@ -410,7 +435,7 @@ test('opakování stahování: 503 a výpadek se zopakují, 404 ne', async (t) =
     }, pages: (() => { const p = defaultPages(); delete p['Next/Room/R2']; return p; })() });
     const db = fakeFirestore(initialStore());
     const result = await run(db);
-    assert.equal(result.status, 'ok');
+    assert.equal(result.status, 'partial', '1 of 8 pages (the 404) is over the 10 % limit of this tiny school');
     assert.equal(bak.calls.filter(c => c.url.endsWith('/Actual/Teacher/T1')).length, 2);
     assert.equal(bak.calls.filter(c => c.url.endsWith('/Next/Teacher/T1')).length, 3);
     assert.equal(bak.calls.filter(c => c.url.endsWith('/Next/Room/R2')).length, 1, '404 is not retried');
@@ -520,4 +545,208 @@ test('den volna: žádné „odpadlé“ hodiny ze stálého rozvrhu, žádné �
     assert.deepEqual(db.store.get('aggregates/changes_Actual').days[0].items, []);
     // the other snapshots carry an empty list, the permanent one too
     assert.deepEqual(db.store.get('timetables/Class_C1_Next').daysOff, []);
+});
+
+// ─── stálý rozvrh: denní obnova a pořadí zpracování ─────────────────────────
+
+const permanentCalls = (bak) => bak.calls.filter(c => c.url.includes('/Timetable/Public/Permanent/')).map(c => c.url.split('/Public/')[1]);
+
+test('listopad: změněný stálý rozvrh se při první běhu dne stáhne znovu → žádná falešná „Hodina odpadla“', async (t) => {
+    quiet(t);
+    // Mid-year change: Monday 1st lesson is Fyzika instead of Matematika, in the
+    // permanent schedule and (without any change flag) in the current week.
+    const NEW_PERM = [LESSON(0, 1, 'Fyzika', 'Mgr. Petr Novák', 'A101'), ...PERM.slice(1)];
+    const store = initialStore();
+    store['system/permanentRefresh'] = { date: '2026-11-08', checkedAt: '2026-11-08T00:05:00.000Z', pending: [] };
+    store['timetables/Class_C1_Next'] = storedDoc('Class', 'C1', 'Next', PERM, W46);
+    const pages = { ...defaultPages(), 'Actual/Class/C1': page(W46, NEW_PERM), 'Next/Class/C1': page(W47, NEW_PERM), 'Permanent/Class/C1': page(null, NEW_PERM) };
+    const bak = fakeBakalari(t, { pages });
+    const db = fakeFirestore(store);
+    const result = await run(db);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(permanentCalls(bak).sort(), ['Permanent/Class/C1', 'Permanent/Room/R1', 'Permanent/Room/R2', 'Permanent/Teacher/T1'],
+        'every permanent page once: 1 extra request per timetable and day');
+    assert.equal(db.store.get('timetables/Class_C1_Permanent').data[0].subject, 'Fyzika');
+    const actual = db.store.get('timetables/Class_C1_Actual');
+    assert.deepEqual(actual.data.filter(l => l.type === 'removed'), [], 'used to keep "Matematika / Hodina odpadla" until September');
+    assert.deepEqual(db.store.get('aggregates/changes_Actual').days[0].items, []);
+    assert.equal(db.store.get('system/permanentRefresh').date, '2026-11-09');
+    assert.deepEqual(db.store.get('system/permanentRefresh').pending, []);
+
+    // later the same day: nothing permanent is downloaded again
+    bak.calls.length = 0;
+    const again = await run(db, { now: new Date('2026-11-09T12:00:00Z') });
+    assert.equal(again.status, 'ok');
+    assert.deepEqual(permanentCalls(bak), []);
+    // the next day (Prague time): once more
+    bak.calls.length = 0;
+    await run(db, { now: new Date('2026-11-09T23:10:00Z') });
+    assert.equal(permanentCalls(bak).length, 4);
+});
+
+test('denní obnova: stálý rozvrh, který se nepodařilo stáhnout, se zkusí znovu v dalším běhu (jen on)', async (t) => {
+    quiet(t);
+    const store = initialStore();
+    store['system/permanentRefresh'] = { date: '2026-11-08', pending: [] };
+    const bak = fakeBakalari(t, { failures: { '/Timetable/Public/Permanent/Teacher/T1': { status: 503, remaining: 3 } } });
+    const db = fakeFirestore(store);
+    await run(db);
+    assert.deepEqual(db.store.get('system/permanentRefresh').pending, ['Teacher_T1_Permanent']);
+    assert.equal(db.store.get('system/permanentRefresh').date, '2026-11-09');
+
+    bak.calls.length = 0;
+    const second = await run(db, { now: new Date('2026-11-09T05:15:00Z') });
+    assert.deepEqual(permanentCalls(bak), ['Permanent/Teacher/T1']);
+    assert.equal(second.errorCount, 0);
+    assert.deepEqual(db.store.get('system/permanentRefresh').pending, []);
+});
+
+test('září: stálý rozvrh se zpracuje před aktuálním, takže Actual v témže běhu už počítá s novým', async (t) => {
+    quiet(t);
+    const NEW_PERM = [LESSON(0, 1, 'Fyzika', 'Mgr. Petr Novák', 'A101'), ...PERM.slice(1)];
+    const pages = {
+        ...defaultPages(),
+        'Actual/Class/C1': page('2026-09-07', NEW_PERM),
+        'Next/Class/C1': page('2026-09-14', NEW_PERM),
+        'Permanent/Class/C1': page(null, NEW_PERM),
+    };
+    fakeBakalari(t, { pages });
+    const db = fakeFirestore(initialStore()); // holds last year's permanent schedule (Matematika)
+    const result = await run(db, { now: new Date('2026-09-08T05:00:00Z') });
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(db.store.get('timetables/Class_C1_Actual').data.filter(l => l.type === 'removed'), [],
+        'used to get "Matematika / Hodina odpadla" from the permanent schedule of the previous run');
+});
+
+// ─── částečně selhaný běh ───────────────────────────────────────────────────
+
+test('runStatus: ok do 10 % nepovedených stránek, pak partial, při 100 % chyb druh výpadku', () => {
+    const { runStatus } = prefetch;
+    const net = Object.assign(new Error('x'), { response: { status: 503 } });
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 0, emptyGuarded: 0 }), 'ok');
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 3, emptyGuarded: 2 }), 'ok', 'a few pages failing is everyday noise');
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 22, emptyGuarded: 0 }), 'ok', 'exactly 10 %');
+    assert.equal(runStatus({ totalRequests: 220, errorCount: 20, emptyGuarded: 3 }), 'partial');
+    assert.equal(runStatus({ totalRequests: 9, errorCount: 7, emptyGuarded: 0 }), 'partial');
+    assert.equal(runStatus({ totalRequests: 7, errorCount: 0, emptyGuarded: 4 }), 'partial', 'kept snapshots are not fresh data');
+    assert.equal(runStatus({ totalRequests: 9, errorCount: 9, emptyGuarded: 0 }, net), 'network');
+    assert.equal(runStatus({ totalRequests: 0, errorCount: 0, emptyGuarded: 0 }), 'ok');
+});
+
+test('503 na stránkách učitelů a učeben (6 z 8) → status partial, ne ok; změny třídy se přesto uloží', async (t) => {
+    quiet(t);
+    const down = { status: 503, remaining: 99 };
+    fakeBakalari(t, { failures: Object.fromEntries(['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1', 'Actual/Room/R2', 'Next/Room/R2']
+        .map(key => [`/Timetable/Public/${key}`, { ...down }])) });
+    const db = fakeFirestore(initialStore());
+    const result = await run(db);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.success, false);
+    assert.equal(result.errorCount, 6);
+    assert.equal(result.successCount, 2);
+    assert.match(result.error, /6 of 8 timetables not refreshed/);
+    assert.equal(db.store.get('metadata/lastPrefetch').status, 'partial');
+    assert.equal(changeDocs(db).length, 1, 'what did download is processed as usual');
+});
+
+test('relace vyprší uprostřed běhu: jedno nové přihlášení a stránka se stáhne znovu → ok', async (t) => {
+    quiet(t);
+    // Until the second login the teacher/room pages come back as the login form (HTTP 200).
+    const pages = defaultPages();
+    for (const key of ['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1']) {
+        const html = pages[key];
+        pages[key] = ({ logins }) => (logins >= 2 ? html : LOGIN_FORM);
+    }
+    const bak = fakeBakalari(t, { pages });
+    const db = fakeFirestore(initialStore());
+    const result = await run(db);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.errorCount, 0);
+    assert.equal(result.emptyGuarded, 0);
+    assert.equal(bak.calls.filter(c => c.method === 'POST').length, 2, 'exactly one re-login');
+    assert.ok(db.store.has('timetables/Room_R1_Actual'));
+});
+
+test('přihlašovací stránka místo rozvrhů i po novém přihlášení → chyby a partial, žádné „prázdné stránky“', async (t) => {
+    quiet(t);
+    const pages = defaultPages();
+    for (const key of ['Actual/Teacher/T1', 'Next/Teacher/T1', 'Actual/Room/R1', 'Next/Room/R1', 'Actual/Room/R2', 'Next/Room/R2']) pages[key] = LOGIN_FORM;
+    const bak = fakeBakalari(t, { pages });
+    const store = initialStore();
+    store['timetables/Room_R1_Actual'] = storedDoc('Room', 'R1', 'Actual', [A45[0]], W45);
+    const db = fakeFirestore(store);
+    const result = await run(db);
+    assert.equal(result.status, 'partial');
+    assert.equal(result.errorCount, 6);
+    assert.equal(result.emptyGuarded, 0, 'used to be counted as successful "empty pages"');
+    assert.match(result.error, /login page/);
+    assert.equal(bak.calls.filter(c => c.method === 'POST').length, 2, 'one re-login per run, not one per page');
+    assert.equal(db.store.get('timetables/Room_R1_Actual').weekStart, W45, 'snapshot kept');
+});
+
+// ─── dokument změn: nejvýš jednou, atomicky se snímkem ──────────────────────
+
+test('dva překryté běhy (cron bez zámku) zapíší tutéž změnu jen jednou', async (t) => {
+    quiet(t);
+    fakeBakalari(t);
+    const db = fakeFirestore(initialStore());
+    // The second run starts while the first is still downloading: both load the same old snapshots.
+    const [a, b] = await Promise.all([run(db), run(db)]);
+    assert.equal(a.status, 'ok');
+    assert.equal(b.status, 'ok');
+    assert.equal(changeDocs(db).length, 1, changeDocs(db).join(', '));
+    assert.equal(a.changeDocs + b.changeDocs, 1, 'only the run that created the document counts it');
+    assert.equal(db.store.get(changeDocs(db)[0]).sent, false);
+});
+
+test('změna, která se vrátí a nastane znovu, dostane nový dokument (jiný výchozí snímek)', async (t) => {
+    quiet(t);
+    const db = fakeFirestore(initialStore());
+    const withSub = defaultPages();
+    const without = { ...defaultPages(), 'Actual/Class/C1': page(W46, N46_OLD) };
+    for (const pages of [withSub, without, withSub]) {
+        t.mock.restoreAll();
+        quiet(t);
+        fakeBakalari(t, { pages });
+        assert.equal((await run(db)).status, 'ok');
+        await new Promise(resolve => setTimeout(resolve, 2)); // distinct lastUpdate stamps
+    }
+    const all = changeDocs(db).map(p => db.store.get(p).changes.map(c => c.type).join('+'));
+    assert.deepEqual(all.sort(), ['substitution', 'substitution', 'substitution'], 'on, off (back to the original teacher), on again');
+});
+
+test('zápis změny a snímku je atomický: selhání zápisu nenechá změnu bez snímku ani ji příště nezdvojí', async (t) => {
+    quiet(t);
+    fakeBakalari(t);
+    // mid-week: the stored Actual snapshot is already this week's (without the new substitution)
+    const store = initialStore();
+    store['timetables/Class_C1_Actual'] = storedDoc('Class', 'C1', 'Actual', N46_OLD, W46,
+        { permanent: store['timetables/Class_C1_Permanent'].data });
+    const db = fakeFirestore(store);
+    const realBatch = db.batch;
+    let failOnce = true;
+    db.batch = () => {
+        const batch = realBatch();
+        const commit = batch.commit;
+        let touchesActual = false;
+        const set = batch.set;
+        batch.set = (r, data) => { if (r.path === 'timetables/Class_C1_Actual') touchesActual = true; return set(r, data); };
+        batch.commit = async () => {
+            if (touchesActual && failOnce) { failOnce = false; throw new Error('DEADLINE_EXCEEDED (synthetic)'); }
+            return commit();
+        };
+        return batch;
+    };
+    const before = db.store.get('timetables/Class_C1_Actual');
+    const first = await run(db);
+    assert.equal(first.errorCount, 1);
+    assert.deepEqual(changeDocs(db), [], 'no change document without its snapshot');
+    assert.deepEqual(db.store.get('timetables/Class_C1_Actual'), before);
+
+    const second = await run(db);
+    assert.equal(second.errorCount, 0);
+    assert.equal(changeDocs(db).length, 1);
+    assert.deepEqual(db.store.get(changeDocs(db)[0]).changes.map(c => c.type), ['substitution']);
+    assert.notDeepEqual(db.store.get('timetables/Class_C1_Actual'), before);
 });

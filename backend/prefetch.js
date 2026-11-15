@@ -3,12 +3,14 @@
  * Downloads all timetable data from Bakalari API and stores in Firebase
  */
 
+const crypto = require('node:crypto');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { getFirestore } = require('./firebase-admin-init');
 const { detectTimetableChanges, selectComparisonBaseline } = require('./change-detector');
 const { parseTimetablePage, standardizeGroupName, addRemovedLessonsFromPermanent } = require('./bakalari-parser');
 const { buildChangesAggregate, buildFreeRoomsAggregate, sameAggregateContent, stableStringify } = require('./aggregates');
+const { formatPragueTime } = require('./timezone-manager');
 
 // Configuration
 const BAKALARI_BASE_URL = 'https://mot-spsd.bakalari.cz';
@@ -22,6 +24,9 @@ const DEFAULT_RETRY_DELAY_MS = process.env.VERCEL ? 2000 : 1000;
 const MAX_RETRY_DELAY_MS = 30000;
 const SCHEDULE_TYPES = ['Actual', 'Permanent', 'Next'];
 const AGGREGATE_COLLECTION = 'aggregates';
+// { date: 'YYYY-MM-DD' (Prague) of the last daily re-check of the permanent
+//   schedules, checkedAt, pending: [docKey] that failed and are retried }
+const PERMANENT_REFRESH_DOC = ['system', 'permanentRefresh'];
 
 // Browser-like by default (unchanged behaviour); an operator can identify the
 // bot honestly with BAKALARI_USER_AGENT (see ZMENY.md for the reasoning).
@@ -61,6 +66,11 @@ class BakalariLoginError extends Error {
 
 // Cache for session cookie (valid for the duration of prefetch run)
 let cachedSessionCookie = null;
+// Bumped with every successful login, so a request knows whether the session
+// it used is still the current one.
+let sessionGeneration = 0;
+// The one mid-run re-login of this run (a promise), see renewSession().
+let sessionRenewal = null;
 
 /**
  * Set-Cookie headers → { name: value }. Splits at the FIRST "=" only: session
@@ -175,6 +185,7 @@ async function loginToBakalari(retries = MAX_RETRIES) {
 
             // Cache the cookie for this prefetch run
             cachedSessionCookie = cookieString;
+            sessionGeneration++;
 
             return cookieString;
 
@@ -245,7 +256,7 @@ async function fetchWithRetry(url, options = {}, retries = MAX_RETRIES) {
  * (axios followed a redirect to /login) → the session was not accepted. Without
  * this the run ended as "0 definitions", hiding the real cause.
  */
-function assertNotLoginPage(response, what) {
+function isLoginPageResponse(response) {
     let finalPath = '';
     try {
         finalPath = new URL(String(response.request?.res?.responseUrl || ''), BAKALARI_BASE_URL).pathname;
@@ -253,10 +264,36 @@ function assertNotLoginPage(response, what) {
     const html = typeof response.data === 'string' ? response.data : '';
     // A page that has the class picker is the right page, whatever else it contains.
     const hasPicker = html.includes('selectedClass');
-    if (/^\/login(?:\/|$)/i.test(finalPath) || (!hasPicker && looksLikeLoginPage(html))) {
+    return /^\/login(?:\/|$)/i.test(finalPath) || (!hasPicker && looksLikeLoginPage(html));
+}
+
+function assertNotLoginPage(response, what) {
+    if (isLoginPageResponse(response)) {
         cachedSessionCookie = null;
         throw new BakalariLoginError(`Bakalari returned the login page for ${what} - session not accepted`);
     }
+}
+
+/**
+ * A timetable page came back as the login form: the session expired in the
+ * middle of the run. Log in again - ONCE per run, shared by the requests in
+ * flight - so one expiry does not cost the rest of the run, and a server that
+ * keeps refusing the session is not hit with a login per page.
+ * @param {Number} usedGeneration - sessionGeneration the failed request was sent with
+ * @returns {Promise<Boolean>} true when there is a newer session to retry with
+ */
+async function renewSession(usedGeneration) {
+    if (sessionGeneration === usedGeneration) {
+        if (!sessionRenewal) {
+            console.warn('⚠️  Bakaláři returned the login page mid-run - logging in again (once)');
+            cachedSessionCookie = null;
+            sessionRenewal = loginToBakalari().catch((error) => {
+                console.error(`❌ Re-login failed: ${error.message}`);
+            });
+        }
+        await sessionRenewal;
+    }
+    return sessionGeneration !== usedGeneration;
 }
 
 const NETWORK_CODES = new Set([
@@ -276,6 +313,25 @@ function classifyError(error) {
     const response = cause.response || error.response;
     if (response && (response.status >= 500 || response.status === 429)) return 'network';
     return 'error';
+}
+
+// A run in which more than this share of the timetables was not refreshed
+// (download errors + empty pages whose old snapshot was kept) is 'partial',
+// not 'ok': system/health.lastSuccessAt stays where it was, so /api/status
+// reports the data as stale once the age limit passes. A few failing pages are
+// everyday noise and must not raise an alarm.
+const PARTIAL_FAILURE_RATIO = 0.1;
+
+/**
+ * S4 status of a run that got as far as downloading timetables.
+ * @param {{ totalRequests: Number, errorCount: Number, emptyGuarded: Number }} stats
+ * @param {Error|null} [lastError] - decides the status when every task failed
+ * @returns {'ok'|'partial'|'login_failed'|'network'|'error'}
+ */
+function runStatus({ totalRequests = 0, errorCount = 0, emptyGuarded = 0 }, lastError = null) {
+    // Every single timetable failed → an outage, not a successful run.
+    if (totalRequests > 0 && errorCount === totalRequests) return classifyError(lastError);
+    return errorCount + emptyGuarded > totalRequests * PARTIAL_FAILURE_RATIO ? 'partial' : 'ok';
 }
 
 /**
@@ -338,16 +394,24 @@ async function fetchDefinitions() {
  * Fetch single timetable from Bakalari API
  */
 async function fetchTimetableHtml(type, id, scheduleType, date = null) {
-    // Get fresh login cookie (cached during prefetch run)
-    const cookie = await loginToBakalari();
-
     let url = `${BAKALARI_BASE_URL}/Timetable/Public/${scheduleType}/${type}/${id}`;
     if (date) {
         url += `?date=${date}`;
     }
 
-    const response = await fetchWithRetry(url, requestConfig({ Cookie: cookie }));
-    return response.data;
+    for (let attempt = 1; ; attempt++) {
+        // Get fresh login cookie (cached during prefetch run)
+        const cookie = await loginToBakalari();
+        const generation = sessionGeneration;
+
+        const response = await fetchWithRetry(url, requestConfig({ Cookie: cookie }));
+        // HTTP 200 with the login form parsed as "0 lessons", the single-page
+        // guard kept the old snapshot and the run still counted it as a success.
+        if (!isLoginPageResponse(response)) return response.data;
+        if (attempt > 1 || !(await renewSession(generation))) {
+            throw new BakalariLoginError(`Bakalari returned the login page for ${type}/${id}/${scheduleType} - session not accepted`);
+        }
+    }
 }
 
 // Logged once per run so a markup change / unpublished timetable is visible in the log
@@ -395,8 +459,37 @@ function snapshotFromDoc(doc) {
     if (!doc.exists) return null;
     const data = doc.data() || {};
     if (!Array.isArray(data.data)) return null;
-    return { lessons: data.data, weekStart: data.weekStart ?? null, daysOff: Array.isArray(data.daysOff) ? data.daysOff : null };
+    return {
+        lessons: data.data,
+        weekStart: data.weekStart ?? null,
+        daysOff: Array.isArray(data.daysOff) ? data.daysOff : null,
+        lastUpdate: data.lastUpdate ?? null,
+    };
 }
+
+/**
+ * Deterministic ID of a change document: the timetable + a hash of the
+ * baseline snapshot's version (its lastUpdate) and of what changed.
+ * Two runs that overlap (a crontab without a lock, a slow Bakaláři) load the
+ * same baseline and find the same changes → the same ID, and the second
+ * create() fails instead of sending the notification twice. The same change
+ * happening again later (on → off → on) starts from another baseline version
+ * and gets its own document.
+ */
+function changeDocId(docKey, baseline, weekStart, changes) {
+    const fingerprint = changes.map(c => [
+        c.type, c.day, c.hour,
+        c.lesson ? [c.lesson.group || '', c.lesson.subject || '', c.lesson.teacher || '', c.lesson.room || ''] : null,
+        c.change ? [c.change.oldValue ?? null, c.change.newValue ?? null] : null,
+    ]);
+    const hash = crypto.createHash('sha1')
+        .update(JSON.stringify([baseline.lastUpdate ?? null, baseline.weekStart ?? null, weekStart, fingerprint]))
+        .digest('hex')
+        .slice(0, 20);
+    return `${docKey}_${hash}`;
+}
+
+const isAlreadyExists = (error) => !!error && (error.code === 6 || /ALREADY_EXISTS/i.test(String(error.message)));
 
 /**
  * Write the four aggregate documents, each only when its content changed
@@ -421,7 +514,7 @@ async function writeAggregates(db, aggregates) {
  * Main prefetch function - downloads all data and stores in Firebase.
  *
  * Never throws: the outcome is in `status` (S4) —
- * 'ok' | 'guard_no_definitions' | 'guard_no_lessons' | 'login_failed' | 'network' | 'error'.
+ * 'ok' | 'partial' | 'guard_no_definitions' | 'guard_no_lessons' | 'login_failed' | 'network' | 'error'.
  *
  * @param {Object} [options]
  * @param {Object} [options.db] - Firestore instance (tests pass a fake)
@@ -439,6 +532,7 @@ async function prefetchAllData(options = {}) {
 
     // Reset per-run state for a fresh login
     cachedSessionCookie = null;
+    sessionRenewal = null;
     emptyPageDiagnosticLogged = false;
 
     const stats = {
@@ -574,13 +668,29 @@ async function prefetchAllData(options = {}) {
             { type: 'Room', entities: definitions.rooms },
         ];
 
-        // Check if we should fetch permanent schedules
-        // Permanent schedules only change at start of school year (September)
+        // Permanent schedules change mostly at the start of the school year, so in
+        // September they are fetched in every run. They do change during the year
+        // as well (second term, a teacher leaving): a stale copy turned every
+        // lesson it no longer matched into a false "Hodina odpadla", week after
+        // week until September. So outside September each one is re-checked in
+        // the first run of every day (Prague time) - one extra request per
+        // timetable and DAY, ~0.5 % on top of the 96 daily runs - and the ones
+        // that failed are retried in the following runs.
         const isSeptember = now.getMonth() === 8; // 0-11, where 8 = September
+        const today = formatPragueTime(now, 'yyyy-MM-dd');
+        const refreshRef = db.collection(PERMANENT_REFRESH_DOC[0]).doc(PERMANENT_REFRESH_DOC[1]);
+        let refreshState = null;
+        let pendingPermanent = new Set();
+        let dailyRefreshDue = false;
 
         // If not September, fetch existing permanent schedule IDs in one batch
         let existingPermanentIds = new Set();
         if (!isSeptember) {
+            const refreshDoc = await refreshRef.get();
+            refreshState = refreshDoc.exists ? (refreshDoc.data() || {}) : {};
+            dailyRefreshDue = refreshState.date !== today;
+            pendingPermanent = new Set(Array.isArray(refreshState.pending) ? refreshState.pending : []);
+
             const permanentDocs = await db.collection('timetables')
                 .where('scheduleType', '==', 'Permanent')
                 .select('lessonCount') // Only the count, not the full data
@@ -605,10 +715,11 @@ async function prefetchAllData(options = {}) {
                     // Skip permanent schedules if:
                     // 1. It's not September (new school year)
                     // 2. We already have the data in Firebase
-                    if (scheduleType === 'Permanent' && !isSeptember) {
+                    // 3. and they were re-checked today (and did not fail then)
+                    if (scheduleType === 'Permanent' && !isSeptember && !dailyRefreshDue) {
                         const docKey = `${group.type}_${entity.id}_Permanent`;
 
-                        if (existingPermanentIds.has(docKey)) {
+                        if (existingPermanentIds.has(docKey) && !pendingPermanent.has(docKey)) {
                             skippedPermanentCount++;
                             continue; // Skip this task
                         }
@@ -624,8 +735,15 @@ async function prefetchAllData(options = {}) {
         }
 
         if (skippedPermanentCount > 0) {
-            console.log(`⏭️  Skipping ${skippedPermanentCount} permanent schedules (not September, already cached)`);
+            console.log(`⏭️  Skipping ${skippedPermanentCount} permanent schedules (not September, checked today)`);
         }
+        if (dailyRefreshDue) console.log('🔄 First run of the day: re-checking the permanent schedules');
+
+        // Permanent first: the class Actual task adds the cancelled lessons from
+        // the permanent schedule and must see THIS run's copy. In one mixed batch
+        // it used last run's (in September: phantom cancellations for 15 minutes).
+        tasks.sort((a, b) => (b.scheduleType === 'Permanent') - (a.scheduleType === 'Permanent'));
+        const failedPermanent = [];
 
         const totalExpectedRequests = tasks.length;
 
@@ -719,6 +837,7 @@ async function prefetchAllData(options = {}) {
                     });
 
                     let note = '';
+                    let changeWrite = null; // { ref, data, count } stored together with the snapshot below
                     if (baseline) {
                         const metadata = {
                             type: task.type,
@@ -742,21 +861,20 @@ async function prefetchAllData(options = {}) {
                             newWeekStart: weekStart,
                         });
 
-                        // Store detected changes
+                        // Detected changes: written below, in one batch with the snapshot
                         if (changes.length > 0) {
-                            const changeId = `${docKey}_${Date.now()}`;
-                            await db.collection('changes').doc(changeId).set({
-                                timetable: metadata,
-                                weekStart,
-                                changes: changes,
-                                timestamp: new Date().toISOString(),
-                                sent: false
-                            });
-                            stats.changeDocs++;
-                            stats.changesDetected += changes.length;
-
-                            console.log(`${progress} 🔔 ${changes.length} changes detected for ${task.entity.name}` +
-                                (source === 'previousNext' ? ' (vs. last run\'s Next of the same week)' : ''));
+                            changeWrite = {
+                                ref: db.collection('changes').doc(changeDocId(docKey, baseline, weekStart, changes)),
+                                data: {
+                                    timetable: metadata,
+                                    weekStart,
+                                    changes: changes,
+                                    timestamp: new Date().toISOString(),
+                                    sent: false
+                                },
+                                count: changes.length,
+                                vsNext: source === 'previousNext',
+                            };
                         }
                     } else if (previous && previous.lessons.length > 0) {
                         // e.g. the first run after deploying S2 ('previous_without_week'), or
@@ -772,20 +890,46 @@ async function prefetchAllData(options = {}) {
                         && stableStringify(previous.daysOff || []) === stableStringify(daysOff)
                         && stableStringify(previous.lessons) === stableStringify(timetableData);
 
-                    if (!isDataIdentical) {
-                        await db.collection('timetables').doc(docKey).set({
-                            type: task.type,
-                            id: task.entity.id,
-                            name: task.entity.name,
-                            scheduleType: task.scheduleType,
-                            weekStart,
-                            // Holidays of this week ({day, date, name}): the app can label the
-                            // day and the reminder job skips it.
-                            daysOff,
-                            data: timetableData,
-                            lessonCount: timetableData.length,
-                            lastUpdate: new Date().toISOString(),
-                        });
+                    const snapshotRef = db.collection('timetables').doc(docKey);
+                    const snapshotDoc = isDataIdentical ? null : {
+                        type: task.type,
+                        id: task.entity.id,
+                        name: task.entity.name,
+                        scheduleType: task.scheduleType,
+                        weekStart,
+                        // Holidays of this week ({day, date, name}): the app can label the
+                        // day and the reminder job skips it.
+                        daysOff,
+                        data: timetableData,
+                        lessonCount: timetableData.length,
+                        lastUpdate: new Date().toISOString(),
+                    };
+
+                    // The change document and the snapshot it was computed from go in
+                    // ONE batch: with two separate writes a failed snapshot write left
+                    // the old snapshot behind and the next run reported (and sent) the
+                    // same change again. create(): the ID is deterministic, so a change
+                    // another (overlapping) run already stored is not stored twice.
+                    if (changeWrite) {
+                        try {
+                            const batch = db.batch();
+                            batch.create(changeWrite.ref, changeWrite.data);
+                            if (snapshotDoc) batch.set(snapshotRef, snapshotDoc);
+                            await batch.commit();
+                            stats.changeDocs++;
+                            stats.changesDetected += changeWrite.count;
+                            console.log(`${progress} 🔔 ${changeWrite.count} changes detected for ${task.entity.name}` +
+                                (changeWrite.vsNext ? ' (vs. last run\'s Next of the same week)' : ''));
+                        } catch (error) {
+                            if (!isAlreadyExists(error)) throw error;
+                            console.log(`${progress} ⏭️  ${label}: changes already recorded by another run`);
+                            if (snapshotDoc) await snapshotRef.set(snapshotDoc);
+                        }
+                    } else if (snapshotDoc) {
+                        await snapshotRef.set(snapshotDoc);
+                    }
+
+                    if (snapshotDoc) {
                         latestSnapshots.set(docKey, { lessons: timetableData, weekStart, daysOff });
                         stats.timetablesWritten++;
                         stats.successCount++;
@@ -799,15 +943,33 @@ async function prefetchAllData(options = {}) {
                 } catch (error) {
                     stats.errorCount++;
                     lastTaskError = error;
+                    if (task.scheduleType === 'Permanent') failedPermanent.push(`${task.type}_${task.entity.id}_Permanent`);
                     console.error(`${progress} ❌ ${label}: ${error.message}`);
                 }
             }));
         };
 
-        // Process in batches
-        for (let i = 0; i < tasks.length; i += CONCURRENT_REQUESTS) {
-            const batch = tasks.slice(i, i + CONCURRENT_REQUESTS);
-            await processBatch(batch);
+        // Process in batches; the Permanent tasks (sorted first) are finished
+        // before the first Actual/Next batch starts.
+        const permanentCount = tasks.filter(task => task.scheduleType === 'Permanent').length;
+        for (const part of [tasks.slice(0, permanentCount), tasks.slice(permanentCount)]) {
+            for (let i = 0; i < part.length; i += CONCURRENT_REQUESTS) {
+                await processBatch(part.slice(i, i + CONCURRENT_REQUESTS));
+            }
+        }
+
+        // Remember today's re-check and what is left to retry (written only
+        // when it changes: once a day, plus after a failure / its recovery).
+        if (!isSeptember) {
+            const pending = [...new Set(failedPermanent)].sort();
+            const before = [...pendingPermanent].sort();
+            if (dailyRefreshDue || stableStringify(pending) !== stableStringify(before)) {
+                await refreshRef.set({
+                    date: today,
+                    checkedAt: dailyRefreshDue ? new Date().toISOString() : (refreshState.checkedAt || null),
+                    pending,
+                });
+            }
         }
 
         // Step 4: aggregates (S3) from the snapshots in memory — no extra Bakaláři request
@@ -834,10 +996,13 @@ async function prefetchAllData(options = {}) {
             console.error('❌ Failed to write aggregates:', error.message);
         }
 
-        // Every single timetable failed → an outage, not a successful run.
-        const status = stats.totalRequests > 0 && stats.errorCount === stats.totalRequests
-            ? classifyError(lastTaskError)
-            : 'ok';
+        const status = runStatus(stats, lastTaskError);
+        const notRefreshed = stats.errorCount + stats.emptyGuarded;
+        const runError = status === 'partial'
+            ? `${notRefreshed} of ${stats.totalRequests} timetables not refreshed ` +
+                `(${stats.errorCount} errors, ${stats.emptyGuarded} empty pages kept)` +
+                (lastTaskError ? `; last error: ${lastTaskError.message}` : '')
+            : (lastTaskError ? lastTaskError.message : null);
 
         // Step 5: Update metadata
         await db.collection('metadata').doc('lastPrefetch').set({
@@ -852,7 +1017,7 @@ async function prefetchAllData(options = {}) {
         // Summary
         const duration = ((Date.now() - startTime) / 1000 / 60).toFixed(2);
         console.log(`\n${'='.repeat(60)}`);
-        console.log(`${status === 'ok' ? '✅' : '❌'} Prefetch finished (${status}) in ${duration} minutes`);
+        console.log(`${status === 'ok' ? '✅' : status === 'partial' ? '⚠️ ' : '❌'} Prefetch finished (${status}) in ${duration} minutes`);
         console.log(`📊 Success: ${stats.successCount}/${stats.totalRequests}`);
         console.log(`❌ Errors: ${stats.errorCount}/${stats.totalRequests}`);
         console.log(`${'='.repeat(60)}\n`);
@@ -860,7 +1025,7 @@ async function prefetchAllData(options = {}) {
         return finish(status, {
             definitionsCount: totalEntitiesFetched,
             ...(aggregatesError ? { aggregatesError } : {}),
-            ...(status !== 'ok' && lastTaskError ? { error: lastTaskError.message } : {}),
+            ...(status !== 'ok' && runError ? { error: runError } : {}),
         });
 
     } catch (error) {
@@ -881,6 +1046,8 @@ module.exports = {
     parseSetCookies,
     fetchWithRetry,
     classifyError,
+    runStatus,
+    PARTIAL_FAILURE_RATIO,
     requestConfig,
     BakalariLoginError,
     DEFAULT_CONCURRENCY,

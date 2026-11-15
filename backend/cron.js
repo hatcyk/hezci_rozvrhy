@@ -17,7 +17,10 @@ const RUNS_COLLECTION = 'runs';
 const HEALTH_DOC = ['system', 'health'];
 const LEGACY_STATUS_DOC = ['system', 'prefetchStatus'];
 
-const RUN_STATUSES = new Set(['ok', 'guard_no_definitions', 'guard_no_lessons', 'login_failed', 'network', 'error']);
+// 'partial': the prefetch ran, but too many timetables were not refreshed
+// (see runStatus in prefetch.js). Like every status but 'ok' it leaves
+// lastSuccessAt where it was.
+const RUN_STATUSES = new Set(['ok', 'partial', 'guard_no_definitions', 'guard_no_lessons', 'login_failed', 'network', 'error']);
 
 // /api/status: data counts as fresh when the last successful prefetch is
 // younger than this. School day 6-18 h Prague time is when changes matter.
@@ -321,6 +324,11 @@ async function runPrefetchJob({ trigger } = {}) {
     return { run, result, error };
 }
 
+/** Is an in-process prefetch (HTTP cron route) running right now? */
+function isPrefetchRunning() {
+    return isRunning;
+}
+
 /**
  * In-process prefetch (HTTP cron route). Skips when one is already running in
  * this process; across processes the GitHub `concurrency` group serializes.
@@ -335,8 +343,9 @@ async function triggerManualPrefetch({ trigger = 'http' } = {}) {
     isRunning = true;
     try {
         const outcome = await runPrefetchJob({ trigger });
-        if (outcome.run.status === 'ok') {
-            // Same as the GitHub workflow: send the new change notifications now.
+        if (outcome.run.status === 'ok' || outcome.run.status === 'partial') {
+            // Same as the GitHub workflow: send the new change notifications now
+            // (a partial run still stored the changes of what it did download).
             const { processPendingChanges } = require('./fcm');
             await processPendingChanges();
         }
@@ -364,5 +373,6 @@ module.exports = {
     computeStatus,
     getStatus,
     runPrefetchJob,
+    isPrefetchRunning,
     triggerManualPrefetch,
 };

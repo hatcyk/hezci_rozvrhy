@@ -10,9 +10,11 @@ delete process.env.CORS_ORIGINS;
 
 const { db } = stubFirebase(createFakeFirestore());
 const calls = { prefetch: 0 };
+let prefetchDelayMs = 0;
 stubModule('backend/prefetch.js', {
     prefetchAllData: async () => {
         calls.prefetch++;
+        if (prefetchDelayMs) await new Promise(r => setTimeout(r, prefetchDelayMs));
         return { success: true, status: 'ok', totalRequests: 2, successCount: 2, errorCount: 0, definitionsCount: 3 };
     },
 });
@@ -190,6 +192,37 @@ test('cron: bez tajemství 401, odpověď nese skutečný UTC čas a pražský �
     assert.equal(calls.prefetch, 1);
     await waitFor(() => db._get('system/health'));
     assert.equal(db._get('system/health').lastStatus, 'ok');
+});
+
+test('cron prefetch: druhé volání během běhu dostane 409 a nic nespustí; na Vercelu bez waitUntil 501', async () => {
+    // the run started by the previous test (and its notification step) has to finish first
+    await waitFor(() => !require('../backend/cron').isPrefetchRunning());
+    const before = calls.prefetch;
+    const runsBefore = db._docs('runs').filter(run => run.job === 'prefetch').length;
+    prefetchDelayMs = 150;
+    try {
+        const first = await fetch(base + '/api/cron/prefetch', { headers: CRON });
+        assert.equal(first.status, 200);
+        const second = await fetch(base + '/api/cron/prefetch', { headers: CRON });
+        assert.equal(second.status, 409, 'used to answer "Prefetch started" although the run was skipped');
+        assert.equal((await second.json()).skipped, true);
+        await waitFor(() => db._docs('runs').filter(run => run.job === 'prefetch').length === runsBefore + 1);
+        assert.equal(calls.prefetch, before + 1);
+    } finally {
+        prefetchDelayMs = 0;
+    }
+
+    // Serverless: work left after the response is frozen, so the run could
+    // stop half-way. Without waitUntil the route refuses instead of pretending.
+    process.env.VERCEL = '1';
+    try {
+        const r = await fetch(base + '/api/cron/prefetch', { headers: CRON });
+        assert.equal(r.status, 501);
+        assert.match((await r.json()).error, /prefetch\.yml/);
+        assert.equal(calls.prefetch, before + 1, 'nothing started');
+    } finally {
+        delete process.env.VERCEL;
+    }
 });
 
 test('cron upomínky: do limitu 200 s výsledkem, po vyčerpání limitu 202 a běh doběhne', async () => {

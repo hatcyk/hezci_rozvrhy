@@ -63,13 +63,30 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
     }
 }
 
+// A change found on Friday evening still matters on Monday morning; after
+// three days it is old news. (FCM's default is to keep an undelivered message
+// for four weeks.)
+const CHANGE_TTL_SECONDS = 3 * 24 * 3600;
+
+/**
+ * Web Push headers of a message: how long the push service keeps it for a
+ * device that is offline (TTL, seconds) and that it should be delivered
+ * right away even to a device saving battery (Urgency).
+ */
+function webpushOptions(ttlSeconds) {
+    if (!Number.isFinite(ttlSeconds)) return null;
+    return { headers: { TTL: String(Math.max(0, Math.round(ttlSeconds))), Urgency: 'high' } };
+}
+
 /**
  * Send notification to multiple FCM tokens
  * @param {Array<String>} tokens - Array of FCM device tokens
  * @param {Object} notification - Notification payload
+ * @param {{ ttlSeconds?: Number }} [options] - lifetime of an undelivered message;
+ *        without it the FCM defaults apply (4 weeks, normal urgency)
  * @returns {Promise<Object>} Result with success/failure counts
  */
-async function sendNotificationToTokens(tokens, notification) {
+async function sendNotificationToTokens(tokens, notification, { ttlSeconds } = {}) {
     if (!tokens || tokens.length === 0) {
         console.log('⚠️  No tokens to send notification to');
         return { successCount: 0, failureCount: 0 };
@@ -91,6 +108,8 @@ async function sendNotificationToTokens(tokens, notification) {
             }),
             tokens: tokens
         };
+        const webpush = webpushOptions(ttlSeconds);
+        if (webpush) message.webpush = webpush;
 
         const response = await messaging.sendEachForMulticast(message);
 
@@ -264,14 +283,27 @@ async function getUsersWatchingTimetable(timetable) {
 // lesson turning into cancelled/absent, which is what the "Odpadlé hodiny"
 // switch means to the user - without this mapping those (the most important
 // notifications there are) matched no preference and were silently dropped.
-const PREFERENCE_KEY_BY_CHANGE_TYPE = {
-    type_change: 'lesson_removed',
+// 'lesson_restored' (the cancellation was called off) goes to the same people
+// as the cancellation. 'lesson_replaced' (another subject AND another teacher
+// instead of the original lesson) is at once a cancelled lesson, a substitution
+// and a subject change, so any of those three switches lets it through; the
+// meaning of the stored switches for every other change stays as it was.
+const PREFERENCE_KEYS_BY_CHANGE_TYPE = {
+    type_change: ['lesson_removed'],
+    lesson_restored: ['lesson_removed'],
+    lesson_replaced: ['substitution', 'lesson_removed', 'subject_change'],
 };
 
 const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
 
+/** Switches that let a change type through (any one of them is enough). */
+function preferenceKeysForChange(changeType) {
+    return PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+}
+
+/** The main switch of a change type. */
 function preferenceKeyForChange(changeType) {
-    return PREFERENCE_KEY_BY_CHANGE_TYPE[changeType] || changeType;
+    return preferenceKeysForChange(changeType)[0];
 }
 
 function filterChangesByPreferences(changes, notificationTypes) {
@@ -282,8 +314,7 @@ function filterChangesByPreferences(changes, notificationTypes) {
 
     const userPrefs = notificationTypes.changes;
 
-    return changes.filter(change => {
-        const typeKey = preferenceKeyForChange(change.type);
+    return changes.filter(change => preferenceKeysForChange(change.type).some(typeKey => {
         const isEnabled = userPrefs[typeKey];
 
         // Preference never stored (older user doc): fall back to the important ones.
@@ -291,8 +322,8 @@ function filterChangesByPreferences(changes, notificationTypes) {
             return DEFAULT_ENABLED_CHANGES.includes(typeKey);
         }
 
-        return isEnabled;
-    });
+        return !!isEnabled;
+    }));
 }
 
 /**
@@ -412,6 +443,9 @@ async function processPendingChanges() {
 
             if (watchingUsers.length === 0) {
                 console.log(`⏭️  Skipping ${timetable.name} - no users watching`);
+                // Recorded, so the admin shows "no watchers" instead of a
+                // delivery that never finishes.
+                await changeDoc.ref.update({ sentToUsers: 0, sentToDevices: 0 });
                 processedCount++;
                 continue;
             }
@@ -434,7 +468,7 @@ async function processPendingChanges() {
 
                     const notification = buildChangeNotification(timetable, filteredChanges);
 
-                    const result = await sendNotificationToTokens(user.tokens, notification);
+                    const result = await sendNotificationToTokens(user.tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
                     totalSent += result.successCount;
 
                     // Drop any tokens FCM reported as permanently invalid.
@@ -534,10 +568,12 @@ async function cleanupOldChanges(daysToKeep = 2) {
 
 module.exports = {
     DEAD_TOKEN_ERRORS,
+    CHANGE_TTL_SECONDS,
     findDeadTokens,
     buildChangeNotification,
     filterChangesByPreferences,
     preferenceKeyForChange,
+    preferenceKeysForChange,
     sendNotificationToTokens,
     getUsersWatchingTimetable,
     processPendingChanges,

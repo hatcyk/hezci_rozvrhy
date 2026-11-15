@@ -6,7 +6,7 @@
  */
 
 const express = require('express');
-const { triggerManualPrefetch, runJob, cleanupOldRuns, failedCleanup } = require('../backend/cron');
+const { triggerManualPrefetch, isPrefetchRunning, runJob, cleanupOldRuns, failedCleanup } = require('../backend/cron');
 const { sendLessonReminders } = require('../backend/lesson-reminder');
 const { processPendingChanges, cleanupOldChanges } = require('../backend/fcm');
 const { cleanupOldNotifications } = require('../backend/notification-tracker');
@@ -57,14 +57,32 @@ function withBudget(promise, ms, onTimeout) {
 
 /**
  * Prefetch: started in the background, the run records itself when done.
+ *
+ * For a long-running server (Docker, own host). A run takes minutes; on
+ * serverless the function is frozen once the response is sent, which would
+ * leave the snapshots half rewritten and no `runs` record. So on Vercel the
+ * route refuses unless waitUntil() is available (@vercel/functions installed
+ * and maxDuration raised) - there the prefetch runs as prefetch.yml.
  */
 router.get('/prefetch', verifyCronRequest, async (req, res) => {
     try {
         console.log('⏰ Cron: Prefetch triggered');
 
-        triggerManualPrefetch({ trigger: 'http' }).catch(err =>
+        if (process.env.VERCEL && !waitUntil) {
+            return res.status(501).json({
+                error: 'Prefetch cannot run inside a serverless function; start the prefetch.yml workflow (workflow_dispatch) instead',
+                ...times(),
+            });
+        }
+        // It used to answer "Prefetch started" although the run was skipped.
+        if (isPrefetchRunning()) {
+            return res.status(409).json({ success: false, skipped: true, message: 'Prefetch already running', ...times() });
+        }
+
+        const run = triggerManualPrefetch({ trigger: 'http' }).catch(err =>
             console.error('Cron prefetch error:', err)
         );
+        if (waitUntil) waitUntil(run);
 
         res.json({ success: true, message: 'Prefetch started', ...times() });
     } catch (error) {

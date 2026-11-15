@@ -409,7 +409,9 @@ export async function ensureTokenRegistered() {
 }
 
 /**
- * Boot-time reconcile: lesson reminders can be enabled in preferences
+ * Boot-time reconcile. A user with notifications on but no token stored on the
+ * server gets the token registered again (see below). Beyond that, lesson
+ * reminders can be enabled in preferences
  * independently of having a valid FCM token, so a user can have reminders ON
  * with no deliverable token (registration never finished, token expired, or was
  * pruned). This re-syncs the token silently when possible and otherwise flags
@@ -432,6 +434,12 @@ export async function reconcileLessonReminderToken() {
 
         const remindersOn = hasLessonRemindersEnabled(state.watchedTimetables);
         if (!remindersOn) {
+            // Notifications are on, but the server holds no token of any device:
+            // it was pruned as dead, or the settings were just moved from a 1.x
+            // ID (device tokens are not moved with them). Register this
+            // browser's token again - silently, only with permission already
+            // granted - so change notifications keep arriving.
+            if (data.hasTokens === false) await ensureTokenRegistered();
             updateState('remindersNeedAttention', false);
             return;
         }

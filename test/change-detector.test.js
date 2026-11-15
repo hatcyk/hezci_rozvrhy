@@ -46,10 +46,48 @@ test('suplování + jiná učebna → substitution i room_change', () => {
     assert.match(c.find(x => x.type === 'room_change').description, /A210 → B105/);
 });
 
-test('jiný předmět ve slotu → subject_change (bez současného hlášení učitele)', () => {
-    const c = detectTimetableChanges([L(0, 1, 'Matematika', 'Novák')], [L(0, 1, 'Fyzika', 'Svoboda')], META);
+test('jiný předmět se stejným učitelem → subject_change', () => {
+    const c = detectTimetableChanges([L(0, 1, 'Matematika', 'Novák')], [L(0, 1, 'Fyzika', 'Novák')], META);
     assert.deepEqual(types(c), ['subject_change']);
     assert.match(c[0].description, /Matematika → Fyzika/);
+});
+
+test('jiný předmět i učitel (suplování jiným předmětem) → jedno lesson_replaced, ne subject_change', () => {
+    // Class timetable as prefetch stores it: the substitute lesson and the
+    // struck-through copy of the original from the permanent schedule.
+    const before = [L(0, 1, 'Matematika', 'Cvičná')];
+    const after = [
+        L(0, 1, 'Fyzika', 'Novák', { changed: true }),
+        L(0, 1, 'Matematika', 'Cvičná', { type: 'removed', changed: true }),
+    ];
+    const c = detectTimetableChanges(before, after, META);
+    assert.deepEqual(types(c), ['lesson_replaced']);
+    assert.equal(c[0].description, 'Změna hodiny: Matematika → Fyzika (Novák)');
+    assert.deepEqual(c[0].change, { field: 'lesson', oldValue: 'Matematika', newValue: 'Fyzika', type: 'lesson_replaced' });
+    assert.equal(c[0].lesson.subject, 'Fyzika');
+
+    // with a room change on top, the room is reported as well
+    const moved = detectTimetableChanges(before, [{ ...after[0], room: 'B105' }, after[1]], META);
+    assert.deepEqual(types(moved), ['lesson_replaced', 'room_change']);
+});
+
+test('zrušení hodiny se odvolá (removed → koná se) → lesson_restored', () => {
+    // class: struck-through copy from the permanent schedule; teacher/room: "removed" atom from Bakaláři
+    for (const cancelled of [
+        L(0, 1, 'Matematika', 'Cvičná', { type: 'removed', changed: true }),
+        L(0, 1, 'Matematika', '', { type: 'removed', room: null }),
+    ]) {
+        const c = detectTimetableChanges([cancelled], [L(0, 1, 'Matematika', 'Cvičná')], META);
+        assert.deepEqual(types(c), ['lesson_restored']);
+        assert.equal(c[0].description, 'Hodina se koná: Matematika (Cvičná)');
+        assert.equal(c[0].change.oldValue, 'removed');
+    }
+    // absence called off
+    const c = detectTimetableChanges([L(1, 2, 'Exkurze', '', { type: 'absent' })], [L(1, 2, 'Fyzika', 'Svoboda')], META);
+    assert.deepEqual(types(c), ['lesson_restored']);
+    // cancelled → absent is still "not taking place": reported as before
+    assert.deepEqual(types(detectTimetableChanges([L(0, 1, 'Matematika', '', { type: 'removed' })],
+        [L(0, 1, 'Matematika', 'Cvičná', { type: 'absent' })], META)), ['type_change']);
 });
 
 test('zrušená hodina → jen type_change (nehlásí se zároveň učitel/učebna)', () => {
@@ -231,7 +269,7 @@ test('selectComparisonBaseline: pravidla S2', () => {
     assert.equal(selectComparisonBaseline({ scheduleType: 'Permanent', newWeekStart: null, previous: null }).baseline, null);
 });
 
-test('scénář přechodu týdne z pokusu rz_feat: Actual 4 → 1 hlášení, Next 1 → 0', () => {
+test('scénář přechodu týdne z pokusu rz_feat: Actual 5 → 1 hlášení, Next 1 → 0', () => {
     // Stejná data jako rz_feat/exp/week_transition.js
     const SUBJ = ['MAT', 'CJL', 'ANJ', 'PRG', 'SIT', 'DBS'];
     const permanent = [];
@@ -257,9 +295,10 @@ test('scénář přechodu týdne z pokusu rz_feat: Actual 4 → 1 hlášení, Ne
     ]);
     const N47 = week('2026-11-16', []);
 
-    // dřívější chování (bez týdne): 4 hlášení, z toho 3 falešná
+    // dřívější chování (bez týdne): 5 hlášení, z toho 4 falešná (čtvrté od zavedení
+    // lesson_restored: zrušená hodina z minulého týdne se „koná“)
     const strip = (lessons) => lessons.map(({ date, ...rest }) => rest);
-    assert.equal(detectTimetableChanges(strip(A45), strip(A46), META).length, 4);
+    assert.equal(detectTimetableChanges(strip(A45), strip(A46), META).length, 5);
 
     // nové chování
     const actual = selectComparisonBaseline({

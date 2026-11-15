@@ -9,7 +9,13 @@ const LEGACY = 'anonymous-1733212345678';
 const db = createFakeFirestore({
     [`users/${LEGACY}`]: { tokens: ['fcm-1'], preferences: { watchedTimetables: [{ type: 'Class', id: 'ZL', scheduleType: 'Actual' }] } },
 });
-stubFirebase(db);
+let signFails = false; // one test simulates a failing token signature
+stubFirebase(db, {
+    createCustomToken: async (uid) => {
+        if (signFails) throw new Error('signBlob unavailable (synthetic)');
+        return `custom:${uid}`;
+    },
+});
 
 const {
     isValidUserId, isLegacyUserId, newUserId, safeEqual, createRequireUser, verifyCronRequest,
@@ -95,7 +101,7 @@ test('/api/auth: uhodnutý starý anonymous-<ms> bez přihlášení jeho majitel
     assert.deepEqual(db._get(`users/${LEGACY}`).tokens, ['fcm-1'], 'starý dokument zůstal netknutý');
 });
 
-test('/api/auth převede starý anonymous-<ms> s ID tokenem jeho relace: dokument se přesune pod nové ID', async () => {
+test('/api/auth převede starý anonymous-<ms> s ID tokenem jeho relace: nastavení se přesune pod nové ID, tokeny zařízení ne', async () => {
     const r = await postJson('/api/auth', { userId: LEGACY }, bearer(LEGACY));
     const body = await r.json();
     assert.equal(r.status, 200);
@@ -105,14 +111,79 @@ test('/api/auth převede starý anonymous-<ms> s ID tokenem jeho relace: dokumen
 
     assert.equal(db._get(`users/${LEGACY}`), undefined, 'starý dokument je smazaný');
     const moved = db._get(`users/${body.userId}`);
-    assert.deepEqual(moved.tokens, ['fcm-1']);
     assert.equal(moved.preferences.watchedTimetables[0].id, 'ZL');
     assert.equal(moved.migratedFrom, LEGACY);
+    // Device tokens stay behind: whoever holds a session of the old ID gets the
+    // settings, not somebody's phone. The owner's browser registers its token
+    // again (notificationsEnabled says it should).
+    assert.deepEqual(moved.tokens, []);
+    assert.equal(moved.notificationsEnabled, true);
+    assert.equal(db._get(`userMigrations/${LEGACY}`).migratedTo, body.userId);
+});
 
-    // Second call with the same legacy session: nothing left to move, a fresh ID.
-    const again = await (await postJson('/api/auth', { userId: LEGACY }, bearer(LEGACY))).json();
-    assert.notEqual(again.userId, body.userId);
-    assert.equal(db._get(`users/${again.userId}`), undefined);
+test('/api/auth: opakovaná migrace téže relace (ztracená odpověď) vrátí totéž nové ID, žádné osiřelé nastavení', async () => {
+    const OLD = 'anonymous-1733299999001';
+    db._store.set(`users/${OLD}`, { tokens: ['fcm-9'], preferences: { watchedTimetables: [{ type: 'Class', id: 'ZK', scheduleType: 'Actual' }] } });
+    const session = { authorization: `Bearer valid:${OLD}#1762500000` };
+
+    const first = await (await postJson('/api/auth', { userId: OLD }, session)).json();
+    // The response got lost: the browser still has the old ID and its 1.x session, and asks again.
+    const again = await (await postJson('/api/auth', { userId: OLD }, session)).json();
+    const third = await (await postJson('/api/auth', { userId: OLD }, session)).json();
+
+    assert.equal(again.userId, first.userId, 'used to be a new, empty identity');
+    assert.equal(third.userId, first.userId);
+    assert.equal(again.migratedFrom, OLD);
+    assert.equal(again.token, `custom:${first.userId}`);
+    assert.equal(db._get(`users/${first.userId}`).preferences.watchedTimetables[0].id, 'ZK');
+    assert.equal(db._paths('users').filter(p => db._get(p).migratedFrom === OLD).length, 1);
+});
+
+test('/api/auth: chyba při podpisu tokenu po migraci → 500, další pokus dostane převedené nastavení', async () => {
+    const OLD = 'anonymous-1733299999002';
+    db._store.set(`users/${OLD}`, { tokens: [], preferences: { watchedTimetables: [{ type: 'Room', id: 'R7', scheduleType: 'Actual' }] } });
+    const origError = console.error;
+    console.error = () => {};
+    signFails = true;
+    try {
+        assert.equal((await postJson('/api/auth', { userId: OLD }, bearer(OLD))).status, 500);
+    } finally {
+        signFails = false;
+        console.error = origError;
+    }
+    const body = await (await postJson('/api/auth', { userId: OLD }, bearer(OLD))).json();
+    assert.equal(body.migratedFrom, OLD);
+    assert.equal(db._get(`users/${body.userId}`).preferences.watchedTimetables[0].id, 'R7');
+    assert.equal(db._get(`users/${body.userId}`).notificationsEnabled, false, 'no token before → still off');
+});
+
+test('/api/auth: jiná relace téhož starého ID po migraci nedostane převedenou identitu (jen novou prázdnou)', async () => {
+    const OLD = 'anonymous-1733299999003';
+    db._store.set(`users/${OLD}`, { tokens: ['fcm-3'], preferences: { watchedTimetables: [] } });
+    const owner = await (await postJson('/api/auth', { userId: OLD }, { authorization: `Bearer valid:${OLD}#1762500100` })).json();
+
+    // A second Firebase session for the legacy uid (e.g. obtained from the 1.x
+    // endpoint that signed any ID) signed in at another time.
+    const other = await (await postJson('/api/auth', { userId: OLD }, { authorization: `Bearer valid:${OLD}#1762400000` })).json();
+    assert.notEqual(other.userId, owner.userId);
+    assert.equal(isValidUserId(other.userId), true);
+    assert.equal(db._get(`users/${other.userId}`), undefined, 'nová identita je prázdná');
+    assert.equal(db._get(`userMigrations/${OLD}`).migratedTo, owner.userId, 'záznam o migraci se nepřepíše');
+    // and still nothing without the ID token of the legacy identity
+    for (const headers of [{}, bearer(A), { authorization: 'Bearer forged' }]) {
+        const body = await (await postJson('/api/auth', { userId: OLD }, headers)).json();
+        assert.notEqual(body.userId, owner.userId);
+        assert.equal(body.migratedFrom, undefined);
+    }
+});
+
+test('/api/auth: starý uživatel bez uloženého nastavení dostane při opakování stejné ID', async () => {
+    const OLD = 'anonymous-1733299999004';
+    const first = await (await postJson('/api/auth', { userId: OLD }, bearer(OLD))).json();
+    const again = await (await postJson('/api/auth', { userId: OLD }, bearer(OLD))).json();
+    assert.equal(first.migratedFrom, OLD);
+    assert.equal(again.userId, first.userId);
+    assert.equal(db._get(`users/${first.userId}`), undefined, 'nic se nezakládá');
 });
 
 test('requireUser: bez tokenu 401, s neplatným tokenem 401', async () => {

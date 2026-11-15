@@ -129,11 +129,25 @@ function detectLessonChanges(oldLesson, newLesson) {
         return changes;
     }
 
+    // The cancellation (or absence) was called off: the lesson takes place after
+    // all. Whoever was told "odpadla" has to hear this, otherwise they stay away.
+    // Reported alone, like the cancellation itself.
+    if (oldType === 'removed' || oldType === 'absent') {
+        changes.push({ field: 'type', oldValue: oldType, newValue: newType, type: 'lesson_restored' });
+        return changes;
+    }
+
     // Active lesson: a changed subject means the whole lesson was swapped, so report
-    // that instead of also flagging the (implied) teacher change. Otherwise a changed
-    // teacher on the same subject is a substitution.
+    // that instead of also flagging the (implied) teacher change. With another
+    // teacher as well it is a substitution by a different subject - the original
+    // lesson does not take place ('lesson_replaced'); a plain 'subject_change' is
+    // off by default in the app, so this case used to reach nobody. Otherwise a
+    // changed teacher on the same subject is a substitution.
     if (norm(oldLesson.subject) !== norm(newLesson.subject)) {
-        changes.push({ field: 'subject', oldValue: oldLesson.subject, newValue: newLesson.subject, type: 'subject_change' });
+        const replaced = norm(oldLesson.teacher) !== norm(newLesson.teacher);
+        changes.push(replaced
+            ? { field: 'lesson', oldValue: oldLesson.subject, newValue: newLesson.subject, type: 'lesson_replaced' }
+            : { field: 'subject', oldValue: oldLesson.subject, newValue: newLesson.subject, type: 'subject_change' });
     } else if (norm(oldLesson.teacher) !== norm(newLesson.teacher)) {
         changes.push({ field: 'teacher', oldValue: oldLesson.teacher, newValue: newLesson.teacher, type: 'substitution' });
     }
@@ -212,6 +226,14 @@ function describeLessonChange(change, oldLesson, newLesson) {
     }
     if (change.type === 'subject_change') {
         return `Změna předmětu: ${oldLesson.subject} → ${newLesson.subject}`;
+    }
+    if (change.type === 'lesson_replaced') {
+        // Neutral wording: the permanent schedule is compared the same way, and
+        // there a new subject with a new teacher is not a substitution.
+        return `Změna hodiny: ${oldLesson.subject} → ${newLesson.subject} (${newLesson.teacher})`;
+    }
+    if (change.type === 'lesson_restored') {
+        return `Hodina se koná: ${newLesson.subject} (${newLesson.teacher})`;
     }
     if (change.type === 'type_change') {
         return newLesson.type === 'absent'
@@ -340,6 +362,10 @@ function shortChangeText(change) {
             return `Přidána ${subject}`;
         case 'subject_change':
             return `Změna na ${change.change?.newValue || subject}`;
+        case 'lesson_replaced':
+            return `${change.change?.oldValue || ''} → ${change.change?.newValue || subject} (${change.lesson.teacher})`;
+        case 'lesson_restored':
+            return `${subject} se koná (zrušení odvoláno)`;
         default:
             return '';
     }
@@ -361,6 +387,10 @@ function detailedChangeText(change) {
             return `Přidána ${lesson.subject} (${lesson.teacher})`;
         case 'subject_change':
             return `${change.change?.oldValue || ''} → ${change.change?.newValue || lesson.subject}`;
+        case 'lesson_replaced':
+            return `${change.change?.oldValue || ''} → ${change.change?.newValue || lesson.subject} (${lesson.teacher})`;
+        case 'lesson_restored':
+            return `${lesson.subject} se koná (zrušení odvoláno)`;
         default:
             return '';
     }

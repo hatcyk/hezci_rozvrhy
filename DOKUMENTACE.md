@@ -40,7 +40,10 @@ Bakaláři ──(prefetch: HTML)──► Firestore ◄──(čtení, Firebase
 ### 3.1 Sběr dat (prefetch)
 
 `backend/prefetch.js`, `prefetchAllData()`; spouští `scripts/run-prefetch.js`
-(GitHub Actions `prefetch.yml`, systémový cron) nebo `GET /api/cron/prefetch`.
+(GitHub Actions `prefetch.yml`, systémový cron). `GET /api/cron/prefetch` je jen
+pro trvale běžící server (Docker, vlastní hostitel): běh trvá minuty a na
+Vercelu by ho po odeslání odpovědi platforma zmrazila, proto tam bez
+`waitUntil` (`@vercel/functions`) odpoví 501. Během rozpracovaného běhu vrací 409.
 
 1. **Přihlášení** do `https://mot-spsd.bakalari.cz/login`
    (`BAKALARI_USERNAME`/`PASSWORD`). `assessLoginResponse` pozná neúspěch
@@ -53,6 +56,11 @@ Bakaláři ──(prefetch: HTML)──► Firestore ◄──(čtení, Firebase
    Souběžně nejvýš `PREFETCH_CONCURRENCY` požadavků (výchozí 3), opakování jen
    při síťové chybě, 429 nebo 5xx, s ohledem na `Retry-After`. User-Agent jde
    změnit proměnnou `BAKALARI_USER_AGENT`.
+   Stálé rozvrhy se v září stahují v každém běhu, jinak jednou denně (první
+   běh pražského dne, `system/permanentRefresh`; nepovedené se zkouší v dalších
+   bězích) a zpracují se před `Actual`/`Next`, aby aktuální týden počítal
+   s čerstvým stálým rozvrhem. Stránka, která je místo rozvrhu přihlašovacím
+   formulářem (vypršelá relace), je chyba: běh se jednou znovu přihlásí.
 4. **Parser** (`backend/bakalari-parser.js`, `parseTimetablePage`) vrací
    `{ lessons, weekStart, allDaysOff, daysOff, hours, format }`. Hodina má pole
    `day, dayName, date ('YYYY-MM-DD'|null), hour, subject, teacher, room, group,
@@ -70,15 +78,24 @@ Bakaláři ──(prefetch: HTML)──► Firestore ◄──(čtení, Firebase
 7. **Detekce změn** (`backend/change-detector.js`): porovnávají se jen snímky
    téhož týdne (`selectComparisonBaseline`: stejný `weekStart`, nebo nový
    `Actual` proti loňskému `Next` téhož týdne). Jinak se nic nehlásí. Hodiny ve
-   slotu se párují podle stavu, předmětu a vyučujícího. Nalezené změny →
-   dokument `changes/{docKey}_{čas}` se `sent: false`.
+   slotu se párují podle stavu, předmětu a vyučujícího. Typy změn:
+   `substitution`, `room_change`, `subject_change` (jiný předmět, stejný
+   vyučující), `lesson_replaced` (jiný předmět i vyučující, tedy suplování
+   jiným předmětem), `type_change` (hodina odpadla / absence),
+   `lesson_restored` (zrušení odvoláno), `lesson_added`, `lesson_removed`.
+   Nalezené změny → dokument `changes/{docKey}_{hash}` se `sent: false`,
+   zapsaný jednou dávkou spolu se snímkem. ID je hash verze výchozího snímku
+   a obsahu změn a zapisuje se přes `create()`, takže dva překryté běhy
+   neuloží (a nepošlou) tutéž změnu dvakrát.
 8. **Agregáty** (`backend/aggregates.js`) ze snímků v paměti:
    `aggregates/changes_{Actual|Next}` (změny všech tříd po dnech) a
    `aggregates/freeRooms_{Actual|Next}` (volné učebny pro každý den a hodinu).
    Zapisují se jen při změně obsahu.
 9. **Výsledek** `{ success, status, …počítadla }`, kde `status` je `ok`,
-   `login_failed`, `network`, `guard_no_definitions`, `guard_no_lessons` nebo
-   `error`. Funkce nevyhazuje výjimky.
+   `partial`, `login_failed`, `network`, `guard_no_definitions`,
+   `guard_no_lessons` nebo `error`. `partial` = neobnovilo se víc než 10 %
+   rozvrhů (chyby stažení + prázdné stránky, u kterých zůstal starý snímek);
+   `success` je pak `false`. Funkce nevyhazuje výjimky.
 
 ### 3.2 Upozornění
 
@@ -87,11 +104,18 @@ Bakaláři ──(prefetch: HTML)──► Firestore ◄──(čtení, Firebase
   kteří daný rozvrh sledují (index `watchedKeys`) → filtr podle typu změny a
   skupin → **jen datová** zpráva FCM (`fitFcmDataPayload` ji udrží pod limitem
   4 KB). Neplatné tokeny se odstraní; `messaging/invalid-argument` token nemaže.
+  Přepínače: `type_change` a `lesson_restored` patří pod „Odpadlé hodiny“;
+  `lesson_replaced` projde, je-li zapnuté „Suplování“, „Odpadlé hodiny“ nebo
+  „Změna předmětu“. Dokument se před odesláním zabere v transakci
+  (`sent: false → true`), po odeslání dostane `sentToUsers`/`sentToDevices`
+  (0, když rozvrh nikdo nesleduje). Zprávy mají `Urgency: high` a TTL 3 dny.
 - **Upomínky před hodinou** (`backend/lesson-reminder.js`; `scripts/send-lesson-reminders.js`
   nebo `GET /api/cron/lesson-reminders`): okno 6–1 min před začátkem hodiny
   (`LESSON_REMINDER_*`). Hodina musí mít dnešní `date` a den nesmí být volný.
   Každá upomínka se nejdřív „zabere“ (`create()` v `lesson_notifications_sent`),
-  takže souběžné běhy ji nepošlou dvakrát. HTTP varianta odpoví nejpozději po
+  takže souběžné běhy ji nepošlou dvakrát. Berou se jen sledované rozvrhy se
+  zapnutou připomínkou, třída má přednost. TTL zprávy končí dvě minuty po
+  začátku hodiny. HTTP varianta odpoví nejpozději po
   `REMINDER_HTTP_BUDGET_MS` (25 s): 200 s výsledkem, jinak 202.
 - **Service worker** (`public/firebase-messaging-sw.js`) zobrazí notifikaci se
   značkou `change_<typ>_<id>_<týden>`; na Apple (Web Push přes `*.push.apple.com`)
@@ -104,7 +128,7 @@ Bakaláři ──(prefetch: HTML)──► Firestore ◄──(čtení, Firebase
   `trigger` se bere z `GITHUB_EVENT_NAME`, `RUN_TRIGGER` nebo podle terminálu.
 - Prefetch navíc aktualizuje `system/health`
   (`lastRunAt, lastSuccessAt, lastStatus, consecutiveFailures, lastError, updatedAt`);
-  `lastSuccessAt` se posune jen při `status === 'ok'`.
+  `lastSuccessAt` se posune jen při `status === 'ok'` (ne při `partial`).
 - `GET /api/status` vrací `isHealthy`, `lastSuccessAt`, `dataAgeMin`,
   `maxAgeMin` a další. Data jsou zdravá, když jsou mladší než 120 min (Po–Pá
   6–18 h pražského času), jinak 12 h. S `?strict=1` vrací při nezdravém stavu 503.
@@ -125,7 +149,8 @@ Bakaláři ──(prefetch: HTML)──► Firestore ◄──(čtení, Firebase
 
 Spouštěče na cron-job.org odpovídají doporučenému nastavení v DEPLOYMENT.md
 (kap. 1.5). Na vlastním serveru se tytéž skripty pouštějí systémovým cronem
-(`deploy/crontab.example`).
+(`deploy/crontab.example`), sběr a odesílání změn pod zámkem `flock -n`, aby se
+běhy nepřekryly.
 
 ## 4. Data ve Firestore
 
@@ -138,7 +163,8 @@ Spouštěče na cron-job.org odpovídají doporučenému nastavení v DEPLOYMENT
 | `users/{uid}` | tokeny FCM, sledované rozvrhy a filtry, oblíbené, index `watchedKeys`/`watchedTypes` | API | jen `get` vlastního dokumentu |
 | `changes/*` | zjištěné změny k odeslání | prefetch, notifikace | ne |
 | `lesson_notifications_sent/*` | zábory upomínek | upomínky | ne |
-| `runs/*`, `system/*` | běhy úloh, stav, migrace, slot ručního spuštění | úlohy, admin | ne |
+| `runs/*`, `system/*` | běhy úloh, stav, migrace, slot ručního spuštění, `system/permanentRefresh` (denní obnova stálých rozvrhů) | úlohy, admin | ne |
+| `userMigrations/{anonymous-<ms>}` | na které nové ID se staré převedlo (`migratedTo`, `authTime`) | `/api/auth` | ne |
 | `audit/*` | přístupy do administrace (`ipHash` = HMAC) | admin API | ne |
 
 Pravidla jsou v `firestore.rules` (zápis z prohlížeče nikde, server zapisuje
@@ -149,7 +175,7 @@ přes Admin SDK), složený index `runs (job ↑, startedAt ↓)` v
 
 | Endpoint | Ochrana | Účel |
 |---|---|---|
-| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. |
+| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. |
 | `GET /api/status[?strict=1]` | – | stáří dat (3.3) |
 | `GET /api/groups/:classId` | – | skupiny třídy |
 | `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50) |

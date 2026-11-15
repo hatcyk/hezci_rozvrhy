@@ -46,6 +46,36 @@ test('other change types keep their own switches', () => {
     assert.deepEqual(filterChangesByPreferences([added], null), [added]);
 });
 
+test('a substitution with another subject (lesson_replaced) reaches users with the default switches', () => {
+    const replaced = change('lesson_replaced', {
+        lesson: { subject: 'Fyzika', teacher: 'P. Novák', room: 'A102' },
+        change: { field: 'lesson', oldValue: 'Matematika', newValue: 'Fyzika' },
+    });
+    // It used to be a subject_change, which is off by default → nothing was delivered.
+    assert.deepEqual(filterChangesByPreferences([replaced], DEFAULTS), [replaced]);
+    // Any of the three switches that describe it is enough…
+    for (const key of ['lesson_removed', 'substitution', 'subject_change']) {
+        assert.deepEqual(filterChangesByPreferences([replaced], prefs({ ...ALL_OFF.changes, [key]: true })), [replaced], key);
+    }
+    // …and with all of them off it stays silent.
+    assert.deepEqual(filterChangesByPreferences([replaced], prefs({ ...ALL_OFF.changes, room_change: true, lesson_added: true })), []);
+    assert.deepEqual(filterChangesByPreferences([replaced], prefs({})), [replaced], 'older docs without stored switches');
+    // A plain subject change (same teacher) keeps its own switch, off by default.
+    assert.deepEqual(filterChangesByPreferences([change('subject_change')], DEFAULTS), []);
+
+    assert.equal(createChangeSummary([replaced]), 'Po 3.h: Matematika → Fyzika (P. Novák)');
+    assert.match(createDetailedChangeSummary([replaced]), /3\.h: Matematika → Fyzika \(P\. Novák\)/);
+});
+
+test('a cancellation that was called off (lesson_restored) goes to the people who got the cancellation', () => {
+    assert.equal(preferenceKeyForChange('lesson_restored'), 'lesson_removed');
+    const restored = change('lesson_restored', { change: { field: 'type', oldValue: 'removed', newValue: 'normal' } });
+    assert.deepEqual(filterChangesByPreferences([restored], DEFAULTS), [restored]);
+    assert.deepEqual(filterChangesByPreferences([restored], prefs({ ...DEFAULTS.changes, lesson_removed: false })), []);
+    assert.equal(createChangeSummary([restored]), 'Po 3.h: Matematika se koná (zrušení odvoláno)');
+    assert.match(createDetailedChangeSummary([restored]), /3\.h: Matematika se koná \(zrušení odvoláno\)/);
+});
+
 test('a cancelled lesson produces readable notification text', () => {
     const cancelled = change('type_change');
     const absent = change('type_change', { change: { newValue: 'absent' } });

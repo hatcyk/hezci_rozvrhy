@@ -46,6 +46,26 @@ test('výsledek prefetche: nový tvar se status i starý tvar jen se success/err
     assert.deepEqual(prefetchCounts({ stats: { writes: 3 }, totalRequests: 9 }), { writes: 3 });
 });
 
+test('částečný běh (partial): platný status, lastSuccessAt se neposune, strict po limitu vrátí neúspěch', () => {
+    assert.equal(classifyPrefetchResult({ success: false, status: 'partial', error: '7 of 9 timetables not refreshed' }), 'partial');
+    assert.equal(cron.buildRunDoc({ job: 'prefetch', startedAt: new Date(), status: 'partial' }).status, 'partial');
+
+    const ok = nextHealth(null, { status: 'ok', finishedAt: '2026-11-04T08:00:00.000Z', error: null });
+    const partial = nextHealth(ok, { status: 'partial', finishedAt: '2026-11-04T08:15:00.000Z', error: '7 of 9 timetables not refreshed' });
+    assert.equal(partial.lastSuccessAt, '2026-11-04T08:00:00.000Z');
+    assert.equal(partial.lastStatus, 'partial');
+    assert.equal(partial.consecutiveFailures, 1);
+    assert.equal(partial.lastError, '7 of 9 timetables not refreshed');
+
+    // Wednesday 9:20 Prague: 80 min old → still healthy; 11:01 → stale, with the reason.
+    const soon = computeStatus(partial, new Date('2026-11-04T09:20:00.000Z'));
+    assert.equal(soon.isHealthy, true);
+    assert.equal(soon.lastStatus, 'partial');
+    const late = computeStatus(partial, new Date('2026-11-04T10:01:00.000Z'));
+    assert.equal(late.isHealthy, false);
+    assert.equal(late.error, '7 of 9 timetables not refreshed');
+});
+
 test('system/health: lastSuccessAt se posune JEN při skutečném úspěchu', () => {
     const ok = nextHealth(null, { status: 'ok', finishedAt: '2026-11-04T08:00:00.000Z', error: null });
     assert.equal(ok.lastSuccessAt, '2026-11-04T08:00:00.000Z');
