@@ -433,15 +433,17 @@ function updateDebugSectionVisibility() {
     if (!debugSection || debugStatusChecked) return;
     debugStatusChecked = true;
 
-    // Check if in debug mode by checking debug status endpoint
+    // Check if in debug mode by checking debug status endpoint. Any answer
+    // other than 200 + JSON (404 without DEBUG, e.g. in production) means
+    // debugging is off for this page load: not asked again.
     fetch('/api/debug/status')
-        .then(response => response.json())
-        .then(data => {
+        .then(async (response) => {
+            const data = response.ok ? await response.json().catch(() => ({})) : {};
             debugSection.hidden = !data.debugMode;
             if (data.debugMode) populateDebugTimetableSelect();
         })
         .catch(() => {
-            // Network error or other issue - hide debug section, ask again next time
+            // Network error - hide debug section, ask again next time
             debugSection.hidden = true;
             debugStatusChecked = false;
         });
