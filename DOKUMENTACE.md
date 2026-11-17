@@ -132,6 +132,8 @@ Vercelu by ho po odeslání odpovědi platforma zmrazila, proto tam bez
 - `GET /api/status` vrací `isHealthy`, `lastSuccessAt`, `dataAgeMin`,
   `maxAgeMin` a další. Data jsou zdravá, když jsou mladší než 120 min (Po–Pá
   6–18 h pražského času), jinak 12 h. S `?strict=1` vrací při nezdravém stavu 503.
+  Odpověď smí CDN držet 30 s (`public, max-age=0, s-maxage=30`), prohlížeč se
+  ptá vždy znovu; chyba čtení Firestore má `no-store`.
 - **Úklid** (`scripts/cleanup.js`, `GET /api/cron/cleanup`): záznamy odeslaných
   upomínek starší 7 dní, zpracované `changes` starší 2 dnů, `runs` starší 30 dní,
   `audit` starší 90 dní.
