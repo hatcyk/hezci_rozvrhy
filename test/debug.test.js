@@ -113,7 +113,7 @@ test('DEBUG=true lokálně z 127.0.0.1: ladění funguje', async () => {
 });
 
 test('brána ladění: jen adresa soketu z loopbacku, X-Forwarded-For se nebere v potaz', async () => {
-    const req = (remoteAddress, headers = { host: '127.0.0.1:3000' }) => ({ socket: { remoteAddress }, headers });
+    const req = (remoteAddress, headers = { host: '127.0.0.1:3000' }) => ({ method: 'GET', socket: { remoteAddress }, headers });
     await withEnv({ DEBUG: 'true' }, () => {
         for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) assert.equal(isDebugAllowed(req(a)), true, a);
         for (const a of ['192.168.1.20', '10.0.0.5', '::ffff:192.168.1.20', 'fe80::1', '172.17.0.1', undefined]) {
@@ -121,14 +121,14 @@ test('brána ladění: jen adresa soketu z loopbacku, X-Forwarded-For se nebere 
         }
         const spoofed = req('192.168.1.20', { host: 'localhost:3000', 'x-forwarded-for': '127.0.0.1', 'x-real-ip': '127.0.0.1' });
         assert.equal(isDebugAllowed(spoofed), false, 'client controlled headers do not count');
-        assert.equal(isDebugAllowed({ headers: {} }), false, 'no socket → closed');
+        assert.equal(isDebugAllowed({ method: 'GET', headers: {} }), false, 'no socket → closed');
     });
     await withEnv({ DEBUG: 'true', VERCEL: '1' }, () => assert.equal(isDebugAllowed(req('127.0.0.1')), false));
     await withEnv({ DEBUG: undefined }, () => assert.equal(isDebugAllowed(req('127.0.0.1')), false));
 });
 
 test('brána ladění: Host jen localhost / 127.0.0.1 / [::1] a žádné přeposílací hlavičky (tunel, DNS rebinding)', async () => {
-    const req = (headers) => ({ socket: { remoteAddress: '127.0.0.1' }, headers });
+    const req = (headers) => ({ method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers });
     await withEnv({ DEBUG: 'true' }, () => {
         for (const host of ['localhost', 'localhost:3000', '127.0.0.1', '127.0.0.1:3000', '[::1]', '[::1]:3000', 'LOCALHOST:3000']) {
             assert.equal(isDebugAllowed(req({ host })), true, host);
@@ -165,6 +165,92 @@ test('brána ladění přes HTTP: požadavek z 127.0.0.1 s cizím Host nebo z tu
         const local = await get({ Host: `localhost:${port}` });
         assert.equal(local.status, 200);
         assert.match(local.body, /fcm-victim/);
+    });
+});
+
+// ---- CSRF: a page the developer visits posts to http://127.0.0.1:3000 ------------
+// Host and socket are then loopback, so the browser's own headers decide.
+function rawRequest(method, p, headers, body) {
+    const http = require('node:http');
+    const { port } = new URL(base);
+    return new Promise((resolve, reject) => {
+        const r = http.request({ host: '127.0.0.1', port, method, path: p,
+            headers: { Host: `localhost:${port}`, ...headers, ...(body !== undefined ? { 'Content-Length': Buffer.byteLength(body) } : {}) } }, (res) => {
+            let text = '';
+            res.on('data', (c) => { text += c; });
+            res.on('end', () => resolve({ status: res.statusCode, body: text }));
+        });
+        r.on('error', reject);
+        if (body !== undefined) r.write(body);
+        r.end();
+    });
+}
+const CHANGE = JSON.stringify({ timetableType: 'Class', timetableId: 'C2A', scheduleType: 'Actual', timetableName: 'CSRF' });
+
+test('brána ladění: cizí Origin a Sec-Fetch-Site jiný než same-origin/none se odmítnou', async () => {
+    const req = (headers) => ({ method: 'GET', socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'localhost:3000', ...headers } });
+    await withEnv({ DEBUG: 'true' }, () => {
+        for (const origin of ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000', 'https://localhost', 'http://LOCALHOST:3000']) {
+            assert.equal(isDebugAllowed(req({ origin })), true, origin);
+        }
+        for (const origin of ['https://evil.example', 'null', 'http://localhost.evil.example', 'http://127.0.0.1.nip.io:3000', 'file://', 'http://localhost:3000/x', '']) {
+            assert.equal(isDebugAllowed(req({ origin })), false, origin);
+        }
+        for (const site of ['same-origin', 'none']) assert.equal(isDebugAllowed(req({ 'sec-fetch-site': site })), true, site);
+        for (const site of ['cross-site', 'same-site', 'bogus']) assert.equal(isDebugAllowed(req({ 'sec-fetch-site': site })), false, site);
+    });
+});
+
+test('brána ladění: měnící akce jen POST s Content-Type application/json; formulář ani text/plain cizí stránky nic nepošle', async () => {
+    await withEnv({ DEBUG: 'true' }, async () => {
+        const before = sent.length;
+        // "simple" requests a foreign page can send without a CORS preflight
+        const simple = [
+            ['text/plain', CHANGE],
+            ['application/x-www-form-urlencoded', 'timetableType=Class&timetableId=C2A&scheduleType=Actual&timetableName=CSRF'],
+            ['multipart/form-data; boundary=x', '--x\r\nContent-Disposition: form-data; name="a"\r\n\r\nb\r\n--x--\r\n'],
+        ];
+        for (const [type, body] of simple) {
+            for (const p of ['/api/debug/simulate-change', '/api/debug/test-notification-all']) {
+                const r = await rawRequest('POST', p, { 'Content-Type': type }, body);
+                assert.equal(r.status, 404, `${p} ${type}`);
+            }
+        }
+        assert.equal((await rawRequest('POST', '/api/debug/test-notification-all', {})).status, 404, 'no body, no type');
+        // JSON from a foreign page (would need a preflight, but the gate must not rely on CORS alone)
+        assert.equal((await rawRequest('POST', '/api/debug/simulate-change', { 'Content-Type': 'application/json', Origin: 'https://evil.example' }, CHANGE)).status, 404);
+        assert.equal((await rawRequest('POST', '/api/debug/simulate-change', { 'Content-Type': 'application/json', 'Sec-Fetch-Site': 'cross-site' }, CHANGE)).status, 404);
+        // sending reminders by a plain GET (an <img> on a foreign page) is gone
+        assert.equal((await rawRequest('GET', '/api/debug/test-lesson-reminder?dryRun=1', {})).status, 404);
+        for (const p of ['/api/debug/clear-changes', '/api/debug/clear-lesson-notifications']) {
+            assert.equal((await rawRequest('DELETE', p, {})).status, 404, `${p} without JSON`);
+        }
+        assert.equal(sent.length, before, 'no push was sent');
+    });
+});
+
+test('vlastní ladicí panel aplikace (stejný původ) funguje dál, jak ho volá notifications-modal.js', async () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const client = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'notifications-modal.js'), 'utf8');
+    // The panel posts JSON to simulate-change and reads /status with a plain GET.
+    assert.match(client, /fetch\('\/api\/debug\/simulate-change', \{\s*method: 'POST',\s*headers: \{ 'Content-Type': 'application\/json' \}/);
+    assert.match(client, /fetch\('\/api\/debug\/status'\)/);
+
+    const { port } = new URL(base);
+    // What Chrome sends from http://localhost:3000 for those two calls.
+    const sameOrigin = { Origin: `http://localhost:${port}`, 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors' };
+    await withEnv({ DEBUG: 'true' }, async () => {
+        const status = await rawRequest('GET', '/api/debug/status', { 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors' });
+        assert.equal(status.status, 200);
+        assert.equal(JSON.parse(status.body).debugMode, true);
+        const before = sent.length;
+        const change = await rawRequest('POST', '/api/debug/simulate-change', { ...sameOrigin, 'Content-Type': 'application/json' }, CHANGE);
+        assert.equal(change.status, 200);
+        assert.ok(sent.length > before, 'the simulated change was sent');
+        // curl from the terminal (no Origin, no Sec-Fetch-*) works too, with JSON
+        const reminder = await rawRequest('POST', '/api/debug/test-lesson-reminder', { 'Content-Type': 'application/json' }, JSON.stringify({ dryRun: true }));
+        assert.equal(reminder.status, 200);
     });
 });
 
