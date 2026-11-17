@@ -31,7 +31,7 @@ test('CSP aplikace pokrývá všechny inline skripty a skutečné zdroje index.h
     for (const h of hashes) assert.ok(csp.includes(h), h);
     // every external script / stylesheet / dynamic import host of index.html is allowed
     const hosts = new Set([...INDEX_HTML.matchAll(/(?:src|href)="(https:\/\/[^/"]+)|import\('(https:\/\/[^/']+)/g)].map(m => m[1] || m[2]));
-    const allowed = ['https://www.gstatic.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net', 'https://github.com', 'https://sunrisesunset.io'];
+    const allowed = ['https://www.gstatic.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://github.com', 'https://sunrisesunset.io'];
     for (const host of hosts) assert.ok(allowed.includes(host), `unexpected host in index.html: ${host}`);
     for (const src of ['https://firestore.googleapis.com', 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com',
         'https://fcmregistrations.googleapis.com', 'https://api.sunrisesunset.io', 'https://vitals.vercel-insights.com']) {
@@ -40,6 +40,29 @@ test('CSP aplikace pokrývá všechny inline skripty a skutečné zdroje index.h
     assert.match(csp, /object-src 'none'/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.ok(!/'unsafe-inline'[^;]*;/.test(csp.split('; ').find(d => d.startsWith('script-src'))), 'no unsafe-inline for scripts');
+});
+
+test('CSP: žádný celý CDN; gstatic jen pod cestou SDK Firebase, Analytics z vlastní domény', () => {
+    const csp = sec.buildAppCsp({ scriptHashes: sec.inlineScriptHashes(INDEX_HTML) });
+    const directives = Object.fromEntries(csp.split('; ').map((d) => { const [name, ...values] = d.split(' '); return [name, values]; }));
+    assert.match(sec.FIREBASE_SDK_BASE || '', /^https:\/\/www\.gstatic\.com\/firebasejs\/\d+\.\d+\.\d+\/$/);
+    // jsDelivr would allow any npm package; the debug script host is not used by the first-party loader
+    assert.ok(!csp.includes('cdn.jsdelivr.net'), 'cdn.jsdelivr.net');
+    assert.ok(!csp.includes('vercel-scripts.com'), 'va.vercel-scripts.com');
+    for (const [name, values] of Object.entries(directives)) {
+        for (const value of values.filter((v) => v.includes('gstatic.com'))) {
+            assert.equal(value, sec.FIREBASE_SDK_BASE, `${name}: ${value} allows more than the SDK`);
+        }
+    }
+    assert.deepEqual(directives['script-src'].filter((v) => /^https?:/.test(v)), [sec.FIREBASE_SDK_BASE]);
+    assert.ok(directives['connect-src'].includes(sec.FIREBASE_SDK_BASE), 'the service worker downloads the SDK with fetch()');
+    // the source expression covers the four scripts of index.html (a path ending in / is a prefix)
+    for (const m of INDEX_HTML.matchAll(/<script\b[^>]*\bsrc="(https:\/\/www\.gstatic\.com\/[^"]+)"/g)) {
+        assert.ok(m[1].startsWith(sec.FIREBASE_SDK_BASE), m[1]);
+    }
+    // the same policy goes to the Vercel CDN
+    const vercelCsp = vercel.headers.find((r) => r.source === '/(.*)').headers.find((h) => h.key === 'Content-Security-Policy-Report-Only');
+    assert.equal(vercelCsp.value, csp);
 });
 
 test('vercel.json má stejné hlavičky jako Express (po změně inline skriptu: node tools/csp-hashes.js --write)', () => {

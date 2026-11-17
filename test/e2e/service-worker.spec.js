@@ -5,12 +5,17 @@
 // Každý test má vlastní malý server nad public/ (port přidělí systém), aby šlo
 // „nasadit“ verzi B a řídit výpadky. Skripty Firebase z gstatic nahrazuje
 // atrapa ze stejného serveru; prohlížeč má navíc zakázané všechny cizí adresy.
+// Atrapa má vlastní otisk (integrity v index.html se přepíše na její sha384),
+// takže kontrola SRI běží i v testech. Testy SRI a otravy mezipaměti nechávají
+// skutečné adresy gstatic a odpovídají na ně atrapou přes page.route.
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const { test: base, expect } = require('@playwright/test');
 const { buildSchool } = require('./support/school');
 const { installFakeFirebase } = require('./support/fake-firebase');
+const { buildAppCsp, inlineScriptHashes } = require('../../backend/security-headers');
 
 const PUBLIC = path.join(__dirname, '..', '..', 'public');
 const GSTATIC = 'https://www.gstatic.com/firebasejs/9.22.0/';
@@ -18,8 +23,14 @@ const USER_ID = 'anon-00000000-0000-4000-8000-000000000000';
 const school = buildSchool();
 
 // Atrapa SDK pro worker (importScripts) i pro stránku (tam už window.firebase
-// nastavila atrapa z addInitScript a tenhle skript nic nepřepíše)
-const SDK_STUB = 'if (!self.firebase) self.firebase = { initializeApp() {}, messaging: () => ({ onBackgroundMessage() {} }) };';
+// nastavila atrapa z addInitScript a tenhle skript nic nepřepíše).
+// self.__sdkRuns počítá, kolik ze čtyř skriptů stránka opravdu spustila.
+const SDK_STUB = 'self.__sdkRuns = (self.__sdkRuns || 0) + 1; if (!self.firebase) self.firebase = { initializeApp() {}, messaging: () => ({ onBackgroundMessage() {} }) };';
+const STUB_SRI = `sha384-${crypto.createHash('sha384').update(SDK_STUB).digest('base64')}`;
+/** index.html s otiskem atrapy místo otisků skutečného SDK. */
+const withStubIntegrity = (html) => html.replace(/integrity="sha384-[^"]+"/g, `integrity="${STUB_SRI}"`);
+// Skripty Vercel Analytics / Speed Insights jako na Vercelu se zapnutou analytikou
+const VERCEL_SCRIPTS = ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js'];
 
 const swSource = () => fs.readFileSync(path.join(PUBLIC, 'firebase-messaging-sw.js'), 'utf8');
 const SHELL_A = /const SHELL_CACHE = '([^']+)';/.exec(swSource())[1];
@@ -30,11 +41,15 @@ const PRECACHE_COUNT = 9 + 4; // soubory kostry + čtyři skripty Firebase
 const asVersionB = (text) => text.replace(/\?v=[a-f0-9]{10}/g, '?v=bbbbbbbbbb').replace(SHELL_A, SHELL_B);
 
 function startServer() {
-  const state = { version: 'A', failPath: null, navigation: 'ok', hits: {} };
+  // gstatic: 'local' = atrapa ze stejného serveru, 'cdn' = skutečné adresy gstatic (odpovídá page.route)
+  // csp: hlavička Content-Security-Policy (vynucená) pro stránku i worker, null = žádná
+  const state = { version: 'A', failPath: null, navigation: 'ok', hits: {}, gstatic: 'local', csp: null };
+  const rewriteGstatic = (text) => (state.gstatic === 'local' ? text.split(GSTATIC).join('/__e2e/gstatic/') : text);
   const app = express();
   app.disable('x-powered-by');
   app.use((req, res, next) => { state.hits[req.path] = (state.hits[req.path] || 0) + 1; next(); });
   app.get('/__e2e/gstatic/:file', (req, res) => res.type('js').send(SDK_STUB));
+  app.get(VERCEL_SCRIPTS, (req, res) => res.set('Cache-Control', 'no-cache').type('js').send('self.__vercel = (self.__vercel || 0) + 1;'));
   app.use('/api', (req, res) => {
     if (req.method === 'POST' && req.path === '/auth') return res.json({ token: 'e2e-custom-token', userId: USER_ID });
     if (req.method === 'GET' && req.path === '/status') return res.json({ isHealthy: true, lastSuccessAt: new Date().toISOString(), dataAgeMin: 5 });
@@ -42,14 +57,16 @@ function startServer() {
     return res.status(404).json({ error: 'v e2e testu není' });
   });
   app.get('/firebase-messaging-sw.js', (req, res) => {
-    const sw = swSource().split(GSTATIC).join('/__e2e/gstatic/');
+    const sw = rewriteGstatic(swSource());
+    if (state.csp) res.set('Content-Security-Policy', state.csp);
     res.set('Cache-Control', 'no-cache').type('js').send(state.version === 'B' ? asVersionB(sw) : sw);
   });
   app.get(['/', '/index.html'], (req, res) => {
     if (state.navigation === 'hang') return; // server mlčí
     if (state.navigation === 'down') return req.socket.destroy(); // spadlé spojení
     if (state.navigation === '503') return res.status(503).type('text').send('Service Unavailable');
-    const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8').split(GSTATIC).join('/__e2e/gstatic/');
+    const html = withStubIntegrity(rewriteGstatic(fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8')));
+    if (state.csp) res.set('Content-Security-Policy', state.csp);
     res.type('html').send(state.version === 'B' ? asVersionB(html).replace('<head>', '<head><meta name="e2e-version" content="B">') : html);
   });
   app.use((req, res, next) => (state.failPath && req.path === state.failPath ? res.status(503).send('e2e: výpadek') : next()));
@@ -93,6 +110,8 @@ const test = base.extend({
       }),
       shellKeys: (name) => page.evaluate(async (n) => (await (await caches.open(n)).keys()).map((r) => new URL(r.url).pathname + new URL(r.url).search), name),
       version: () => page.evaluate(() => document.querySelector('meta[name="e2e-version"]')?.content || 'A'),
+      /** Kolik skriptů Firebase stránka spustila (po jejich načtení, před modulem aplikace). */
+      sdkRuns: () => page.evaluate(() => window.__sdkRuns || 0),
     };
     await use(site);
     await server.close();
@@ -119,11 +138,15 @@ test.describe('Service worker', () => {
     // Ikona v zavřeném dialogu nastavení se se stránkou nestahuje
     expect(pageRequests).not.toContain('/icon-192.png');
 
+    // Skripty Firebase prošly kontrolou otisku (atrapa má vlastní)
+    expect(await site.sdkRuns()).toBe(4);
+
     site.state.navigation = 'down';
     for (const url of ['/', '/index.html', '/?view=changes', '/?type=Class&id=C2A&schedule=Actual&hl=change&day=2']) {
       const response = await site.open(url);
       expect(response.status(), url).toBe(200);
       expect(response.fromServiceWorker(), url).toBe(true);
+      expect(await site.sdkRuns(), `${url}: Firebase z mezipaměti s kontrolou otisku`).toBe(4);
     }
   });
 
@@ -221,5 +244,108 @@ test.describe('Service worker', () => {
     site.state.failPath = null;
     await site.open('/');
     await expect.poll(() => site.caches()).toEqual({ [SHELL_B]: PRECACHE_COUNT });
+  });
+
+  test('Vercel Analytics a Speed Insights (/_vercel/*) jdou vždy na server a do mezipaměti se neukládají', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    for (let i = 0; i < 2; i++) {
+      const responses = VERCEL_SCRIPTS.map((p) => page.waitForResponse((r) => new URL(r.url()).pathname === p));
+      await site.open('/');
+      for (const r of await Promise.all(responses)) {
+        expect(r.status(), r.url()).toBe(200);
+        expect(r.fromServiceWorker(), `${r.url()}: mimo service worker`).toBe(false);
+      }
+      await expect.poll(() => page.evaluate(() => window.__vercel || 0)).toBe(2);
+    }
+    for (const name of Object.keys(await site.caches())) {
+      expect((await site.shellKeys(name)).filter((k) => k.startsWith('/_vercel/')), name).toEqual([]);
+    }
+  });
+});
+
+/**
+ * Skutečné adresy gstatic (ne atrapa ze stejného serveru): worker je stahuje
+ * a podává sám, mezi původy, tedy tak, jako v produkci. Odpovídá na ně atrapa
+ * s hlavičkou Access-Control-Allow-Origin: * jako gstatic.
+ */
+test.describe('Service worker a SDK Firebase z gstatic (SRI)', () => {
+  const SDK_URLS = ['app', 'auth', 'firestore', 'messaging'].map((n) => `${GSTATIC}firebase-${n}-compat.js`);
+
+  test.beforeEach(async ({ context, site }) => {
+    site.state.gstatic = 'cdn';
+    site.cdn = { online: true, hits: 0 };
+    await context.route(`${GSTATIC}**`, (route) => {
+      site.cdn.hits++;
+      if (!site.cdn.online) return route.abort('internetdisconnected');
+      // hlavičky jako u skutečných souborů na gstatic (17. 11. 2026)
+      return route.fulfill({
+        status: 200, contentType: 'text/javascript; charset=UTF-8', body: SDK_STUB,
+        headers: { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=31536000', vary: 'Accept-Encoding', 'cross-origin-resource-policy': 'cross-origin' },
+      });
+    });
+  });
+
+  test('uloží se v režimu cors a s kontrolou otisku se spustí i z mezipaměti bez sítě', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    expect(await site.sdkRuns()).toBe(4);
+    const types = await page.evaluate(async (urls) => {
+      const name = (await caches.keys()).find((n) => n.startsWith('bakalari-shell-'));
+      const cache = await caches.open(name);
+      return Promise.all(urls.map(async (u) => (await cache.match(u))?.type || 'chybí'));
+    }, SDK_URLS);
+    // neprůhledná odpověď (no-cors) by u skriptu s crossorigin skončila chybou sítě
+    expect(types).toEqual(['cors', 'cors', 'cors', 'cors']);
+
+    // Bez sítě i bez serveru: stránka i SDK z mezipaměti, otisk sedí
+    site.cdn.online = false;
+    site.state.navigation = 'down';
+    const response = await site.open('/?view=changes');
+    expect(response.fromServiceWorker()).toBe(true);
+    expect(await site.sdkRuns()).toBe(4);
+  });
+
+  test('vynucená CSP aplikace (gstatic jen cesta SDK) pustí importScripts i fetch ve workeru a skripty stránky', async ({ page, site }) => {
+    const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+    site.state.csp = buildAppCsp({ scriptHashes: inlineScriptHashes(html) }).replace(/; report-uri \S+$/, '');
+    await page.addInitScript(() => {
+      window.__csp = [];
+      document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    });
+    await site.open('/');
+    await site.workerSettled(); // importScripts z gstatic prošel, jinak by se worker nenainstaloval
+    expect(await site.sdkRuns()).toBe(4);
+    const cached = await page.evaluate(async (urls) => {
+      const cache = await caches.open((await caches.keys()).find((n) => n.startsWith('bakalari-shell-')));
+      return Promise.all(urls.map(async (u) => (await cache.match(u))?.type || 'chybí'));
+    }, SDK_URLS);
+    expect(cached, 'fetch() workeru na gstatic povolený v connect-src').toEqual(['cors', 'cors', 'cors', 'cors']);
+    await site.open('/');
+    expect(await site.sdkRuns()).toBe(4);
+    expect(await page.evaluate(() => window.__csp)).toEqual([]);
+  });
+
+  test('podvržený soubor Firebase zapsaný do mezipaměti se nespustí (scénář sw-poison)', async ({ page, site }) => {
+    const integrityErrors = [];
+    page.on('console', (m) => { if (/integrity/i.test(m.text())) integrityErrors.push(m.text()); });
+    await site.open('/');
+    await site.workerSettled();
+
+    // Jediné spuštění cizího kódu v původu aplikace (XSS, napadená knihovna) zapíše do mezipaměti workeru
+    await page.evaluate(async (url) => {
+      const name = (await caches.keys()).find((n) => n.startsWith('bakalari-shell-'));
+      const cache = await caches.open(name);
+      await cache.put(url, new Response('window.__planted = (window.__planted || 0) + 1;', { headers: { 'content-type': 'application/javascript' } }));
+    }, SDK_URLS[0]);
+
+    for (let i = 0; i < 3; i++) {
+      await site.open('/');
+      expect(await page.evaluate(() => window.__planted || 0), `načtení ${i + 1}: podvržený skript neproběhl`).toBe(0);
+      // ostatní tři skripty se spustily, zablokovaný je jen podvržený
+      expect(await site.sdkRuns()).toBe(3);
+    }
+    expect(integrityErrors.length, 'prohlížeč hlásí nesouhlasný otisk').toBeGreaterThan(0);
+    expect(integrityErrors.join('\n')).toContain(SDK_URLS[0]);
   });
 });

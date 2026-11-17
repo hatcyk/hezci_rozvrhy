@@ -26,4 +26,24 @@ test.describe('Požadavky při startu', () => {
     }
     expect(app.api.filter(c => c === 'GET /api/debug/status')).toHaveLength(1);
   });
+
+  test('Vercel Analytics a Speed Insights z vlastní domény, až po načtení stránky; mimo Vercel 404 nic nerozbije', async ({ page, app }) => {
+    const scripts = ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js'];
+    // Pořadí událostí z prohlížeče: načtení stránky, pak teprve požadavky analytiky
+    const events = [];
+    page.on('load', () => events.push('load'));
+    page.on('request', r => { if (scripts.includes(new URL(r.url()).pathname)) events.push(r.url()); });
+    const failed = [];
+    page.on('response', r => { if (scripts.includes(new URL(r.url()).pathname)) failed.push(r.status()); });
+    await app.open('/');
+    await app.timetableReady();
+    await expect.poll(() => events.filter(e => e !== 'load').length).toBe(2);
+    expect(events[0], 'mimo kritickou cestu: až po události load').toBe('load');
+    for (const url of events.slice(1)) expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/_vercel\/(insights|speed-insights)\/script\.js$/);
+    // Statický server testů (jako `npm start` mimo Vercel) skripty nemá
+    await expect.poll(() => failed).toEqual([404, 404]);
+    expect(await page.evaluate(() => typeof window.va === 'function' && typeof window.si === 'function'),
+      'fronty window.va / window.si podle návodu Vercelu').toBe(true);
+    await expect(page.locator('#error')).toBeHidden();
+  });
 });

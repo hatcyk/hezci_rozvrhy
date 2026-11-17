@@ -5,9 +5,10 @@
  * and test/security-headers.test.js fails when they drift apart.
  *
  * The Content-Security-Policy of the app is REPORT-ONLY for now: it lists the
- * sources the app really uses (Firebase SDK from gstatic, Firestore / Auth /
- * FCM APIs, Google Fonts, Vercel Analytics from jsDelivr, sunrisesunset.io)
- * and the sha256 hashes of the inline <script>s of index.html. Browsers only
+ * sources the app really uses (Firebase SDK from gstatic - only its versioned
+ * path, Firestore / Auth / FCM APIs, sunrisesunset.io; Vercel Analytics and
+ * Speed Insights come from this origin, /_vercel/*) and the sha256 hashes of
+ * the inline <script>s of index.html. Browsers only
  * report violations to /api/csp-report; once the reports stay empty for a
  * while it can be switched to the enforcing header. The admin page has no
  * inline scripts and no third-party code, so its policy is enforced already.
@@ -22,6 +23,14 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_INDEX_HTML = path.join(__dirname, '..', 'public', 'index.html');
+
+/**
+ * The Firebase compat SDK of index.html and the service worker. A path that
+ * ends in "/" allows exactly the files below it, not the whole of gstatic.
+ * A new SDK version changes this, the URLs and the integrity hashes in
+ * index.html and the URLs in the worker (test/client-sdk-integrity.test.js).
+ */
+const FIREBASE_SDK_BASE = 'https://www.gstatic.com/firebasejs/9.22.0/';
 const CSP_REPORT_PATH = '/api/csp-report';
 
 // Only features a timetable app could plausibly be abused for; everything the
@@ -54,10 +63,9 @@ function inlineScriptHashes(html) {
 function buildAppCsp({ scriptHashes = [] } = {}) {
     const directives = [
         ["default-src", "'self'"],
-        // Firebase compat SDK (gstatic), Vercel Analytics / Speed Insights loaded
-        // with import() from jsDelivr, their scripts from va.vercel-scripts.com
-        // (debug builds) or /_vercel/* (same origin), + the 3 inline scripts.
-        ["script-src", "'self'", ...scriptHashes, 'https://www.gstatic.com', 'https://cdn.jsdelivr.net', 'https://va.vercel-scripts.com'],
+        // Firebase compat SDK (gstatic, with SRI in index.html), Vercel Analytics /
+        // Speed Insights from /_vercel/* ('self'), + the inline scripts.
+        ["script-src", "'self'", ...scriptHashes, FIREBASE_SDK_BASE],
         // style="" attributes in index.html and the rendered markup need 'unsafe-inline'.
         ["style-src", "'self'", "'unsafe-inline'"],
         ["font-src", "'self'"],
@@ -69,7 +77,7 @@ function buildAppCsp({ scriptHashes = [] } = {}) {
             'https://fcmregistrations.googleapis.com',
             'https://firebaseinstallations.googleapis.com',
             // the service worker caches the Firebase SDK files with fetch()
-            'https://www.gstatic.com',
+            FIREBASE_SDK_BASE,
             'https://api.sunrisesunset.io',
             'https://vitals.vercel-insights.com'],
         // Firebase Auth's helper iframe (only used by popup/redirect sign-in).
@@ -161,6 +169,7 @@ function vercelHeaderRules({ scriptHashes }) {
 
 module.exports = {
     DEFAULT_INDEX_HTML,
+    FIREBASE_SDK_BASE,
     CSP_REPORT_PATH,
     PERMISSIONS_POLICY,
     ADMIN_CSP,
