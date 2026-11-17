@@ -40,6 +40,28 @@ export function isNewerVersionActive(cacheNames, ownCache) {
     return shells.length > 0 && !shells.includes(ownCache);
 }
 
+/** The reload button of #updateBanner, wired once whoever shows the notice first. */
+function wireReloadButton(doc, reload) {
+    const button = doc.getElementById('updateReload');
+    if (!button || button.dataset.wired) return;
+    button.dataset.wired = 'true';
+    button.addEventListener('click', () => reload());
+}
+
+/**
+ * Show the notice now and keep it until the user reloads. Used when the page
+ * runs without the Firebase SDK that a newer worker would now provide
+ * (sdk-recovery.js): the version of the page is the active one there, so the
+ * regular check below would hide the notice again.
+ */
+export function showUpdateNotice({ doc = document, reload = () => window.location.reload() } = {}) {
+    const banner = doc.getElementById('updateBanner');
+    if (!banner) return;
+    banner.dataset.pinned = 'true';
+    banner.classList.remove('hidden');
+    wireReloadButton(doc, reload);
+}
+
 /**
  * Show #updateBanner once a newer version is active, hide it when the page's
  * own version is the active one. Checked at start, when the worker that
@@ -53,11 +75,10 @@ export function initUpdateNotice({
     now = () => Date.now(),
 } = {}) {
     const banner = doc.getElementById('updateBanner');
-    const button = doc.getElementById('updateReload');
     const ownCache = pageShellCache(doc);
     if (!sw || !cacheStorage || !banner || !ownCache) return;
 
-    if (button) button.addEventListener('click', () => reload());
+    wireReloadButton(doc, reload);
 
     // A missing own cache alone proves nothing: a page loaded from the network
     // right after a deploy runs the new bundles while the old worker (and only
@@ -69,7 +90,7 @@ export function initUpdateNotice({
             const names = await cacheStorage.keys();
             if (names.includes(ownCache)) {
                 replaceable = true;
-                banner.classList.add('hidden');
+                if (!banner.dataset.pinned) banner.classList.add('hidden');
             } else if (replaceable && isNewerVersionActive(names, ownCache)) {
                 banner.classList.remove('hidden');
             }

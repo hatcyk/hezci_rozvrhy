@@ -4,7 +4,7 @@
  */
 
 import { state, updateState } from './state.js';
-import { saveWatchedTimetables } from './notifications-core.js';
+import { saveWatchedTimetables, reportUnsavedChange } from './notifications-core.js';
 import { renderSelectedTimetablesPreferences, getDefaultPreferences } from './notifications-preferences.js';
 import { debug } from './debug.js';
 import { esc } from './utils.js';
@@ -132,7 +132,8 @@ async function handleToggleChange(event) {
     const id = input.dataset.id;
     const name = input.dataset.name;
 
-    let watchedTimetables = [...state.watchedTimetables];
+    const previous = state.watchedTimetables;
+    let watchedTimetables = [...previous];
 
     if (input.checked) {
         ['Actual', 'Next'].forEach(scheduleType => {
@@ -170,6 +171,9 @@ async function handleToggleChange(event) {
         debug.log('Watched timetables updated:', watchedTimetables);
     } catch (error) {
         debug.error('Failed to save watched timetables:', error);
+        reportUnsavedChange(error);
+        // Back to what the server has, unless a newer change is under way
+        if (state.watchedTimetables !== watchedTimetables) return;
         input.checked = !input.checked;
         if (item) {
             const settingsBtn = item.querySelector('.flat-item-settings');
@@ -177,8 +181,9 @@ async function handleToggleChange(event) {
                 settingsBtn.classList.toggle('hidden', !input.checked);
             }
         }
-        updateState('watchedTimetables', state.watchedTimetables);
+        updateState('watchedTimetables', previous);
         renderSelectedTimetablesPreferences();
+        window.dispatchEvent(new CustomEvent('watchedTimetablesChanged'));
         updateAccordionCounts();
     }
 }

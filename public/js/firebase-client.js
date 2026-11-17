@@ -6,6 +6,8 @@
 // Firebase will be loaded via CDN in index.html
 // This file assumes window.firebase is available
 
+import { apiError } from './api-error.js';
+
 let firebaseApp = null;
 let firestore = null;
 let isAuthenticated = false;
@@ -139,7 +141,8 @@ async function signIn(force = false) {
         });
 
         if (!response.ok) {
-            throw new Error('Failed to get auth token from backend');
+            // Shown in toasts (enabling notifications): Czech, with the limit's own text on 429
+            throw await apiError(response, 'Nepodařilo se přihlásit k serveru aplikace. Zkuste to prosím znovu.');
         }
 
         const { token, userId, migratedFrom } = await response.json();
