@@ -1,0 +1,48 @@
+name: Firestore rules
+
+# firestore.rules evaluated by the Firestore emulator (test/rules/). Needs no
+# secrets: the project is a "demo-" one, which the emulator never connects to a
+# real Firebase project. The three test packages are installed with exact
+# versions without touching package.json or the lock (they are not app deps).
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - firestore.rules
+      - 'test/rules/**'
+      - .github/workflows/rules.yml
+  pull_request:
+    paths:
+      - firestore.rules
+      - 'test/rules/**'
+      - .github/workflows/rules.yml
+  workflow_dispatch: # run once by hand before `firebase deploy --only firestore:rules`
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rules-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rules:
+    name: Emulator (firebase-tools 15.34.2, Java 21)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      # The Firestore emulator of firebase-tools 15 needs Java 21+.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install the rules test packages
+        run: >
+          npm i --no-save --no-package-lock --no-audit --no-fund
+          @firebase/rules-unit-testing@6.0.0 firebase@13.1.0 firebase-tools@15.34.2
+      - name: Rules tests in the emulator
+        run: npm run test:rules

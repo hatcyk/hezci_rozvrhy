@@ -9,6 +9,7 @@
     "test": "node --test \"test/**/*.test.js\"",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"backend/**\" --test-coverage-include=\"routes/**\" \"test/**/*.test.js\"",
     "test:e2e": "playwright test",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-lepsi-rozvrh \"node --test test/rules/firestore-rules.emulator.test.mjs\"",
     "test:e2e-notifications": "node tools/e2e-notifications.js",
     "prefetch": "node scripts/run-prefetch.js",
     "process-notifications": "node scripts/process-notifications.js",
