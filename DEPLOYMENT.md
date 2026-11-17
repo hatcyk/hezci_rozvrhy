@@ -29,7 +29,7 @@ tytéž hodnoty patří do `.env` (vzor s komentáři je `.env.example`).
 | **`BAKALARI_USER_AGENT`** | `prefetch.yml` | ne | identifikace robota vůči Bakalářům, např. `LepsiRozvrh/2.0 (+https://spsd-rozvrhy.vercel.app; kontakt)`. Výchozí je prohlížečový řetězec. `prefetch.yml` ji dnes nepředává: doplň do kroku *Run prefetch script* `BAKALARI_USER_AGENT: ${{ vars.BAKALARI_USER_AGENT }}` a nejdřív ověř ručním během, že ji server nefiltruje. |
 | `LESSON_REMINDER_*`, `REMINDER_HTTP_BUDGET_MS` | Vercel | ne | upomínky (vypnutí `LESSON_REMINDER_ENABLED=false`, okno, souběžnost, 25s rozpočet odpovědi) |
 | `DEBUG` | jen lokálně | ne | na Vercelu nenastavuj (Production ani Preview). `/api/debug/*` odpovídá jen při `DEBUG=true`, mimo Vercel a z 127.0.0.1, jinak 404 |
-| `AUTH_NEW_ID_LIMIT` | Vercel | ne | kolik nových anonymních identit vydá `/api/auth` jedné IP (IPv6 po prefixu /64) za 10 minut, pak 429 s `Retry-After`; výchozí **60** (celá škola je za jednou veřejnou IP). Obnova vlastní relace a převod starého ID se nepočítají. Limit drží každá serverless instance zvlášť. Na vlastním serveru za proxy jen s `TRUST_PROXY=1`, jinak se všichni počítají jako adresa proxy. |
+| `NEW_USERS_PER_IP_LIMIT` | Vercel | ne | kolik nových uživatelů (dokumentů `users`) smí jedna IP (IPv6 po prefixu /64) založit za 10 minut prvním zápisem (upozornění, jejich nastavení, oblíbené), pak 429 s `Retry-After`; výchozí **60** (celá škola je za jednou veřejnou IP). `/api/auth` dál vydá identitu každému, takže čtení rozvrhů limit nikdy nezastaví; zápisy existujících uživatelů se nepočítají. Limit drží každá serverless instance zvlášť. Na vlastním serveru za proxy jen s `TRUST_PROXY=1`, jinak se všichni počítají jako adresa proxy. |
 | `TRUST_PROXY`, `RUN_TRIGGER` | jen vlastní server | ne | viz kapitola 2 |
 
 GitHub → Settings → Secrets and variables → Actions potřebuje secrets
@@ -402,7 +402,7 @@ Po uzavření okna pro návrat (např. za týden):
 Další zpevnění, které repozitář samo neudělá:
 
 - **Pravidlo rate limitu ve Vercel Firewall** pro `/api/auth` a `/api/fcm/*`.
-  Limit nových identit (`AUTH_NEW_ID_LIMIT`) a zápisů upozornění drží každá
+  Limit nových uživatelů (`NEW_USERS_PER_IP_LIMIT`) a zápisů upozornění drží každá
   serverless instance ve vlastní paměti, takže je jen hrubý.
 - **Firebase App Check** s vynucením pro Firestore (vyžaduje klíč reCAPTCHA a
   úpravu klienta).

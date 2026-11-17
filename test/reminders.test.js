@@ -277,6 +277,29 @@ test('týž token ve dvou dokumentech s jinými upomínkami: obě odejdou, nezá
     }
 });
 
+test('uživatel s upomínkami bez tokenu nestojí nic: rozvrh se nečte, nic se nezapisuje', async () => {
+    const restore = quiet();
+    const TOKENLESS = 'anon-7c4e3d8f-5b8e-4dac-80f9-8192a3b4c5d6';
+    const D = '2026-11-18'; // Wednesday, hour 1 (8:00)
+    try {
+        db._store.set('timetables/Class_TL_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Matematika', teacher: 'J. Novák', room: 'A102', group: '', date: D },
+        ] });
+        db._store.set(`users/${TOKENLESS}`, {
+            tokens: [], hasReminders: true, watchedKeys: ['Class_TL_Actual'],
+            preferences: { watchedTimetables: [{ type: 'Class', id: 'TL', scheduleType: 'Actual', groupFilters: [],
+                notificationTypes: { reminders: { next_lesson_room: true } } }] },
+        });
+        const logFrom = db._log.length;
+        await sendLessonReminders({ mockTime: new Date('2026-11-18T06:56:00Z') });
+        const touched = db._log.slice(logFrom).filter(e => e.path.includes('Class_TL') || e.path.includes(TOKENLESS));
+        assert.deepEqual(touched, [], 'no timetable read, no claim, no write for a user without a device');
+    } finally {
+        db._store.delete(`users/${TOKENLESS}`);
+        restore();
+    }
+});
+
 test('mapWithConcurrency drží limit souběhu a pořadí výsledků', async () => {
     let inFlight = 0, peak = 0;
     const out = await mapWithConcurrency([5, 1, 3, 2, 4], 2, async (x) => {

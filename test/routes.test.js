@@ -277,6 +277,79 @@ test('zápisy upozornění: nejvýš 60 za 10 min na uživatele (uid, ne IP), pa
     assert.equal((await post('/api/fcm/update-global-preferences', { userId: E, notificationTypes: { systemStatus: true } }, asUser(E))).status, 200, 'another user');
 });
 
+// ---- first users/{uid} document per address (review 3, point 1) -------------
+// /api/auth issues identities to everybody; what is limited per client address
+// (IPv6: per /64) is creating a users document, whichever write does it.
+const newUid = (n) => `anon-${String(n).padStart(8, '0')}-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const CREATE = [
+    (uid) => [`/api/favorites/${uid}`, { favoriteTimetables: [{ type: 'Class', id: 'ZL' }] }],
+    (uid) => ['/api/fcm/update-preferences', { userId: uid, watchedTimetables: [] }],
+    (uid) => ['/api/fcm/update-global-preferences', { userId: uid, notificationTypes: { systemStatus: true } }],
+    (uid) => ['/api/fcm/subscribe', { userId: uid, token: `fcm-${uid}` }],
+];
+async function withTrustProxy(fn) {
+    process.env.TRUST_PROXY = '1';
+    try { return await fn(); } finally { delete process.env.TRUST_PROXY; }
+}
+const createFrom = (ip, uid, i = 0) => {
+    const [p, body] = CREATE[i % CREATE.length](uid);
+    return post(p, body, { ...asUser(uid), 'x-real-ip': ip });
+};
+
+test('noví uživatelé: z jedné adresy nejvýš 60 nových dokumentů users za 10 min (jakoukoli cestou), další 429; existující uživatel zapisuje dál', async () => {
+    await withTrustProxy(async () => {
+        const ip = '198.51.100.20';
+        for (let i = 0; i < 60; i++) {
+            const uid = newUid(1000 + i);
+            assert.equal((await createFrom(ip, uid, i)).status, 200, `new user ${i + 1}`);
+            assert.ok(db._get(`users/${uid}`), `users/${uid} created`);
+        }
+        const checksBefore = checked.length;
+        for (let i = 0; i < CREATE.length; i++) {
+            const uid = newUid(2000 + i);
+            const r = await createFrom(ip, uid, i);
+            assert.equal(r.status, 429, CREATE[i](uid)[0]);
+            const retry = Number(r.headers.get('retry-after'));
+            assert.ok(retry > 0 && retry <= 600, `Retry-After ${retry}`);
+            const body = await r.json();
+            assert.equal(body.error, 'Příliš mnoho nových uživatelů z této sítě, zkuste to později.');
+            assert.equal(body.retryAfterSec, retry);
+            assert.equal(db._get(`users/${uid}`), undefined, 'nothing created');
+        }
+        assert.equal(checked.length, checksBefore, 'a refused new user costs no FCM call');
+
+        // Existing users of the same network keep writing.
+        const existing = newUid(1000);
+        for (let i = 0; i < CREATE.length; i++) {
+            assert.equal((await createFrom(ip, existing, i)).status, 200, `existing user: ${CREATE[i](existing)[0]}`);
+        }
+        // Reading and writes that create nothing are not limited.
+        const fresh = newUid(2100);
+        const hdr = { ...asUser(fresh), 'x-real-ip': ip };
+        assert.equal((await fetch(`${base}/api/fcm/preferences/${fresh}`, { headers: hdr })).status, 200);
+        assert.equal((await fetch(`${base}/api/favorites/${fresh}`, { headers: hdr })).status, 200);
+        assert.equal((await post('/api/fcm/unsubscribe', { userId: fresh }, hdr)).status, 200);
+        assert.equal(db._get(`users/${fresh}`), undefined);
+        // Another network is not affected.
+        assert.equal((await createFrom('203.0.113.20', newUid(2200))).status, 200);
+    });
+});
+
+test('noví uživatelé: IPv6 se počítá po prefixu /64', async () => {
+    await withTrustProxy(async () => {
+        for (let i = 0; i < 60; i++) assert.equal((await createFrom('2001:db8:aa:bb::1', newUid(3000 + i), i)).status, 200);
+        assert.equal((await createFrom('2001:db8:aa:bb:ffff:1:2:3', newUid(3100))).status, 429, 'same /64');
+        assert.equal((await createFrom('2001:db8:aa:cc::1', newUid(3101))).status, 200, 'other /64');
+    });
+});
+
+test('limit nových uživatelů: NEW_USERS_PER_IP_LIMIT, výchozí 60', () => {
+    const { newUsersLimit } = require('../routes/new-users');
+    assert.equal(newUsersLimit({}), 60);
+    assert.equal(newUsersLimit({ NEW_USERS_PER_IP_LIMIT: '200' }), 200);
+    for (const bad of ['', '0', '-5', '2.5', 'abc']) assert.equal(newUsersLimit({ NEW_USERS_PER_IP_LIMIT: bad }), 60, bad);
+});
+
 test('cron: bez tajemství 401, odpověď nese skutečný UTC čas a pražský čas zvlášť', async () => {
     assert.equal((await fetch(base + '/api/cron/prefetch')).status, 401);
     assert.equal((await fetch(base + '/api/cron/prefetch', { headers: { authorization: 'Bearer spatne' } })).status, 401);

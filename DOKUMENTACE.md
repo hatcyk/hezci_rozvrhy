@@ -178,11 +178,11 @@ nikde, server zapisuje přes Admin SDK), složený index `runs (job ↑, started
 
 | Endpoint | Ochrana | Účel |
 |---|---|---|
-| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. Nových identit nejvýš `AUTH_NEW_ID_LIMIT` (výchozí 60) z jedné IP, u IPv6 z prefixu /64, za 10 min, pak 429 s `Retry-After`. |
+| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. Identitu vydá vždy, bez limitu: čtení rozvrhů ji potřebuje a celá škola je za jednou IP. |
 | `GET /api/status[?strict=1]` | – | stáří dat (3.3) |
 | `GET /api/groups/:classId` | – | skupiny třídy |
-| `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50) |
-| `POST /api/fcm/subscribe`, `unsubscribe`, `update-preferences`, `update-global-preferences`, `GET /api/fcm/preferences/:userId` | ID token, vlastní `userId` | odběr upozornění a nastavení (max. 200 sledovaných rozvrhů). Zápisy nejvýš 60 za 10 min na uživatele, pak 429 s `Retry-After`. `subscribe` ověří token u FCM nanečisto (`send(…, dryRun)`): token, který FCM odmítne, je 400; při výpadku FCM se token přijme a zaloguje. Týž token v jedné dávce s vlastním zápisem odebere ze starých dokumentů 1.x (`anonymous-…`, osiřelé po nepovedeném převodu); dokumenty jiných `anon-…` nemění nikdy (stačila by k tomu znalost cizího tokenu). Zařízení pod dvěma ID proto řeší odesílání: stejnou zprávu (u změny dokument změn a text, u upomínky rozvrh, hodina a text) dostane jeden token nejvýš jednou; různé zprávy odejdou všechny, takže na pořadí dokumentů nezáleží. |
+| `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50). Zápis, který zakládá dokument `users`, počítá limit nových uživatelů (viz níže). |
+| `POST /api/fcm/subscribe`, `unsubscribe`, `update-preferences`, `update-global-preferences`, `GET /api/fcm/preferences/:userId` | ID token, vlastní `userId` | odběr upozornění a nastavení (max. 200 sledovaných rozvrhů). Zápisy nejvýš 60 za 10 min na uživatele, pak 429 s `Retry-After`. `subscribe` ověří token u FCM nanečisto (`send(…, dryRun)`): token, který FCM odmítne, je 400; při výpadku FCM se token přijme a zaloguje. Týž token v jedné dávce s vlastním zápisem odebere ze starých dokumentů 1.x (`anonymous-…`, osiřelé po nepovedeném převodu); dokumenty jiných `anon-…` nemění nikdy (stačila by k tomu znalost cizího tokenu). Zařízení pod dvěma ID proto řeší odesílání: stejnou zprávu (u změny dokument změn a text, u upomínky rozvrh, hodina a text) dostane jeden token nejvýš jednou; různé zprávy odejdou všechny, takže na pořadí dokumentů nezáleží. Zápis, který zakládá dokument `users`, počítá limit nových uživatelů. |
 | `POST /api/fcm/process-changes`, `GET /api/cron/{prefetch,process-notifications,lesson-reminders,cleanup}` | `Authorization: Bearer <CRON_SECRET>` | plánované úlohy; bez tajemství v produkci 503 |
 | `GET /api/ical/:type/:id.ics?schedule=…&group=…` | – (vypínač `ICAL_ENABLED`) | kalendář iCalendar (RFC 5545), ETag/304 |
 | `GET /api/admin/{health,runs,runs/intervals,changes,stats,audit}`, `POST /api/admin/prefetch/dispatch` | `Authorization: Bearer <ADMIN_SECRET>` | administrace (kap. 7) |
@@ -261,9 +261,13 @@ Těla se validují v `routes/validation.js`.
 
 - **Identita (S1):** server vydává token jen pro `anon-<uuid v4>`; dřívější
   endpoint podepsal token pro libovolné uid. ID token se ověřuje na každém
-  volání s uživatelem. Nových identit nejvýš 60 z jedné adresy (IPv6 po /64)
-  za 10 min (`AUTH_NEW_ID_LIMIT`), aby jeden skript nenadělal stovky uživatelů
-  s upomínkami; obnova vlastní relace a převod starého ID se nepočítají.
+  volání s uživatelem. Identitu `/api/auth` vydá vždy (čtení ji potřebuje
+  a celá škola je za jednou IP). Omezené je až založení dokumentu `users`
+  prvním zápisem (upozornění, jejich nastavení, oblíbené): nejvýš 60 nových
+  uživatelů z jedné adresy (IPv6 po /64) za 10 min (`NEW_USERS_PER_IP_LIMIT`,
+  `routes/new-users.js`), aby jeden skript nenadělal stovky uživatelů
+  s upomínkami. Zápisy existujících uživatelů se nepočítají; uživatel bez
+  tokenu zařízení úlohu upomínek nic nestojí (přeskočí ho před čtením rozvrhu).
 - **CORS** jen pro `CORS_ORIGINS` (výchozí produkční doména a localhost:3000).
 - **Hlavičky** (`backend/security-headers.js` pro Express, `vercel.json` pro CDN):
   `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`,
@@ -324,8 +328,10 @@ Akce ve workflows jsou připnuté na SHA, nové verze navrhuje Dependabot
 - Upomínka se doručí nejvýš jednou (zábor `failed` se neopakuje).
 - Limit pokusů do administrace je pro každou serverless instanci zvlášť;
   skutečnou ochranou je dlouhé náhodné tajemství. Stejně tak limity nových
-  identit a zápisů upozornění: brzdí jeden skript, ne útok z mnoha adres (na
-  to Vercel Firewall nebo Firebase App Check).
+  uživatelů a zápisů upozornění: brzdí jeden skript, ne útok z mnoha adres (na
+  to Vercel Firewall nebo Firebase App Check). Kdo limit nových uživatelů ve
+  škole vyčerpá, zastaví na 10 min první uložení novým lidem ze stejné sítě;
+  čtení rozvrhů ne.
 - Automatický audit přístupnosti nenahrazuje ruční test se čtečkou obrazovky a
   zvětšením 200 %; push na iOS a kiosk na televizi je nutné ověřit na zařízení.
 
