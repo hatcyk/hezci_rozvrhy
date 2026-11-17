@@ -70,11 +70,21 @@ jobs:
 
       - name: Process notifications after prefetch
         if: success()
+        env:
+          BASE_URL: ${{ secrets.VERCEL_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        # The data is already stored, but a CRON_SECRET that differs from the
+        # one on Vercel (401) or is missing there (503) means no notifications
+        # at all - that must turn the run red, not pass as "non-critical".
+        # --fail-with-body: exit 22 on HTTP >= 400, the JSON still in the log.
+        # --retry: timeouts, refused connections and 408/429/5xx are retried
+        # (a 503 too, so a missing secret fails after the retries); 401 is not.
+        # A repeated call is safe: each change is claimed in a transaction.
         run: |
-          curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/process-notifications" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json" \
+          curl --fail-with-body -sS \
+            --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
             -w "\nHTTP Status: %{http_code}\n" \
-            --connect-timeout 10 \
-            --max-time 30 \
-            -s -S || echo "Notification processing failed (non-critical)"
+            "${BASE_URL}/api/cron/process-notifications"

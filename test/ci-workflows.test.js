@@ -47,10 +47,16 @@ test('dependabot hlídá verze akcí', () => {
     assert.match(src, /package-ecosystem: ['"]?github-actions['"]?\s+directory: ['"]?\/['"]?\s+schedule:\s+interval: ['"]?monthly/);
 });
 
-test('prefetch.yml: instalace bez skriptů balíčků', () => {
+test('prefetch.yml: instalace bez skriptů balíčků a viditelné selhání volání cronu', () => {
     const src = workflows['prefetch.yml'];
     // install scripts would run in the job that later gets BAKALARI_PASSWORD and the service account
     assert.match(step(src, 'Install dependencies'), /run: npm ci --omit=dev --ignore-scripts$/m);
+    const notify = step(src, 'Process notifications after prefetch');
+    // 401 (CRON_SECRET differs from Vercel) and 503 (not set) must fail the step
+    assert.match(notify, /--fail(-with-body)?\b/);
+    assert.match(notify, /--retry \d/);
+    assert.doesNotMatch(notify, /\|\|/, 'chyba se nesmí spolknout (|| echo, || true)');
+    assert.match(notify, /\/api\/cron\/process-notifications/);
 });
 
 test('rules.yml: emulátor pravidel při změně pravidel nebo jejich testu', () => {
