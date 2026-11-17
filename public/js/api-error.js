@@ -1,7 +1,7 @@
 /**
  * Error for a failed answer of the app's own API, with a message for people.
  *
- * 429 (limits in routes/auth.js and routes/fcm.js): the server answers
+ * 429 (limits in routes/new-users.js and routes/fcm.js): the server answers
  * { error, retryAfterSec } with a Czech `error`; it is shown together with
  * roughly when another try will work. Other failures get the Czech `fallback`
  * of the caller: the server's other messages are English internals.

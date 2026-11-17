@@ -290,7 +290,9 @@ test('1.x migration: a failed Firebase sign-in keeps the old ID, the retry migra
     }
 });
 
-test('429 from /api/auth (too many new identities from one network): sign-in fails cleanly, nothing is lost, a later attempt asks again', async () => {
+// The app's own /api/auth no longer limits (routes/new-users.js limits new users
+// documents instead), but a rate limit in front of it (Vercel Firewall) may.
+test('429 from /api/auth (a rate limit in front of the app): sign-in fails cleanly, nothing is lost, a later attempt asks again', async () => {
     const saved = globalThis.firebase;
     const savedError = console.error;
     console.error = () => {};

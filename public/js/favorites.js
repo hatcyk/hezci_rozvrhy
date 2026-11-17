@@ -6,6 +6,7 @@
 import { state, updateState } from './state.js';
 import { apiFetch } from './api.js';
 import { showToast } from './toast.js';
+import { apiError } from './api-error.js';
 
 export const HEART_FILLED_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
 export const HEART_OUTLINE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`;
@@ -37,13 +38,15 @@ export async function saveFavorites(list) {
             body: JSON.stringify({ favoriteTimetables: list })
         }]);
 
-        if (!response.ok) throw new Error('Failed to save favorites');
+        if (!response.ok) throw await apiError(response, 'Zkontrolujte připojení a zkuste to znovu.');
 
         updateState('favoriteTimetables', list);
     } catch (error) {
         console.error('Failed to save favorites:', error);
-        // The heart simply not changing looked like an ignored tap
-        showToast({ title: 'Oblíbené se nepodařilo uložit.', body: 'Zkontrolujte připojení a zkuste to znovu.', icon: '⚠️' });
+        // The heart simply not changing looked like an ignored tap. A limit
+        // (429: too many new users from this network) says why and for how long.
+        const body = error.status === 429 ? error.message : 'Zkontrolujte připojení a zkuste to znovu.';
+        showToast({ title: 'Oblíbené se nepodařilo uložit.', body, icon: '⚠️' });
     }
 }
 
