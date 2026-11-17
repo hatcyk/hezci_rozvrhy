@@ -29,7 +29,7 @@ tytéž hodnoty patří do `.env` (vzor s komentáři je `.env.example`).
 | **`BAKALARI_USER_AGENT`** | `prefetch.yml` | ne | identifikace robota vůči Bakalářům, např. `LepsiRozvrh/2.0 (+https://spsd-rozvrhy.vercel.app; kontakt)`. Výchozí je prohlížečový řetězec. `prefetch.yml` ji dnes nepředává: doplň do kroku *Run prefetch script* `BAKALARI_USER_AGENT: ${{ vars.BAKALARI_USER_AGENT }}` a nejdřív ověř ručním během, že ji server nefiltruje. |
 | `LESSON_REMINDER_*`, `REMINDER_HTTP_BUDGET_MS` | Vercel | ne | upomínky (vypnutí `LESSON_REMINDER_ENABLED=false`, okno, souběžnost, 25s rozpočet odpovědi) |
 | `DEBUG` | jen lokálně | ne | na Vercelu nenastavuj (Production ani Preview). `/api/debug/*` odpovídá jen při `DEBUG=true`, mimo Vercel a z 127.0.0.1, jinak 404 |
-| `AUTH_NEW_ID_LIMIT` | Vercel | ne | kolik nových anonymních identit vydá `/api/auth` jedné IP (IPv6 po prefixu /64) za 10 minut, pak 429 s `Retry-After`; výchozí **60** (celá škola je za jednou veřejnou IP). Obnova vlastní relace a převod starého ID se nepočítají. Limit drží každá serverless instance zvlášť. Na vlastním serveru za proxy jen s `TRUST_PROXY=1`, jinak se všichni počítají jako adresa proxy. |
+| `NEW_USERS_PER_IP_LIMIT` | Vercel | ne | kolik nových uživatelů (dokumentů `users`) smí jedna IP (IPv6 po prefixu /64) založit za 10 minut prvním zápisem (upozornění, jejich nastavení, oblíbené), pak 429 s `Retry-After`; výchozí **60** (celá škola je za jednou veřejnou IP). `/api/auth` dál vydá identitu každému, takže čtení rozvrhů limit nikdy nezastaví; zápisy existujících uživatelů se nepočítají. Limit drží každá serverless instance zvlášť. Na vlastním serveru za proxy jen s `TRUST_PROXY=1`, jinak se všichni počítají jako adresa proxy. |
 | `TRUST_PROXY`, `RUN_TRIGGER` | jen vlastní server | ne | viz kapitola 2 |
 
 GitHub → Settings → Secrets and variables → Actions potřebuje secrets
@@ -385,7 +385,11 @@ Po uzavření okna pro návrat (např. za týden):
 1. **Vyměnit klíč servisního účtu.** Každé starší nasazení na Vercelu (i
    náhledy větví) má vlastní trvalou adresu a proměnné z doby sestavení, tedy
    i produkční servisní účet. Jeho staré `/api/auth` dál podepíše token pro
-   libovolné ID, a to i po vydání. Postup: konzole Firebase → Project settings
+   libovolné ID, a to i po vydání. Výměna zavře i obchvat limitu nových
+   uživatelů: s takovým tokenem pro libovolné `anonymous-<ms>` projde v novém
+   `/api/auth` převod starého ID, který se do limitu nepočítá (zápis do
+   `userMigrations`, případně nový dokument `users` z převedeného nastavení).
+   Postup: konzole Firebase → Project settings
    → Service accounts → *Generate new private key* → nový JSON vlož do
    `FIREBASE_SERVICE_ACCOUNT` na Vercelu a v GitHub secrets → znovu nasadit →
    ověřit 1.7 → Google Cloud → IAM → Service accounts → Keys → **smazat starý
@@ -402,7 +406,7 @@ Po uzavření okna pro návrat (např. za týden):
 Další zpevnění, které repozitář samo neudělá:
 
 - **Pravidlo rate limitu ve Vercel Firewall** pro `/api/auth` a `/api/fcm/*`.
-  Limit nových identit (`AUTH_NEW_ID_LIMIT`) a zápisů upozornění drží každá
+  Limit nových uživatelů (`NEW_USERS_PER_IP_LIMIT`) a zápisů upozornění drží každá
   serverless instance ve vlastní paměti, takže je jen hrubý.
 - **Firebase App Check** s vynucením pro Firestore (vyžaduje klíč reCAPTCHA a
   úpravu klienta).
@@ -441,9 +445,9 @@ lze `FIREBASE_SERVICE_ACCOUNT_PATH`). Navíc:
 | Proměnná | Význam |
 |---|---|
 | `PORT` | port aplikace (výchozí 3000) |
-| `HOST` | adresa, na které server poslouchá: výchozí `127.0.0.1` (jen tento počítač), `0.0.0.0` = celá síť. Obraz Dockeru a `deploy/lepsi-rozvrh.service` nastavují `0.0.0.0` samy |
+| `HOST` | adresa, na které server poslouchá: výchozí `127.0.0.1` (jen tento počítač), `0.0.0.0` = celá síť. Obraz Dockeru nastavuje `0.0.0.0` (uvnitř kontejneru; ven jen `127.0.0.1:3000` podle `docker-compose.yml`), `deploy/lepsi-rozvrh.service` `127.0.0.1` (nginx na stejném stroji) |
 | `CORS_ORIGINS` | doména serveru, např. `https://rozvrh.skola.cz` |
-| `TRUST_PROXY=1` | jen za vlastní reverzní proxy: IP z `X-Forwarded-For` pro limit pokusů a audit administrace |
+| `TRUST_PROXY=1` | jen za vlastní reverzní proxy: IP klienta z `X-Real-IP` (případně `X-Forwarded-For`) pro limity (administrace, noví uživatelé) a audit. `docker-compose.yml` i `deploy/lepsi-rozvrh.service` ho nastavují, protože obě varianty stojí za nginx (`deploy/nginx.conf.example` obě hlavičky přepíše na adresu, kterou vidí). **Bez proxy (port vystavený přímo) ho nastavit nesmíš:** hlavičky by si poslal kdokoli sám a obešel by limity. Jiná proxy musí `X-Real-IP` přepisovat, ne jen předávat (Apache `mod_proxy`, HAProxy `option forwardfor` ani Caddy to samy nedělají) |
 | `RUN_TRIGGER=cron` | označení běhů v `runs` (nastavuje ho `deploy/crontab.example`) |
 
 `.env` ani servisní účet nikdy necommituj (jsou v `.gitignore`).
@@ -459,6 +463,9 @@ docker compose up -d --build
 
 Kontejner poslouchá na `127.0.0.1:3000`, před něj patří reverzní proxy s TLS
 (vzor `deploy/nginx.conf.example`). Obraz má healthcheck na `/api/status`.
+`docker-compose.yml` nastavuje `TRUST_PROXY=1`: IP klienta pro limity bere
+z hlavičky proxy. Když port vystavíš přímo (`"3000:3000"`, bez proxy),
+`TRUST_PROXY` odstraň, jinak by si kdokoli poslal vlastní adresu.
 Při použití souboru se servisním účtem nech v `docker-compose.yml`
 odkomentovaný volume, jinak ho smaž a vyplň `FIREBASE_SERVICE_ACCOUNT`.
 
@@ -474,6 +481,10 @@ sudo chown -R rozvrh:rozvrh /srv/lepsi-rozvrh
 sudo cp deploy/lepsi-rozvrh.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now lepsi-rozvrh
 ```
+
+Služba poslouchá jen na `127.0.0.1:3000` s `TRUST_PROXY=1`; před ni patří
+nginx na stejném stroji podle `deploy/nginx.conf.example`. Bez proxy (port
+vystavený přímo, `HOST=0.0.0.0`) `TRUST_PROXY` nastavit nesmíš.
 
 ### 2.5 Plánované úlohy
 

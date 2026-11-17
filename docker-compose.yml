@@ -20,9 +20,16 @@ services:
       # Inside the container on every interface (the server's default is
       # 127.0.0.1); who can reach it is decided by `ports` below.
       HOST: 0.0.0.0
+      # The client address for the rate limits comes from the proxy's X-Real-IP
+      # (deploy/nginx.conf.example); without it every visitor would count as
+      # the proxy. Only because the port below is reachable from this machine
+      # alone: never with the port exposed directly, as anybody could then
+      # pick their own address.
+      TRUST_PROXY: "1"
     ports:
       # Bind to localhost only: nginx (or another reverse proxy) terminates TLS
-      # and forwards here. Change to "3000:3000" to expose it directly.
+      # and forwards here. Changing it to "3000:3000" (exposed directly) means
+      # removing TRUST_PROXY above.
       - "127.0.0.1:3000:3000"
     volumes:
       # Service account file, if you use FIREBASE_SERVICE_ACCOUNT_PATH instead of

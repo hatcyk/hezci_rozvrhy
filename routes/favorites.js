@@ -10,6 +10,7 @@ const express = require('express');
 const { getFirestore } = require('../backend/firebase-admin-init');
 const { requireUser } = require('../backend/auth-middleware');
 const { validateFavorites } = require('./validation');
+const { admitNewUser } = require('./new-users');
 
 const router = express.Router();
 
@@ -42,6 +43,7 @@ router.post('/favorites/:userId', requireUser, async (req, res) => {
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
         const userDoc = await userRef.get();
+        if (!userDoc.exists && !admitNewUser(req, res)) return;
 
         if (userDoc.exists) {
             await userRef.update({

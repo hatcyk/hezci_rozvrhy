@@ -1,7 +1,9 @@
 /**
  * Failed answers of /api/auth and /api/fcm/* reach the user as Czech text
- * (public/js/api-error.js): on 429 the server's own Czech message (routes/auth.js,
- * routes/fcm.js: { error, retryAfterSec }) and roughly when to try again;
+ * (public/js/api-error.js): on 429 the server's own Czech message
+ * (routes/new-users.js, routes/fcm.js: { error, retryAfterSec }) and roughly
+ * when to try again (a 429 of /api/auth would come from a limit in front of the
+ * app, the app itself always issues an identity);
  * otherwise a Czech fallback, never the English internals such as
  * "Failed to get auth token from backend". Firebase, fetch and the browser
  * APIs are fakes.

@@ -14,6 +14,7 @@ const { processPendingChanges, deriveWatchIndex } = require('../backend/fcm');
 const { requireUser, verifyCronRequest, isLegacyUserId } = require('../backend/auth-middleware');
 const { AttemptLimiter } = require('../backend/admin');
 const { validateFcmToken, validateWatchedTimetables, isPlainObject } = require('./validation');
+const { admitNewUser } = require('./new-users');
 
 const router = express.Router();
 
@@ -92,13 +93,16 @@ router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
         }
         const tokenError = validateFcmToken(token);
         if (tokenError) return res.status(400).json({ error: tokenError });
-        if (!(await isTokenAccepted(token))) {
-            return res.status(400).json({ error: 'FCM rejected the token' });
-        }
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
-        const [userDoc, others] = await Promise.all([userRef.get(), otherHolders(db, userId, token)]);
+        const userDoc = await userRef.get();
+        if (!userDoc.exists && !admitNewUser(req, res)) return;
+
+        if (!(await isTokenAccepted(token))) {
+            return res.status(400).json({ error: 'FCM rejected the token' });
+        }
+        const others = await otherHolders(db, userId, token);
 
         // Taking the token from the 1.x documents and storing it here in one batch.
         const batch = db.batch();
@@ -207,6 +211,8 @@ router.post('/update-preferences', requireUser, limitWrites, async (req, res) =>
         // Denormalized index fields for efficient watcher/reminder queries.
         const { watchedKeys, hasReminders, watchedTypes } = deriveWatchIndex(watchedTimetables);
 
+        if (!userDoc.exists && !admitNewUser(req, res)) return;
+
         if (userDoc.exists) {
             await userRef.update({
                 'preferences.watchedTimetables': watchedTimetables,
@@ -254,6 +260,8 @@ router.post('/update-global-preferences', requireUser, limitWrites, async (req, 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
         const userDoc = await userRef.get();
+
+        if (!userDoc.exists && !admitNewUser(req, res)) return;
 
         if (userDoc.exists) {
             // Update existing user

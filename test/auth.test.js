@@ -186,72 +186,27 @@ test('/api/auth: starý uživatel bez uloženého nastavení dostane při opakov
     assert.equal(db._get(`users/${first.userId}`), undefined, 'nic se nezakládá');
 });
 
-// ---- limit on new identities (security review, point 3) --------------------
-// Behind a proxy the client address comes from X-Real-IP (TRUST_PROXY=1, as
-// on Vercel), so every test uses its own documentation addresses.
-const fromIp = (ip, headers = {}) => ({ 'x-real-ip': ip, ...headers });
-async function withTrustProxy(fn) {
+// ---- /api/auth is never limited (review 3, point 1) --------------------------
+// The whole school shares one public IP: a limit here let one pupil's script
+// lock every new visitor out of reading. The limit is on the first users/{uid}
+// document instead (routes/new-users.js, test/routes.test.js).
+test('/api/auth: z jedné adresy dostane identitu každý, i dlouho nad dřívějším limitem', async () => {
     process.env.TRUST_PROXY = '1';
-    try { return await fn(); } finally { delete process.env.TRUST_PROXY; }
-}
-async function createIdentities(ip, n) {
-    for (let i = 0; i < n; i++) {
-        const r = await postJson('/api/auth', {}, fromIp(ip));
-        assert.equal(r.status, 200, `identity ${i + 1} from ${ip}`);
+    try {
+        const usersBefore = db._paths('users').length;
+        const ids = new Set();
+        for (let i = 0; i < 300; i++) {
+            const r = await postJson('/api/auth', {}, { 'x-real-ip': '198.51.100.7' });
+            assert.equal(r.status, 200, `identity ${i + 1}`);
+            ids.add((await r.json()).userId);
+        }
+        assert.equal(ids.size, 300);
+        // a stored ID whose session is gone gets a new one too
+        assert.equal((await postJson('/api/auth', { userId: A }, { 'x-real-ip': '198.51.100.7' })).status, 200);
+        assert.equal(db._paths('users').length, usersBefore, 'issuing an identity writes nothing');
+    } finally {
+        delete process.env.TRUST_PROXY;
     }
-}
-
-test('/api/auth: nejvýš 60 nových identit z jedné adresy za 10 min, pak 429 s Retry-After a českou hláškou', async () => {
-    await withTrustProxy(async () => {
-        await createIdentities('198.51.100.7', 60);
-        const r = await postJson('/api/auth', {}, fromIp('198.51.100.7'));
-        assert.equal(r.status, 429);
-        const retry = Number(r.headers.get('retry-after'));
-        assert.ok(retry > 0 && retry <= 600, `Retry-After ${retry}`);
-        const body = await r.json();
-        assert.match(body.error, /Příliš mnoho nových přihlášení/);
-        assert.equal(body.token, undefined);
-        assert.equal(body.userId, undefined);
-
-        // Another address is not affected.
-        assert.equal((await postJson('/api/auth', {}, fromIp('203.0.113.9'))).status, 200);
-    });
-});
-
-test('/api/auth: obnova vlastní relace a migrace s důkazem se do limitu nepočítají, cizí „důkaz“ ano', async () => {
-    await withTrustProxy(async () => {
-        const ip = '198.51.100.8';
-        await createIdentities(ip, 60);
-
-        const own = await postJson('/api/auth', { userId: A }, fromIp(ip, bearer(A)));
-        assert.equal(own.status, 200);
-        assert.equal((await own.json()).userId, A);
-
-        const OLD = 'anonymous-1733299999005';
-        const migrated = await postJson('/api/auth', { userId: OLD }, fromIp(ip, bearer(OLD)));
-        assert.equal(migrated.status, 200);
-        assert.equal((await migrated.json()).migratedFrom, OLD);
-
-        // Knowing an ID without its session means a new identity: counted.
-        assert.equal((await postJson('/api/auth', { userId: A }, fromIp(ip, bearer(B)))).status, 429);
-        assert.equal((await postJson('/api/auth', { userId: A }, fromIp(ip))).status, 429);
-    });
-});
-
-test('/api/auth: IPv6 se počítá po prefixu /64 (jinak by stačilo měnit adresu)', async () => {
-    await withTrustProxy(async () => {
-        await createIdentities('2001:db8:aa:bb::1', 60);
-        assert.equal((await postJson('/api/auth', {}, fromIp('2001:db8:aa:bb:ffff:1:2:3'))).status, 429, 'same /64');
-        assert.equal((await postJson('/api/auth', {}, fromIp('2001:DB8:AA:BB:0::9'))).status, 429, 'same /64, other spelling');
-        assert.equal((await postJson('/api/auth', {}, fromIp('2001:db8:aa:cc::1'))).status, 200, 'other /64');
-    });
-});
-
-test('limit nových identit: AUTH_NEW_ID_LIMIT, výchozí 60', () => {
-    const { newIdentityLimit } = require('../routes/auth');
-    assert.equal(newIdentityLimit({}), 60);
-    assert.equal(newIdentityLimit({ AUTH_NEW_ID_LIMIT: '200' }), 200);
-    for (const bad of ['', '0', '-5', '2.5', 'abc']) assert.equal(newIdentityLimit({ AUTH_NEW_ID_LIMIT: bad }), 60, bad);
 });
 
 test('rateLimitKey: IPv4 celá adresa, IPv6 prefix /64, IPv4 v IPv6 jako IPv4', () => {

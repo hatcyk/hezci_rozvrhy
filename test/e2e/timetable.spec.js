@@ -183,6 +183,22 @@ test.describe('Rozvrh', () => {
     if (!isMobile) await expect(page.locator('#sideFavs .side-item')).toContainText('Třída 2.B');
   });
 
+  test('oblíbené nad limitem nových uživatelů (429): hvězdička se vrátí, toast řekne česky proč', async ({ page, app }) => {
+    const LIMIT = { error: 'Příliš mnoho nových uživatelů z této sítě, zkuste to později.', retryAfterSec: 300 };
+    await page.route('**/api/favorites/**', (route) => (route.request().method() === 'POST'
+      ? route.fulfill({ status: 429, headers: { 'Retry-After': '300' }, json: LIMIT })
+      : route.fulfill({ json: { favoriteTimetables: [] } })));
+    await app.open('/');
+    await app.timetableReady();
+    await page.click('#valueDropdownTrigger');
+    const star = page.locator('#searchResults .sr-row').filter({ hasText: '2.B' }).first().locator('.sr-fav');
+    await star.click();
+    const toast = page.locator('.toast').filter({ hasText: 'Oblíbené se nepodařilo uložit.' });
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText('Příliš mnoho nových uživatelů z této sítě, zkuste to později. Znovu to půjde zhruba za 5 min.');
+    await expect(star).toHaveAttribute('aria-pressed', 'false');
+  });
+
   test('„Jen změny“ ukáže seznam změn týdne a jde vypnout', async ({ page, app, isMobile }) => {
     await app.open('/');
     await app.timetableReady();

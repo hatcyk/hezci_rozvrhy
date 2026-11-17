@@ -17,17 +17,41 @@ const { isProductionEnv } = require('../backend/auth-middleware');
 const router = express.Router();
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// Host header of a request typed on this machine, with or without the port.
+const LOCAL_HOST_RE = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
+// Added by proxies and tunnels (ngrok, cloudflared, VS Code port forwarding).
+const FORWARDING_HEADERS = ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via', 'cf-connecting-ip'];
+// Origin of a page served by this machine (the app's own debug panel).
+const LOCAL_ORIGIN_RE = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d{1,5})?$/i;
+const JSON_TYPE_RE = /^application\/json\s*(?:;|$)/i;
 
 /**
  * DEBUG=true, not production (never on Vercel: Preview deployments have
  * VERCEL=1 as well and may hold the production service account) and a
- * request from this machine. The socket address decides, not X-Forwarded-For, which any client
- * can set. A dev server started with HOST=0.0.0.0 on the school Wi-Fi is
- * therefore still closed to the rest of the network.
+ * request from this machine. The socket address decides, not X-Forwarded-For,
+ * which any client can set: a dev server started with HOST=0.0.0.0 on the
+ * school Wi-Fi is still closed to the rest of the network. A tunnel (to try
+ * push on a phone over HTTPS) or a page doing DNS rebinding reaches the
+ * server from 127.0.0.1 too, so the Host must name this machine as well and
+ * no forwarding header may be present.
+ *
+ * Any website the developer visits can also make the browser send a request
+ * to http://127.0.0.1:3000 (CSRF): Host and socket are loopback then. Its
+ * Origin and Sec-Fetch-Site give it away (a missing one is fine: curl, older
+ * browsers), and everything that changes something takes only a JSON body,
+ * which a foreign page cannot send without a CORS preflight (refused for it).
  */
 function isDebugAllowed(req) {
     if (process.env.DEBUG !== 'true' || isProductionEnv()) return false;
-    return LOOPBACK.has(req.socket && req.socket.remoteAddress);
+    if (!LOOPBACK.has(req.socket && req.socket.remoteAddress)) return false;
+    const headers = req.headers || {};
+    if (typeof headers.host !== 'string' || !LOCAL_HOST_RE.test(headers.host)) return false;
+    if (!FORWARDING_HEADERS.every(name => headers[name] === undefined)) return false;
+    if (headers.origin !== undefined && !LOCAL_ORIGIN_RE.test(headers.origin)) return false;
+    const site = headers['sec-fetch-site'];
+    if (site !== undefined && site !== 'same-origin' && site !== 'none') return false;
+    const reading = req.method === 'GET' || req.method === 'HEAD';
+    return reading || JSON_TYPE_RE.test(headers['content-type'] || '');
 }
 
 // Otherwise skip the whole router: the request ends in the ordinary 404 of
@@ -322,13 +346,18 @@ router.get('/lesson-reminder-status', async (req, res) => {
 });
 
 // Test lesson reminders with mock time
-router.get('/test-lesson-reminder', async (req, res) => {
+// Sends real reminders (unless dryRun): POST with a JSON body
+// { time?, dryRun? }, so that no foreign page can trigger it.
+router.post('/test-lesson-reminder', async (req, res) => {
     try {
-        const { time, dryRun } = req.query;
+        const { time, dryRun } = req.body || {};
 
         // Parse mock time if provided (format: YYYY-MM-DDTHH:mm:ss or just HH:mm)
         let mockTime = null;
         if (time) {
+            if (typeof time !== 'string') {
+                return res.status(400).json({ error: 'Invalid time format. Use YYYY-MM-DDTHH:mm:ss or HH:mm' });
+            }
             if (time.includes('T')) {
                 // Full ISO format
                 mockTime = new Date(time);
@@ -345,7 +374,7 @@ router.get('/test-lesson-reminder', async (req, res) => {
         // Run lesson reminder logic
         const result = await sendLessonReminders({
             mockTime: mockTime,
-            dryRun: dryRun === 'true' || dryRun === '1'
+            dryRun: dryRun === true || dryRun === 'true' || dryRun === '1'
         });
 
         res.json({

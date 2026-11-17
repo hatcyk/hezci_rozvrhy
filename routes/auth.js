@@ -10,7 +10,8 @@
  *   session asking again (lost response) gets the same new ID
  * - anything else: no ID, unknown format, or an ID the caller cannot prove
  *                                             → a fresh, empty `anon-<uuid>`
- *   (at most AUTH_NEW_ID_LIMIT per client address in 10 minutes, then 429)
+ *   Always: reading needs an identity, and the whole school shares one IP.
+ *   The limit is on creating a users document (routes/new-users.js).
  *
  * The userId is an identifier, not a credential: knowing or guessing someone's
  * ID (the legacy ones are millisecond timestamps) gets you nothing. Before 2.0
@@ -20,31 +21,8 @@
 const express = require('express');
 const { createCustomToken, getFirestore, verifyIdToken } = require('../backend/firebase-admin-init');
 const { isValidUserId, isLegacyUserId, newUserId, bearerToken } = require('../backend/auth-middleware');
-const { AttemptLimiter } = require('../backend/admin');
-const { clientIp, rateLimitKey } = require('./admin');
 
 const router = express.Router();
-
-const NEW_ID_WINDOW_MS = 10 * 60 * 1000;
-const DEFAULT_NEW_ID_LIMIT = 60;
-
-/** AUTH_NEW_ID_LIMIT: new identities per client address and 10 minutes. */
-function newIdentityLimit(env = process.env) {
-    const value = Number(env.AUTH_NEW_ID_LIMIT);
-    return Number.isInteger(value) && value > 0 ? value : DEFAULT_NEW_ID_LIMIT;
-}
-
-// Every new identity can carry reminders and a device token, which the
-// reminder job reads every minute; without a limit one script created
-// hundreds of them in a second. Counted per address (IPv6: per /64), like
-// the admin limiter, and only for new identities: restoring one's own
-// session or migrating with its ID token never counts. Generous because the
-// whole school reaches the app from one public IP. Per serverless instance.
-const newIdentities = new AttemptLimiter({
-    max: newIdentityLimit(),
-    windowMs: NEW_ID_WINDOW_MS,
-    lockMs: NEW_ID_WINDOW_MS,
-});
 
 // userMigrations/{legacyId} = { migratedTo, migratedAt, authTime, moved }:
 // which new ID a legacy one became. Kept so that a repeated request is answered
@@ -145,16 +123,6 @@ router.post('/auth', async (req, res) => {
             console.log(`🔁 Legacy user ${requested} → ${userId} (${result.repeated ? 'repeated request'
                 : result.moved ? 'settings moved' : 'no stored settings'})`);
         } else {
-            const key = rateLimitKey(clientIp(req));
-            const state = newIdentities.status(key);
-            if (state.locked) {
-                res.setHeader('Retry-After', String(state.retryAfterSec));
-                return res.status(429).json({
-                    error: 'Příliš mnoho nových přihlášení z této sítě, zkuste to později.',
-                    retryAfterSec: state.retryAfterSec,
-                });
-            }
-            newIdentities.fail(key); // one more new identity of this address
             userId = newUserId();
         }
 
@@ -168,4 +136,3 @@ router.post('/auth', async (req, res) => {
 
 module.exports = router;
 module.exports.migrateLegacyUser = migrateLegacyUser;
-module.exports.newIdentityLimit = newIdentityLimit;
