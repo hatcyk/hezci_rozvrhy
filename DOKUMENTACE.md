@@ -156,19 +156,20 @@ běhy nepřekryly.
 
 | Kolekce / dokument | Obsah | Zapisuje | Prohlížeč (pravidla) |
 |---|---|---|---|
-| `definitions/current` | třídy, vyučující, učebny, `classGroups` | prefetch | čte (přihlášený) |
+| `definitions/current` | třídy, vyučující, učebny, `classGroups` | prefetch | čte jednotlivé dokumenty (`get`, přihlášený) |
 | `timetables/{Typ}_{id}_{Actual\|Next\|Permanent}` | snímek rozvrhu (3.1, bod 6) | prefetch | čte |
 | `aggregates/changes_*`, `aggregates/freeRooms_*` | souhrny pro pohledy Změny a Volné učebny | prefetch | čte |
 | `metadata/lastPrefetch` | souhrn posledního běhu (záloha pro banner) | prefetch | čte |
-| `users/{uid}` | tokeny FCM, sledované rozvrhy a filtry, oblíbené, index `watchedKeys`/`watchedTypes` | API | jen `get` vlastního dokumentu |
+| `users/{uid}` | tokeny FCM, sledované rozvrhy a filtry, oblíbené, index `watchedKeys`/`watchedTypes` | API | ne (nastavení vrací API bez tokenů) |
 | `changes/*` | zjištěné změny k odeslání | prefetch, notifikace | ne |
 | `lesson_notifications_sent/*` | zábory upomínek | upomínky | ne |
 | `runs/*`, `system/*` | běhy úloh, stav, migrace, slot ručního spuštění, `system/permanentRefresh` (denní obnova stálých rozvrhů) | úlohy, admin | ne |
 | `userMigrations/{anonymous-<ms>}` | na které nové ID se staré převedlo (`migratedTo`, `authTime`) | `/api/auth` | ne |
 | `audit/*` | přístupy do administrace (`ipHash` = HMAC) | admin API | ne |
 
-Pravidla jsou v `firestore.rules` (zápis z prohlížeče nikde, server zapisuje
-přes Admin SDK), složený index `runs (job ↑, startedAt ↓)` v
+Pravidla jsou v `firestore.rules` (prohlížeč smí jen `get` jednotlivých
+dokumentů čtyř veřejných kolekcí, žádný výpis ani dotaz; zápis z prohlížeče
+nikde, server zapisuje přes Admin SDK), složený index `runs (job ↑, startedAt ↓)` v
 `firestore.indexes.json`.
 
 ## 5. HTTP API (`routes/`)
@@ -292,8 +293,15 @@ CI: `test.yml` (push a PR; Node 22/24 × TZ UTC/Europe/Prague, práh pokrytí 50
 `e2e.yml` (PR a ruční spuštění; kontrola, že commitnutý bundle odpovídá zdrojům,
 Chromium headless shell, HTML report jako artefakt).
 
-Testy pravidel Firestore v emulátoru nejsou součástí `npm test` (vyžadují Javu
-a `@firebase/rules-unit-testing`); postup je v DEPLOYMENT.md.
+Pravidla Firestore: `npm test` hlídá jen jejich text (`test/firestore-rules.test.js`:
+veřejné kolekce jen `get`, každá kolekce, kterou server používá, výslovně
+zavřená). Vyhodnocení v emulátoru (`test/rules/firestore-rules.emulator.test.mjs`,
+`npm run test:rules`) potřebuje Javu 21 a balíčky instalované bez zápisu do
+`package.json` (`npm i --no-save --no-package-lock @firebase/rules-unit-testing@6.0.0
+firebase@13.1.0 firebase-tools@15.34.2`); v CI ho pouští `rules.yml` (PR a push
+do `main`/`dev` se změnou pravidel nebo testu, ručně přes Run workflow).
+Akce ve workflows jsou připnuté na SHA, nové verze navrhuje Dependabot
+(`.github/dependabot.yml`, měsíčně).
 
 ## 9. Známá omezení
 
