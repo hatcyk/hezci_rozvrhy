@@ -179,7 +179,7 @@ přes Admin SDK), složený index `runs (job ↑, startedAt ↓)` v
 | `GET /api/status[?strict=1]` | – | stáří dat (3.3) |
 | `GET /api/groups/:classId` | – | skupiny třídy |
 | `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50) |
-| `POST /api/fcm/subscribe`, `unsubscribe`, `update-preferences`, `update-global-preferences`, `GET /api/fcm/preferences/:userId` | ID token, vlastní `userId` | odběr upozornění a nastavení (max. 200 sledovaných rozvrhů) |
+| `POST /api/fcm/subscribe`, `unsubscribe`, `update-preferences`, `update-global-preferences`, `GET /api/fcm/preferences/:userId` | ID token, vlastní `userId` | odběr upozornění a nastavení (max. 200 sledovaných rozvrhů). Zápisy nejvýš 60 za 10 min na uživatele, pak 429 s `Retry-After`. `subscribe` ověří token u FCM nanečisto (`send(…, dryRun)`): token, který FCM odmítne, je 400; při výpadku FCM se token přijme a zaloguje. |
 | `POST /api/fcm/process-changes`, `GET /api/cron/{prefetch,process-notifications,lesson-reminders,cleanup}` | `Authorization: Bearer <CRON_SECRET>` | plánované úlohy; bez tajemství v produkci 503 |
 | `GET /api/ical/:type/:id.ics?schedule=…&group=…` | – (vypínač `ICAL_ENABLED`) | kalendář iCalendar (RFC 5545), ETag/304 |
 | `GET /api/admin/{health,runs,runs/intervals,changes,stats,audit}`, `POST /api/admin/prefetch/dispatch` | `Authorization: Bearer <ADMIN_SECRET>` | administrace (kap. 7) |
@@ -313,9 +313,9 @@ a `@firebase/rules-unit-testing`); postup je v DEPLOYMENT.md.
   řady v iCal nepromítají.
 - Upomínka se doručí nejvýš jednou (zábor `failed` se neopakuje).
 - Limit pokusů do administrace je pro každou serverless instanci zvlášť;
-  skutečnou ochranou je dlouhé náhodné tajemství. Stejně tak limit nových
-  identit: brzdí jeden skript, ne útok z mnoha adres (na to Vercel Firewall
-  nebo Firebase App Check).
+  skutečnou ochranou je dlouhé náhodné tajemství. Stejně tak limity nových
+  identit a zápisů upozornění: brzdí jeden skript, ne útok z mnoha adres (na
+  to Vercel Firewall nebo Firebase App Check).
 - Automatický audit přístupnosti nenahrazuje ruční test se čtečkou obrazovky a
   zvětšením 200 %; push na iOS a kiosk na televizi je nutné ověřit na zařízení.
 
