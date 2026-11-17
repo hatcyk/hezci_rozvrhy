@@ -271,6 +271,24 @@ test('jedno zařízení pod dvěma ID (týž token ve dvou dokumentech) dostane 
     assert.deepEqual(db._get('users/anonymous-1733211111111').tokens, ['shared'], 'sending changes no document');
 });
 
+test('týž token ve dvou dokumentech s jinými předvolbami: obě různé zprávy odejdou, v libovolném pořadí dokumentů', async (t) => {
+    quiet(t);
+    // Somebody added the victim's token to their own account and only wants
+    // the substitution; the victim wants the room change. Neither may replace the other.
+    const onlySubstitution = { ...DEFAULTS, room_change: false };
+    for (const order of [['attacker', 'victim'], ['victim', 'attacker']]) {
+        const docs = {
+            attacker: user(['victim-device'], { changes: onlySubstitution }),
+            victim: user(['victim-device'], { changes: { ...DEFAULTS, substitution: false } }),
+        };
+        reset({ ...Object.fromEntries(order.map(id => [`users/${id}`, docs[id]])), 'changes/c1': changeDoc() });
+        await processPendingChanges();
+        const bodies = sentTo('victim-device').map(m => m.data.body).sort();
+        assert.equal(bodies.length, 2, `order ${order.join(', ')}`);
+        assert.ok(bodies.some(b => /učebn|B5/i.test(b)), `the victim's room change arrives (order ${order.join(', ')}): ${bodies}`);
+    }
+});
+
 test('dedup tokenů platí v rámci jednoho rozesílání: jiná změna týž token znovu dostane; mrtvý token se uklidí u toho, komu se poslal', async (t) => {
     quiet(t);
     reset({

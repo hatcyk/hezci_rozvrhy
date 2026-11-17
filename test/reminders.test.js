@@ -244,6 +244,39 @@ test('jedno zařízení pod dvěma ID dostane upomínku jednou, i v dalších b�
     }
 });
 
+test('týž token ve dvou dokumentech s jinými upomínkami: obě odejdou, nezávisle na pořadí dokumentů', async () => {
+    const restore = quiet();
+    const ATTACKER = 'anon-5a2c1b6d-3f6c-4b8a-ae7d-6f708192a3b4';   // added the victim's token to their own account
+    const VICTIM = 'anon-6b3d2c7e-4a7d-4c9b-bf8e-708192a3b4c5';
+    const reminders = { reminders: { next_lesson_room: true } };
+    const watching = (id) => ({
+        tokens: ['victim-phone'], hasReminders: true, watchedKeys: [`Class_${id}_Actual`],
+        preferences: { watchedTimetables: [{ type: 'Class', id, scheduleType: 'Actual', groupFilters: [], notificationTypes: reminders }] },
+    });
+    const D = '2026-11-18'; // Wednesday, hour 1 (8:00)
+    try {
+        db._store.set('timetables/Class_VIC_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Matematika', teacher: 'J. Novák', room: 'A102', group: '', date: D },
+        ] });
+        db._store.set('timetables/Class_ATT_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Tělesná výchova', teacher: 'P. Rychlý', room: 'TV1', group: '', date: D },
+        ] });
+        for (const order of [[ATTACKER, VICTIM], [VICTIM, ATTACKER]]) {
+            for (const p of db._paths('lesson_notifications_sent')) db._store.delete(p);
+            for (const id of [ATTACKER, VICTIM]) db._store.delete(`users/${id}`);
+            for (const id of order) db._store.set(`users/${id}`, watching(id === VICTIM ? 'VIC' : 'ATT'));
+            const before = sent.length;
+            await sendLessonReminders({ mockTime: new Date('2026-11-18T06:56:00Z') });
+            await sendLessonReminders({ mockTime: new Date('2026-11-18T06:57:00Z') });
+            const subjects = sent.slice(before).filter(m => m.tokens.includes('victim-phone')).map(m => m.data.subject).sort();
+            assert.deepEqual(subjects, ['Matematika', 'Tělesná výchova'], order[0] === VICTIM ? 'victim first' : 'attacker first');
+        }
+    } finally {
+        for (const id of [ATTACKER, VICTIM]) db._store.delete(`users/${id}`);
+        restore();
+    }
+});
+
 test('mapWithConcurrency drží limit souběhu a pořadí výsledků', async () => {
     let inFlight = 0, peak = 0;
     const out = await mapWithConcurrency([5, 1, 3, 2, 4], 2, async (x) => {

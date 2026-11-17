@@ -64,20 +64,35 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
 }
 
 /**
- * The tokens of `tokens` that are not in `used` yet, each once, now marked as
- * used. One dispatch (a change document, a reminder hour) keeps one `used`:
- * a device whose token sits in two user documents (a 1.x document left
- * behind by the migration, an ID replaced after the site data were cleared)
- * gets one notification, not two.
+ * What a notification says, without the time it is sent: two user documents
+ * that would send exactly this to one device send it once.
+ * @param {Object} notification - { title, body, data }
+ * @returns {String}
+ */
+function notificationKey(notification) {
+    const { timestamp, ...data } = (notification && notification.data) || {};
+    return JSON.stringify([notification && notification.title, notification && notification.body, data]);
+}
+
+/**
+ * The tokens that have not been sent this message yet, each once, now marked
+ * in `sent`. A device whose token sits in two user documents (a 1.x document
+ * left behind by the migration, an ID replaced after the site data were
+ * cleared) gets the same message once. The key is token + message, never the
+ * token alone: a different message to the same device still goes, so it does
+ * not matter which document comes first (somebody who adds another person's
+ * token to their own account cannot replace that person's notifications).
  * @param {Array<String>} tokens
- * @param {Set<String>} used
+ * @param {Set<String>} sent - one per dispatch (a change document, a reminder hour)
+ * @param {String} messageKey - identity of the message (see notificationKey)
  * @returns {Array<String>}
  */
-function takeUnsentTokens(tokens, used) {
+function takeUnsentTokens(tokens, sent, messageKey) {
     const fresh = [];
     for (const token of tokens || []) {
-        if (used.has(token)) continue;
-        used.add(token);
+        const key = `${messageKey}\n${token}`;
+        if (sent.has(key)) continue;
+        sent.add(key);
         fresh.push(token);
     }
     return fresh;
@@ -506,7 +521,7 @@ async function processPendingChanges() {
 
             // Send to each user with their filtered changes
             let totalSent = 0;
-            const usedTokens = new Set();
+            const sentMessages = new Set(); // token + message, for this change document
 
             for (const user of watchingUsers) {
                 try {
@@ -528,9 +543,9 @@ async function processPendingChanges() {
                         continue;
                     }
 
-                    const tokens = takeUnsentTokens(user.tokens, usedTokens);
+                    const tokens = takeUnsentTokens(user.tokens, sentMessages, notificationKey(notification));
                     if (tokens.length === 0) {
-                        console.log(`⏭️  Devices of user ${user.userId} already notified of this change`);
+                        console.log(`⏭️  Devices of user ${user.userId} already got this notification`);
                         continue;
                     }
 
@@ -642,6 +657,7 @@ module.exports = {
     preferenceKeyForChange,
     preferenceKeysForChange,
     sendNotificationToTokens,
+    notificationKey,
     takeUnsentTokens,
     getUsersWatchingTimetable,
     processPendingChanges,
