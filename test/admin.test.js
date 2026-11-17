@@ -351,5 +351,5 @@ test('firestore.indexes.json má složený index runs (job, startedAt) a firebas
         && JSON.stringify(i.fields) === JSON.stringify([{ fieldPath: 'job', order: 'ASCENDING' }, { fieldPath: 'startedAt', order: 'DESCENDING' }])));
     const rules = fs.readFileSync(path.join(root, 'firestore.rules'), 'utf8');
     for (const c of ['runs', 'system', 'audit']) assert.match(rules, new RegExp(`match /${c}/\\{docId\\} \\{\\s*allow read, write: if false;`), c);
-    assert.match(rules, /match \/aggregates\/\{docId\} \{\s*allow read: if signedIn\(\);/);
+    assert.match(rules, /match \/aggregates\/\{docId\} \{\s*allow get: if signedIn\(\);/);
 });
