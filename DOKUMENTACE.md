@@ -187,7 +187,7 @@ nikde, server zapisuje přes Admin SDK), složený index `runs (job ↑, started
 | `GET /api/ical/:type/:id.ics?schedule=…&group=…` | – (vypínač `ICAL_ENABLED`) | kalendář iCalendar (RFC 5545), ETag/304 |
 | `GET /api/admin/{health,runs,runs/intervals,changes,stats,audit}`, `POST /api/admin/prefetch/dispatch` | `Authorization: Bearer <ADMIN_SECRET>` | administrace (kap. 7) |
 | `POST /api/csp-report` | limit 60/min | hlášení porušení CSP do logu |
-| `GET /api/debug/*` (`status`, `users`, `simulate-change`, …) | jen `DEBUG=true` mimo produkci (nikdy na Vercelu ani s `NODE_ENV=production`) a z `127.0.0.1`; jinak obyčejná 404 | ladění |
+| `GET /api/debug/*` (`status`, `users`, `simulate-change`, …) | jen `DEBUG=true` mimo produkci (nikdy na Vercelu ani s `NODE_ENV=production`), z `127.0.0.1` s `Host: localhost` a bez přeposílacích hlaviček (tunel ne); jinak obyčejná 404 | ladění |
 
 `requireUser` (`backend/auth-middleware.js`) ověří Firebase ID token
 (`verifyIdToken`): bez tokenu 401, cizí `userId` v cestě nebo těle 403.
@@ -282,7 +282,11 @@ Těla se validují v `routes/validation.js`.
 - **Plánované úlohy:** `CRON_SECRET` v konstantním čase; bez něj v produkci 503.
 - **Ladění** (`/api/debug/*`, bez přihlášení: vypíše tokeny, pošle upozornění
   všem) jen s `DEBUG=true`, mimo produkci a z adresy soketu `127.0.0.1`/`::1`
-  (ne z `X-Forwarded-For`); jinak 404 jako neexistující cesta. Server
+  (ne z `X-Forwarded-For`), s hlavičkou `Host` `localhost`/`127.0.0.1`/`[::1]`
+  a bez přeposílacích hlaviček (`Forwarded`, `X-Forwarded-*`, `X-Real-IP`,
+  `Via`, `Cf-Connecting-Ip`), takže ho neotevře ani tunel (ngrok,
+  cloudflared), ani stránka s DNS rebindingem; jinak 404 jako neexistující
+  cesta. Server
   poslouchá ve výchozím stavu jen na `127.0.0.1`, do sítě až s `HOST=0.0.0.0`
   (nastavuje ho obraz Dockeru uvnitř kontejneru; `deploy/lepsi-rozvrh.service`
   zůstává na `127.0.0.1` za nginx).

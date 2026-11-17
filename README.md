@@ -93,6 +93,9 @@ CSP hashe ve `vercel.json`) a výsledek commitni.
 > **Pozor:** projekt má jediný Firebase projekt. `npm run prefetch`,
 > `process-notifications`, `lesson-reminders` a `cleanup` pracují s produkčními
 > daty (a posílají skutečná upozornění). Lokálně je spouštěj jen vědomě.
+> Totéž platí pro `DEBUG=true`: ladicí API (`/api/debug/*`) vypíše tokeny a
+> pošle upozornění skutečným uživatelům. Odpovídá jen na `localhost` z tohoto
+> počítače, ne přes tunel (ngrok, cloudflared) ani jinou proxy.
 
 ## Testy
 

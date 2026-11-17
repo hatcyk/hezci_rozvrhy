@@ -113,18 +113,59 @@ test('DEBUG=true lokálně z 127.0.0.1: ladění funguje', async () => {
 });
 
 test('brána ladění: jen adresa soketu z loopbacku, X-Forwarded-For se nebere v potaz', async () => {
-    const req = (remoteAddress, headers = {}) => ({ socket: { remoteAddress }, headers });
+    const req = (remoteAddress, headers = { host: '127.0.0.1:3000' }) => ({ socket: { remoteAddress }, headers });
     await withEnv({ DEBUG: 'true' }, () => {
         for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1']) assert.equal(isDebugAllowed(req(a)), true, a);
         for (const a of ['192.168.1.20', '10.0.0.5', '::ffff:192.168.1.20', 'fe80::1', '172.17.0.1', undefined]) {
             assert.equal(isDebugAllowed(req(a)), false, String(a));
         }
-        const spoofed = req('192.168.1.20', { 'x-forwarded-for': '127.0.0.1', 'x-real-ip': '127.0.0.1' });
+        const spoofed = req('192.168.1.20', { host: 'localhost:3000', 'x-forwarded-for': '127.0.0.1', 'x-real-ip': '127.0.0.1' });
         assert.equal(isDebugAllowed(spoofed), false, 'client controlled headers do not count');
         assert.equal(isDebugAllowed({ headers: {} }), false, 'no socket → closed');
     });
     await withEnv({ DEBUG: 'true', VERCEL: '1' }, () => assert.equal(isDebugAllowed(req('127.0.0.1')), false));
     await withEnv({ DEBUG: undefined }, () => assert.equal(isDebugAllowed(req('127.0.0.1')), false));
+});
+
+test('brána ladění: Host jen localhost / 127.0.0.1 / [::1] a žádné přeposílací hlavičky (tunel, DNS rebinding)', async () => {
+    const req = (headers) => ({ socket: { remoteAddress: '127.0.0.1' }, headers });
+    await withEnv({ DEBUG: 'true' }, () => {
+        for (const host of ['localhost', 'localhost:3000', '127.0.0.1', '127.0.0.1:3000', '[::1]', '[::1]:3000', 'LOCALHOST:3000']) {
+            assert.equal(isDebugAllowed(req({ host })), true, host);
+        }
+        for (const host of ['abcd-1234.ngrok-free.app', 'rebind.attacker.example:3000', 'localhost.attacker.example',
+            '127.0.0.1.nip.io', 'localhost:3000@evil', '192.168.1.20:3000', '[::1].evil', '', undefined]) {
+            assert.equal(isDebugAllowed(req({ host })), false, String(host));
+        }
+        // a tunnel that rewrites Host to localhost still adds its forwarding headers
+        for (const h of ['forwarded', 'x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'via', 'cf-connecting-ip']) {
+            assert.equal(isDebugAllowed(req({ host: 'localhost:3000', [h]: '198.51.100.9' })), false, h);
+        }
+    });
+});
+
+test('brána ladění přes HTTP: požadavek z 127.0.0.1 s cizím Host nebo z tunelu je 404, s Host localhost projde', async () => {
+    const http = require('node:http');
+    const { port } = new URL(base);
+    const get = (headers) => new Promise((resolve, reject) => {
+        const r = http.request({ host: '127.0.0.1', port, path: '/api/debug/users', headers }, (res) => {
+            let body = '';
+            res.on('data', (c) => { body += c; });
+            res.on('end', () => resolve({ status: res.statusCode, body }));
+        });
+        r.on('error', reject);
+        r.end();
+    });
+    await withEnv({ DEBUG: 'true' }, async () => {
+        const tunnel = await get({ Host: 'abcd-1234.ngrok-free.app', 'X-Forwarded-For': '198.51.100.9', 'X-Forwarded-Host': 'abcd-1234.ngrok-free.app' });
+        assert.equal(tunnel.status, 404);
+        assert.doesNotMatch(tunnel.body, /fcm-victim/);
+        assert.equal((await get({ Host: `rebind.attacker.example:${port}` })).status, 404, 'DNS rebinding');
+        assert.equal((await get({ Host: `localhost:${port}`, 'X-Forwarded-For': '198.51.100.9' })).status, 404, 'tunnel with Host rewritten');
+        const local = await get({ Host: `localhost:${port}` });
+        assert.equal(local.status, 200);
+        assert.match(local.body, /fcm-victim/);
+    });
 });
 
 test('server poslouchá ve výchozím stavu jen na 127.0.0.1, LAN až s HOST=0.0.0.0', () => {
