@@ -4,7 +4,7 @@
  */
 
 import { state } from './state.js';
-import { saveWatchedTimetables } from './notifications-core.js';
+import { saveWatchedTimetables, reportUnsavedChange } from './notifications-core.js';
 import { standardizeGroupName, esc, makeActivatable } from './utils.js';
 import { fetchTimetable } from './api.js';
 import { debug } from './debug.js';
@@ -233,7 +233,7 @@ function createTimetablePreferenceItem(timetable, index) {
             checkbox.id = `pref-${index}-${groupKey}-${optionKey}`;
             checkbox.checked = timetable.notificationTypes[groupKey]?.[optionKey] ?? option.default;
             checkbox.addEventListener('change', () => {
-                updateTimetablePreference(index, groupKey, optionKey, checkbox.checked);
+                updateTimetablePreference(index, groupKey, optionKey, checkbox.checked, checkbox);
             });
 
             const label = document.createElement('label');
@@ -281,9 +281,10 @@ function createTimetablePreferenceItem(timetable, index) {
 }
 
 /**
- * Update notification preference for a specific timetable
+ * Update notification preference for a specific timetable. When the server
+ * does not store it, the switch goes back and a toast says so.
  */
-async function updateTimetablePreference(index, groupKey, optionKey, value) {
+async function updateTimetablePreference(index, groupKey, optionKey, value, checkbox) {
     const timetable = state.watchedTimetables[index];
 
     if (!timetable.notificationTypes) {
@@ -294,7 +295,9 @@ async function updateTimetablePreference(index, groupKey, optionKey, value) {
         timetable.notificationTypes[groupKey] = {};
     }
 
-    timetable.notificationTypes[groupKey][optionKey] = value;
+    const types = timetable.notificationTypes[groupKey];
+    const previous = types[optionKey];
+    types[optionKey] = value;
 
     // Save to server
     try {
@@ -302,6 +305,12 @@ async function updateTimetablePreference(index, groupKey, optionKey, value) {
         debug.log(`✅ Updated preference: ${groupKey}.${optionKey} = ${value}`);
     } catch (error) {
         console.error('Failed to save preferences:', error);
+        // Back to the stored value, unless a newer change of the switch is under way
+        if (types[optionKey] === value) {
+            types[optionKey] = previous ?? !value;
+            if (checkbox) checkbox.checked = !value;
+        }
+        reportUnsavedChange(error);
     }
 }
 
@@ -600,16 +609,14 @@ function aggregateGroups(groups) {
  */
 async function handleAggregatedGroupChange(checkbox, watchedTimetable, subGroups) {
     const isChecked = checkbox.checked;
+    const previous = [...watchedTimetable.groupFilters];
 
     debug.log(`🔄 Aggregated group toggled: subGroups=${subGroups.join(',')} = ${isChecked}`);
 
     if (isChecked) {
-        // Add all subgroups
-        subGroups.forEach(subGroup => {
-            if (!watchedTimetable.groupFilters.includes(subGroup)) {
-                watchedTimetable.groupFilters.push(subGroup);
-            }
-        });
+        // Add all subgroups (a new array: a failed save below can tell whether a newer change followed)
+        watchedTimetable.groupFilters = [...watchedTimetable.groupFilters,
+            ...subGroups.filter(subGroup => !watchedTimetable.groupFilters.includes(subGroup))];
     } else {
         // Remove all subgroups
         watchedTimetable.groupFilters = watchedTimetable.groupFilters.filter(g =>
@@ -622,11 +629,19 @@ async function handleAggregatedGroupChange(checkbox, watchedTimetable, subGroups
     updateGroupFilterLabel(label, watchedTimetable.groupFilters);
 
     // Save to server
+    const saved = watchedTimetable.groupFilters;
     try {
         await saveWatchedTimetables(state.watchedTimetables);
         debug.log(`✅ Group filters saved successfully:`, watchedTimetable.groupFilters);
     } catch (error) {
         console.error('❌ Failed to save group filters:', error);
+        // Back to the stored groups, unless a newer change is under way
+        if (watchedTimetable.groupFilters === saved) {
+            watchedTimetable.groupFilters = previous;
+            checkbox.checked = !isChecked;
+            updateGroupFilterLabel(label, previous);
+        }
+        reportUnsavedChange(error);
     }
 }
 

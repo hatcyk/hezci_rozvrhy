@@ -8,6 +8,7 @@ import { debug } from './debug.js';
 import { showToast } from './toast.js';
 import { applyDeepLink } from './deeplink.js';
 import { apiFetch } from './api.js';
+import { apiError } from './api-error.js';
 import { isIOSDevice, isApplePushEndpoint } from './platform.js';
 
 let messaging = null;
@@ -253,7 +254,7 @@ async function saveTokenToServer(token) {
         }]);
 
         if (!response.ok) {
-            throw new Error('Failed to save token to server');
+            throw await apiError(response, 'Server zapnutí upozornění neuložil. Zkuste to prosím znovu.');
         }
 
         debug.log('✅ FCM token saved to server');
@@ -299,7 +300,7 @@ export async function disableNotifications() {
     }]);
 
     if (!response.ok) {
-        throw new Error(`Server refused to disable notifications (${response.status})`);
+        throw await apiError(response, `Server vypnutí upozornění neuložil (chyba ${response.status}). Zkuste to prosím znovu.`);
     }
 
     debug.log('✅ Notifications disabled');
@@ -315,7 +316,7 @@ export async function loadNotificationPreferences() {
         const response = await apiFetch((userId) => [`/api/fcm/preferences/${encodeURIComponent(userId)}`]);
 
         if (!response.ok) {
-            throw new Error('Failed to load preferences');
+            throw await apiError(response, 'Nastavení upozornění se nepodařilo načíst.');
         }
 
         const data = await response.json();
@@ -484,7 +485,7 @@ export async function saveWatchedTimetables(timetables) {
         }]);
 
         if (!response.ok) {
-            throw new Error('Failed to save preferences');
+            throw await apiError(response, 'Server změnu neuložil. Zkuste to prosím znovu.');
         }
 
         updateState('watchedTimetables', timetables);
@@ -494,5 +495,20 @@ export async function saveWatchedTimetables(timetables) {
         debug.error('Failed to save watched timetables:', error);
         throw error;
     }
+}
+
+/**
+ * Toast for a change of the notification settings that did not reach the
+ * server (limit, outage, offline). The caller puts the switch back.
+ * @param {Error & { status?: number }} error
+ */
+export function reportUnsavedChange(error) {
+    showToast({
+        title: 'Změna nastavení upozornění se neuložila.',
+        // Our API errors carry a Czech message; a failed fetch says "Failed to fetch"
+        body: error && error.status ? error.message : 'Zkontrolujte připojení a zkuste to znovu.',
+        icon: 'triangle-alert',
+        timeout: 9000,
+    });
 }
 
