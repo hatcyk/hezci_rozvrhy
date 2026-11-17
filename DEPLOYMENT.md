@@ -385,7 +385,11 @@ Po uzavření okna pro návrat (např. za týden):
 1. **Vyměnit klíč servisního účtu.** Každé starší nasazení na Vercelu (i
    náhledy větví) má vlastní trvalou adresu a proměnné z doby sestavení, tedy
    i produkční servisní účet. Jeho staré `/api/auth` dál podepíše token pro
-   libovolné ID, a to i po vydání. Postup: konzole Firebase → Project settings
+   libovolné ID, a to i po vydání. Výměna zavře i obchvat limitu nových
+   uživatelů: s takovým tokenem pro libovolné `anonymous-<ms>` projde v novém
+   `/api/auth` převod starého ID, který se do limitu nepočítá (zápis do
+   `userMigrations`, případně nový dokument `users` z převedeného nastavení).
+   Postup: konzole Firebase → Project settings
    → Service accounts → *Generate new private key* → nový JSON vlož do
    `FIREBASE_SERVICE_ACCOUNT` na Vercelu a v GitHub secrets → znovu nasadit →
    ověřit 1.7 → Google Cloud → IAM → Service accounts → Keys → **smazat starý
