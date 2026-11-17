@@ -1,6 +1,8 @@
 /**
  * Debug Routes
- * Development/testing endpoints (only available when DEBUG=true)
+ * Development/testing endpoints: they list every user with their FCM tokens
+ * and send any text to every device, without a login. Reachable only on a
+ * developer's machine, see isDebugAllowed.
  */
 
 const express = require('express');
@@ -10,28 +12,35 @@ const { sendLessonReminders } = require('../backend/lesson-reminder');
 const { getScheduleStatus } = require('../backend/schedule-calculator');
 const { getPragueTimeInfo } = require('../backend/timezone-manager');
 const { clearNotificationsForDate } = require('../backend/notification-tracker');
+const { isProductionEnv } = require('../backend/auth-middleware');
 
 const router = express.Router();
-const DEBUG = process.env.DEBUG === 'true';
 
-// Debug middleware
-function requireDebugMode(req, res, next) {
-    if (!DEBUG) {
-        return res.status(403).json({ error: 'Debug mode is not enabled' });
-    }
-    next();
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * DEBUG=true, not production (never on Vercel: Preview deployments have
+ * VERCEL=1 as well and may hold the production service account) and a
+ * request from this machine. The socket address decides, not X-Forwarded-For, which any client
+ * can set. A dev server started with HOST=0.0.0.0 on the school Wi-Fi is
+ * therefore still closed to the rest of the network.
+ */
+function isDebugAllowed(req) {
+    if (process.env.DEBUG !== 'true' || isProductionEnv()) return false;
+    return LOOPBACK.has(req.socket && req.socket.remoteAddress);
 }
 
-// Get debug status
+// Otherwise skip the whole router: the request ends in the ordinary 404 of
+// the app, so the answer does not even reveal that a debug API exists.
+router.use((req, res, next) => next(isDebugAllowed(req) ? undefined : 'router'));
+
+// Get debug status (the notification sheet shows the debug section with it)
 router.get('/status', (req, res) => {
-    res.json({
-        debugMode: DEBUG,
-        message: DEBUG ? 'Debug mode is enabled' : 'Debug mode is disabled'
-    });
+    res.json({ debugMode: true, message: 'Debug mode is enabled' });
 });
 
 // Send test notification to ALL users
-router.post('/test-notification-all', requireDebugMode, async (req, res) => {
+router.post('/test-notification-all', async (req, res) => {
     try {
         const db = getFirestore();
         const usersSnapshot = await db.collection('users').get();
@@ -73,7 +82,7 @@ router.post('/test-notification-all', requireDebugMode, async (req, res) => {
 });
 
 // Simulate timetable change
-router.post('/simulate-change', requireDebugMode, async (req, res) => {
+router.post('/simulate-change', async (req, res) => {
     try {
         const { timetableType, timetableId, timetableName, scheduleType, changeType } = req.body;
 
@@ -204,7 +213,7 @@ router.post('/simulate-change', requireDebugMode, async (req, res) => {
 });
 
 // Get all users
-router.get('/users', requireDebugMode, async (req, res) => {
+router.get('/users', async (req, res) => {
     try {
         const db = getFirestore();
         const usersSnapshot = await db.collection('users').get();
@@ -234,7 +243,7 @@ router.get('/users', requireDebugMode, async (req, res) => {
 });
 
 // Get all pending changes
-router.get('/pending-changes', requireDebugMode, async (req, res) => {
+router.get('/pending-changes', async (req, res) => {
     try {
         const db = getFirestore();
         const changesSnapshot = await db.collection('changes')
@@ -261,7 +270,7 @@ router.get('/pending-changes', requireDebugMode, async (req, res) => {
 });
 
 // Clear all pending changes
-router.delete('/clear-changes', requireDebugMode, async (req, res) => {
+router.delete('/clear-changes', async (req, res) => {
     try {
         const db = getFirestore();
         const changesSnapshot = await db.collection('changes').get();
@@ -285,7 +294,7 @@ router.delete('/clear-changes', requireDebugMode, async (req, res) => {
 });
 
 // Get lesson reminder schedule status
-router.get('/lesson-reminder-status', requireDebugMode, async (req, res) => {
+router.get('/lesson-reminder-status', async (req, res) => {
     try {
         const { time } = req.query;
 
@@ -313,7 +322,7 @@ router.get('/lesson-reminder-status', requireDebugMode, async (req, res) => {
 });
 
 // Test lesson reminders with mock time
-router.get('/test-lesson-reminder', requireDebugMode, async (req, res) => {
+router.get('/test-lesson-reminder', async (req, res) => {
     try {
         const { time, dryRun } = req.query;
 
@@ -352,7 +361,7 @@ router.get('/test-lesson-reminder', requireDebugMode, async (req, res) => {
 });
 
 // Clear lesson notification records for a specific date
-router.delete('/clear-lesson-notifications', requireDebugMode, async (req, res) => {
+router.delete('/clear-lesson-notifications', async (req, res) => {
     try {
         const { date } = req.query;
 
@@ -375,3 +384,4 @@ router.delete('/clear-lesson-notifications', requireDebugMode, async (req, res) 
 });
 
 module.exports = router;
+module.exports.isDebugAllowed = isDebugAllowed;

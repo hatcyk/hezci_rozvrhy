@@ -63,6 +63,41 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
     }
 }
 
+/**
+ * What a notification says, without the time it is sent: two user documents
+ * that would send exactly this to one device send it once.
+ * @param {Object} notification - { title, body, data }
+ * @returns {String}
+ */
+function notificationKey(notification) {
+    const { timestamp, ...data } = (notification && notification.data) || {};
+    return JSON.stringify([notification && notification.title, notification && notification.body, data]);
+}
+
+/**
+ * The tokens that have not been sent this message yet, each once, now marked
+ * in `sent`. A device whose token sits in two user documents (a 1.x document
+ * left behind by the migration, an ID replaced after the site data were
+ * cleared) gets the same message once. The key is token + message, never the
+ * token alone: a different message to the same device still goes, so it does
+ * not matter which document comes first (somebody who adds another person's
+ * token to their own account cannot replace that person's notifications).
+ * @param {Array<String>} tokens
+ * @param {Set<String>} sent - one per dispatch (a change document, a reminder hour)
+ * @param {String} messageKey - identity of the message (see notificationKey)
+ * @returns {Array<String>}
+ */
+function takeUnsentTokens(tokens, sent, messageKey) {
+    const fresh = [];
+    for (const token of tokens || []) {
+        const key = `${messageKey}\n${token}`;
+        if (sent.has(key)) continue;
+        sent.add(key);
+        fresh.push(token);
+    }
+    return fresh;
+}
+
 // A change found on Friday evening still matters on Monday morning; after
 // three days it is old news. (FCM's default is to keep an undelivered message
 // for four weeks.)
@@ -486,6 +521,7 @@ async function processPendingChanges() {
 
             // Send to each user with their filtered changes
             let totalSent = 0;
+            const sentMessages = new Set(); // token + message, for this change document
 
             for (const user of watchingUsers) {
                 try {
@@ -507,11 +543,17 @@ async function processPendingChanges() {
                         continue;
                     }
 
-                    const result = await sendNotificationToTokens(user.tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
+                    const tokens = takeUnsentTokens(user.tokens, sentMessages, notificationKey(notification));
+                    if (tokens.length === 0) {
+                        console.log(`⏭️  Devices of user ${user.userId} already got this notification`);
+                        continue;
+                    }
+
+                    const result = await sendNotificationToTokens(tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
                     totalSent += result.successCount;
 
                     // Drop any tokens FCM reported as permanently invalid.
-                    await pruneInvalidTokens(user.userId, user.tokens, result);
+                    await pruneInvalidTokens(user.userId, tokens, result);
                 } catch (error) {
                     console.error(`Failed to send to user ${user.userId}:`, error.message);
                 }
@@ -615,6 +657,8 @@ module.exports = {
     preferenceKeyForChange,
     preferenceKeysForChange,
     sendNotificationToTokens,
+    notificationKey,
+    takeUnsentTokens,
     getUsersWatchingTimetable,
     processPendingChanges,
     cleanupOldChanges,

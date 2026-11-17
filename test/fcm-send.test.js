@@ -254,6 +254,55 @@ test('úklid tokenů: smaže se jen token, který FCM označí za neplatný', as
     assert.equal(db._get('changes/c1').sentToDevices, 2);
 });
 
+test('jedno zařízení pod dvěma ID (týž token ve dvou dokumentech) dostane změnu jednou', async (t) => {
+    quiet(t);
+    reset({
+        'users/anon-new': user(['shared', 'own-new']),
+        'users/anonymous-1733211111111': user(['shared']),   // 1.x document left behind
+        'users/anon-third': user(['own-third', 'shared', 'own-third']),
+        'changes/c1': changeDoc(),
+    });
+    const result = await processPendingChanges();
+    assert.equal(sentTo('shared').length, 1, 'once, not three times');
+    assert.deepEqual(sent.map(m => m.tokens), [['shared', 'own-new'], ['own-third']],
+        'the legacy document has nothing new left; repeats within one document are dropped too');
+    assert.equal(result.sentCount, 3);
+    assert.equal(db._get('changes/c1').sentToDevices, 3);
+    assert.deepEqual(db._get('users/anonymous-1733211111111').tokens, ['shared'], 'sending changes no document');
+});
+
+test('týž token ve dvou dokumentech s jinými předvolbami: obě různé zprávy odejdou, v libovolném pořadí dokumentů', async (t) => {
+    quiet(t);
+    // Somebody added the victim's token to their own account and only wants
+    // the substitution; the victim wants the room change. Neither may replace the other.
+    const onlySubstitution = { ...DEFAULTS, room_change: false };
+    for (const order of [['attacker', 'victim'], ['victim', 'attacker']]) {
+        const docs = {
+            attacker: user(['victim-device'], { changes: onlySubstitution }),
+            victim: user(['victim-device'], { changes: { ...DEFAULTS, substitution: false } }),
+        };
+        reset({ ...Object.fromEntries(order.map(id => [`users/${id}`, docs[id]])), 'changes/c1': changeDoc() });
+        await processPendingChanges();
+        const bodies = sentTo('victim-device').map(m => m.data.body).sort();
+        assert.equal(bodies.length, 2, `order ${order.join(', ')}`);
+        assert.ok(bodies.some(b => /učebn|B5/i.test(b)), `the victim's room change arrives (order ${order.join(', ')}): ${bodies}`);
+    }
+});
+
+test('dedup tokenů platí v rámci jednoho rozesílání: jiná změna týž token znovu dostane; mrtvý token se uklidí u toho, komu se poslal', async (t) => {
+    quiet(t);
+    reset({
+        'users/u1': user(['shared', 'dead']),
+        'users/u2': user(['shared', 'dead']),
+        'changes/c1': changeDoc(),
+        'changes/c2': changeDoc({ timestamp: '2026-11-09T08:00:00.000Z' }),
+    });
+    failing.set('dead', 'messaging/registration-token-not-registered');
+    await processPendingChanges();
+    assert.equal(sentTo('shared').length, 2, 'one per change document');
+    assert.deepEqual(db._get('users/u1').tokens, ['shared'], 'pruned where it was sent');
+});
+
 test('selhání odeslání jednomu uživateli nezastaví ostatní', async (t) => {
     quiet(t);
     reset({ 'users/u1': user(['t1']), 'users/u2': user(['t2']), 'changes/c1': changeDoc() });

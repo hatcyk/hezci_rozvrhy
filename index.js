@@ -5,7 +5,7 @@ require('dotenv').config();
 // "No entrypoint found which imports express".
 require('express');
 const os = require('os');
-const { createApp } = require('./routes');
+const { createApp, listenHost } = require('./routes');
 
 // Debug mode
 const DEBUG = process.env.DEBUG === 'true';
@@ -28,14 +28,15 @@ function getLocalIP() {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';
+// 127.0.0.1 by default; HOST=0.0.0.0 for the LAN (e.g. trying it on a phone)
+const HOST = listenHost();
 
 app.listen(PORT, HOST, () => {
-    const localIP = getLocalIP();
-
     console.log('\n🚀 Server started:');
     console.log(`   http://localhost:${PORT}`);
-    console.log(`   http://${localIP}:${PORT}`);
+    if (HOST === '0.0.0.0' || HOST === '::') {
+        console.log(`   http://${getLocalIP()}:${PORT}`);
+    }
 
     if (DEBUG) {
         console.log('\n🔧 DEBUG MODE ENABLED');

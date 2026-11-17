@@ -248,10 +248,17 @@ function stubModule(rel, exportsObj) {
 /**
  * Replace backend/firebase-admin-init.js with the fake.
  * ID tokens are "valid:<uid>" (optionally "#<auth_time>"); anything else fails verification.
+ * `checked` records messaging.send() calls (the dry-run token check of
+ * /api/fcm/subscribe); a test may replace messaging.send to make FCM fail.
  */
 function stubFirebase(db = createFakeFirestore(), extra = {}) {
     const sent = [];
+    const checked = [];
     const messaging = {
+        async send(message, dryRun = false) {
+            checked.push({ message, dryRun });
+            return 'projects/fake/messages/dry-run';
+        },
         async sendEachForMulticast(message) {
             sent.push(message);
             return {
@@ -278,7 +285,7 @@ function stubFirebase(db = createFakeFirestore(), extra = {}) {
         },
         ...extra,
     });
-    return { db, stub, messaging, sent };
+    return { db, stub, messaging, sent, checked };
 }
 
 /**

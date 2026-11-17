@@ -10,7 +10,7 @@
  */
 
 const { getFirestore } = require('./firebase-admin-init');
-const { sendNotificationToTokens, pruneInvalidTokens, ensureWatchIndexMigrated } = require('./fcm');
+const { sendNotificationToTokens, pruneInvalidTokens, ensureWatchIndexMigrated, takeUnsentTokens, notificationKey } = require('./fcm');
 const { getPragueTime, getPragueTimeInfo, isWeekend } = require('./timezone-manager');
 const { calculateNotificationWindows, findLessonsToNotify, getNotificationConfig, intFromEnv } = require('./schedule-calculator');
 const { claimReminder, finishReminder } = require('./notification-tracker');
@@ -439,11 +439,15 @@ async function sendLessonReminders(options = {}) {
         for (const lessonWindow of lessonsToNotify) {
             console.log(`\n📚 [LESSON] Processing hour ${lessonWindow.hour} (${lessonWindow.label})`);
 
-            await mapWithConcurrency(users, concurrency, async (user) => {
+            // Every user's reminder first, then the device tokens in the order
+            // of the users: a device whose token is in two user documents gets
+            // the same reminder (timetable + hour + text) once, and from the
+            // same document in every run of the window, whose claim then stops
+            // the repeats. A different reminder to that device still goes.
+            const found = await mapWithConcurrency(users, concurrency, async (user) => {
                 try {
                     const userLessons = await findUserLessonsInSlot(user, timeInfo.dayIndex, lessonWindow.hour, timetableCache, timeInfo.formattedDate);
-                    if (userLessons.length === 0) return;
-
+                    if (userLessons.length === 0) return null;
                     // Send notification for first lesson (if multiple, they're usually the same subject)
                     const { lesson, source: lessonSource } = userLessons[0];
                     const notification = formatLessonNotification(
@@ -451,7 +455,20 @@ async function sendLessonReminders(options = {}) {
                         lessonWindow.lessonStartFormatted,
                         lessonWindow.minutesUntilLesson
                     );
+                    const messageKey = `${lessonSource.type}_${lessonSource.id}|${lessonWindow.hour}|${notificationKey(notification)}`;
+                    return { user, lesson, lessonSource, notification, messageKey };
+                } catch (error) {
+                    console.error(`❌ [ERROR] Failed to send reminder to user ${user.userId}:`, error.message);
+                    return null;
+                }
+            });
+            const sentMessages = new Set(); // token + reminder, for this hour
+            const recipients = found.filter(Boolean)
+                .map(entry => ({ ...entry, tokens: takeUnsentTokens(entry.user.tokens, sentMessages, entry.messageKey) }))
+                .filter(entry => entry.tokens.length > 0);
 
+            await mapWithConcurrency(recipients, concurrency, async ({ user, lesson, lessonSource, notification, tokens }) => {
+                try {
                     if (dryRun) {
                         console.log(`🔍 [DRY RUN] Would send to user ${user.userId}: ${notification.title}`);
                         totalSent++;
@@ -481,15 +498,15 @@ async function sendLessonReminders(options = {}) {
                     try {
                         // "Za 5 minut" is worthless once the lesson has begun: a phone
                         // that was offline must not get it hours later.
-                        const result = await sendNotificationToTokens(user.tokens, notification, {
+                        const result = await sendNotificationToTokens(tokens, notification, {
                             ttlSeconds: reminderTtlSeconds(lessonWindow.minutesUntilLesson),
                         });
                         totalSent += result.successCount;
                         totalUsers++;
-                        console.log(`📨 [SEND] User ${user.userId}: ${notification.title} (${result.successCount}/${user.tokens.length})`);
+                        console.log(`📨 [SEND] User ${user.userId}: ${notification.title} (${result.successCount}/${tokens.length})`);
 
                         // Drop any tokens FCM reported as permanently invalid.
-                        await pruneInvalidTokens(user.userId, user.tokens, result);
+                        await pruneInvalidTokens(user.userId, tokens, result);
                         await finishReminder(user.userId, timeInfo.formattedDate, lessonWindow.hour, {
                             status: result.successCount > 0 ? 'sent' : 'failed',
                             successCount: result.successCount

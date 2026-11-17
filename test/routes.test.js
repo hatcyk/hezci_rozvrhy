@@ -8,7 +8,7 @@ process.env.CRON_SECRET = 'test-secret';
 process.env.NODE_ENV = 'test';   // Express then skips logging the expected 413
 delete process.env.CORS_ORIGINS;
 
-const { db } = stubFirebase(createFakeFirestore());
+const { db, messaging, checked } = stubFirebase(createFakeFirestore());
 const calls = { prefetch: 0 };
 let prefetchDelayMs = 0;
 stubModule('backend/prefetch.js', {
@@ -172,6 +172,109 @@ test('oblíbené: přihlášení, vlastnictví, validace a limit těla 50 kB', a
     assert.equal((await post(`/api/favorites/${A}`, { favoriteTimetables: [{ type: 'Room', id: 'A102' }] }, asUser(A))).status, 200);
     const r = await fetch(`${base}/api/favorites/${A}`, { headers: asUser(A) });
     assert.deepEqual((await r.json()).favoriteTimetables, [{ type: 'Room', id: 'A102' }]);
+});
+
+// ---- /api/fcm/subscribe: dry-run token check, one owner per token ----------
+const C = 'anon-2d9f8e3a-0c3f-4e5d-9b4a-3c4d5e6f7081';
+const fcmError = (code) => Object.assign(new Error(`synthetic ${code}`), { code });
+
+test('subscribe: token se nanečisto ověří u FCM; token, který FCM odmítne, je 400 a nic se neuloží', async () => {
+    const realSend = messaging.send;
+    try {
+        checked.length = 0;
+        assert.equal((await post('/api/fcm/subscribe', { userId: C, token: 'fcm-c' }, asUser(C))).status, 200);
+        assert.deepEqual(checked, [{ message: { token: 'fcm-c', data: {} }, dryRun: true }], 'dry run, nothing is delivered');
+
+        for (const code of ['messaging/invalid-argument', 'messaging/invalid-registration-token', 'messaging/registration-token-not-registered']) {
+            messaging.send = async () => { throw fcmError(code); };
+            const r = await post('/api/fcm/subscribe', { userId: C, token: 'x'.repeat(4096) }, asUser(C));
+            assert.equal(r.status, 400, code);
+            assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-c'], `${code}: the stored token stays`);
+        }
+    } finally {
+        messaging.send = realSend;
+    }
+});
+
+test('subscribe: výpadek FCM uživatele nezablokuje, token se přijme a zaloguje', async () => {
+    const realSend = messaging.send;
+    const realWarn = console.warn;
+    const warnings = [];
+    console.warn = (...args) => warnings.push(args.join(' '));
+    try {
+        for (const failure of [fcmError('messaging/internal-error'), fcmError('messaging/server-unavailable'), new Error('getaddrinfo ENOTFOUND fcm.googleapis.com')]) {
+            messaging.send = async () => { throw failure; };
+            const r = await post('/api/fcm/subscribe', { userId: C, token: 'fcm-c2' }, asUser(C));
+            assert.equal(r.status, 200, failure.message);
+            assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-c2']);
+        }
+        assert.equal(warnings.length, 3);
+        assert.ok(warnings.every(w => !w.includes('fcm-c2')), 'the log does not contain the token');
+    } finally {
+        messaging.send = realSend;
+        console.warn = realWarn;
+    }
+});
+
+test('subscribe: týž token se odebere jen z osiřelých dokumentů 1.x (anonymous-…), cizí anon-… zůstane netknutý', async () => {
+    const ORPHAN = 'anonymous-1733211111111';   // left behind by a migration that could not be proven
+    const OTHER = 'anon-3e0a9f4b-1d4a-4f6e-8c5b-4d5e6f708192';
+    db._store.set(`users/${ORPHAN}`, { tokens: ['fcm-shared', 'fcm-orphan-own'], notificationsEnabled: true, hasReminders: true });
+    db._store.set(`users/${OTHER}`, { tokens: ['fcm-shared'], notificationsEnabled: true, lastUpdated: '2026-11-01T00:00:00.000Z' });
+    const otherBefore = db._get(`users/${OTHER}`);
+    const realBatch = db.batch;
+    let commits = 0;
+    db.batch = () => { const b = realBatch(); const commit = b.commit; b.commit = async () => { commits++; return commit(); }; return b; };
+    try {
+        assert.equal((await post('/api/fcm/subscribe', { userId: C, token: 'fcm-shared' }, asUser(C))).status, 200);
+    } finally {
+        db.batch = realBatch;
+    }
+    assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-shared']);
+    assert.deepEqual(db._get(`users/${ORPHAN}`).tokens, ['fcm-orphan-own'], 'only the shared token goes');
+    // Knowing somebody's token must not let anyone switch off their notifications.
+    assert.deepEqual(db._get(`users/${OTHER}`), otherBefore, 'another anon-<uuid> document is never written');
+    assert.equal(commits, 1, 'removal and the own write in one batch');
+    db._store.delete(`users/${OTHER}`);
+});
+
+test('subscribe: když dotaz na ostatní držitele tokenu selže, token se stejně uloží', async () => {
+    const realError = console.error;
+    console.error = () => {};
+    db._failQuery = (q) => (q.collection === 'users' && q.filters.some(f => f.field === 'tokens')
+        ? Object.assign(new Error('9 FAILED_PRECONDITION: index disabled (synthetic)'), { code: 9 }) : null);
+    try {
+        assert.equal((await post('/api/fcm/subscribe', { userId: C, token: 'fcm-c3' }, asUser(C))).status, 200);
+        assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-c3']);
+    } finally {
+        db._failQuery = null;
+        console.error = realError;
+    }
+});
+
+// ---- writes per signed-in user ------------------------------------------------
+test('zápisy upozornění: nejvýš 60 za 10 min na uživatele (uid, ne IP), pak 429 s Retry-After; čtení a jiný uživatel nedotčeni', async () => {
+    const D = 'anon-4f1b0a5c-2e5b-4a7f-9d6c-5e6f708192a3';
+    const E = 'anon-5a2c1b6d-3f6c-4b8a-ae7d-6f708192a3b4';
+    for (let i = 0; i < 60; i++) {
+        const r = await post('/api/fcm/update-global-preferences', { userId: D, notificationTypes: { systemStatus: i % 2 === 0 } }, asUser(D));
+        assert.equal(r.status, 200, `write ${i + 1}`);
+    }
+    const limited = await post('/api/fcm/update-global-preferences', { userId: D, notificationTypes: { systemStatus: true } }, asUser(D));
+    assert.equal(limited.status, 429);
+    const retry = Number(limited.headers.get('retry-after'));
+    assert.ok(retry > 0 && retry <= 600, `Retry-After ${retry}`);
+    assert.match((await limited.json()).error, /Příliš mnoho/);
+    for (const [p, body] of [
+        ['/api/fcm/subscribe', { userId: D, token: 'fcm-d' }],
+        ['/api/fcm/unsubscribe', { userId: D }],
+        ['/api/fcm/update-preferences', { userId: D, watchedTimetables: [] }],
+    ]) {
+        assert.equal((await post(p, body, asUser(D))).status, 429, p);
+    }
+    assert.equal(db._get(`users/${D}`).tokens.length, 0, 'the refused subscribe stored nothing');
+    assert.equal((await fetch(`${base}/api/fcm/preferences/${D}`, { headers: asUser(D) })).status, 200, 'reading is not limited');
+    assert.equal((await post('/api/fcm/update-global-preferences', { userId: E, notificationTypes: { systemStatus: true } }, asUser(E))).status, 200, 'another user');
 });
 
 test('cron: bez tajemství 401, odpověď nese skutečný UTC čas a pražský čas zvlášť', async () => {

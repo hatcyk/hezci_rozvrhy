@@ -28,6 +28,7 @@ tytéž hodnoty patří do `.env` (vzor s komentáři je `.env.example`).
 | **`BAKALARI_USER_AGENT`** | `prefetch.yml` | ne | identifikace robota vůči Bakalářům, např. `LepsiRozvrh/2.0 (+https://spsd-rozvrhy.vercel.app; kontakt)`. Výchozí je prohlížečový řetězec. `prefetch.yml` ji dnes nepředává: doplň do kroku *Run prefetch script* `BAKALARI_USER_AGENT: ${{ vars.BAKALARI_USER_AGENT }}` a nejdřív ověř ručním během, že ji server nefiltruje. |
 | `LESSON_REMINDER_*`, `REMINDER_HTTP_BUDGET_MS` | Vercel | ne | upomínky (vypnutí `LESSON_REMINDER_ENABLED=false`, okno, souběžnost, 25s rozpočet odpovědi) |
 | `DEBUG` | Vercel | ne | nech `false` (ladicí endpointy nejsou chráněné) |
+| `AUTH_NEW_ID_LIMIT` | Vercel | ne | kolik nových anonymních identit vydá `/api/auth` jedné IP (IPv6 po prefixu /64) za 10 minut, pak 429 s `Retry-After`; výchozí **60** (celá škola je za jednou veřejnou IP). Obnova vlastní relace a převod starého ID se nepočítají. Limit drží každá serverless instance zvlášť. Na vlastním serveru za proxy jen s `TRUST_PROXY=1`, jinak se všichni počítají jako adresa proxy. |
 | `TRUST_PROXY`, `RUN_TRIGGER` | jen vlastní server | ne | viz kapitola 2 |
 
 GitHub → Settings → Secrets and variables → Actions potřebuje secrets

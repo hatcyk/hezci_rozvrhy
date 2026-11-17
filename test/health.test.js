@@ -189,7 +189,6 @@ test('/api/status: klient dostane 200 i se zastaralými daty, monitor s ?strict=
     try {
         const plain = await fetch(base + '/api/status');
         assert.equal(plain.status, 200);
-        assert.equal(plain.headers.get('cache-control'), 'no-store');
         const body = await plain.json();
         assert.equal(body.isHealthy, false);
         assert.ok(body.dataAgeMin >= 13 * 60);
@@ -200,6 +199,39 @@ test('/api/status: klient dostane 200 i se zastaralými daty, monitor s ?strict=
         const healthy = await fetch(base + '/api/status?strict=1');
         assert.equal(healthy.status, 200);
         assert.equal((await healthy.json()).isHealthy, true);
+    } finally {
+        await close();
+    }
+});
+
+test('/api/status: CDN ho drží nejvýš 30 s (2 čtení Firestore na dotaz), prohlížeč vždy znovu; chyba se necachuje', async () => {
+    db._store.set('system/health', { lastSuccessAt: new Date(Date.now() - 5 * 60000).toISOString(), lastStatus: 'ok' });
+    const app = express();
+    app.use('/api', require('../routes/status'));
+    const { base, close } = await listen(app);
+    const CACHED = 'public, max-age=0, s-maxage=30';
+    try {
+        assert.equal((await fetch(base + '/api/status')).headers.get('cache-control'), CACHED);
+        assert.equal((await fetch(base + '/api/status?strict=1')).headers.get('cache-control'), CACHED);
+        db._store.set('system/health', { lastSuccessAt: new Date(Date.now() - 13 * 3600 * 1000).toISOString(), lastStatus: 'network' });
+        const stale = await fetch(base + '/api/status?strict=1');
+        assert.equal(stale.status, 503);
+        assert.equal(stale.headers.get('cache-control'), CACHED, 'a stale answer is as true 30 s later');
+
+        // Firestore unreachable: not a fact worth keeping for anyone.
+        const realCollection = db.collection;
+        const restore = quiet();
+        db.collection = () => { throw new Error('synthetic Firestore outage'); };
+        try {
+            for (const p of ['/api/status', '/api/status?strict=1']) {
+                const r = await fetch(base + p);
+                assert.ok(r.status >= 500, p);
+                assert.equal(r.headers.get('cache-control'), 'no-store', p);
+            }
+        } finally {
+            db.collection = realCollection;
+            restore();
+        }
     } finally {
         await close();
     }

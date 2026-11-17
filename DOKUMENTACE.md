@@ -132,6 +132,8 @@ Vercelu by ho po odeslání odpovědi platforma zmrazila, proto tam bez
 - `GET /api/status` vrací `isHealthy`, `lastSuccessAt`, `dataAgeMin`,
   `maxAgeMin` a další. Data jsou zdravá, když jsou mladší než 120 min (Po–Pá
   6–18 h pražského času), jinak 12 h. S `?strict=1` vrací při nezdravém stavu 503.
+  Odpověď smí CDN držet 30 s (`public, max-age=0, s-maxage=30`), prohlížeč se
+  ptá vždy znovu; chyba čtení Firestore má `no-store`.
 - **Úklid** (`scripts/cleanup.js`, `GET /api/cron/cleanup`): záznamy odeslaných
   upomínek starší 7 dní, zpracované `changes` starší 2 dnů, `runs` starší 30 dní,
   `audit` starší 90 dní.
@@ -176,16 +178,16 @@ nikde, server zapisuje přes Admin SDK), složený index `runs (job ↑, started
 
 | Endpoint | Ochrana | Účel |
 |---|---|---|
-| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. |
+| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. Nových identit nejvýš `AUTH_NEW_ID_LIMIT` (výchozí 60) z jedné IP, u IPv6 z prefixu /64, za 10 min, pak 429 s `Retry-After`. |
 | `GET /api/status[?strict=1]` | – | stáří dat (3.3) |
 | `GET /api/groups/:classId` | – | skupiny třídy |
 | `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50) |
-| `POST /api/fcm/subscribe`, `unsubscribe`, `update-preferences`, `update-global-preferences`, `GET /api/fcm/preferences/:userId` | ID token, vlastní `userId` | odběr upozornění a nastavení (max. 200 sledovaných rozvrhů) |
+| `POST /api/fcm/subscribe`, `unsubscribe`, `update-preferences`, `update-global-preferences`, `GET /api/fcm/preferences/:userId` | ID token, vlastní `userId` | odběr upozornění a nastavení (max. 200 sledovaných rozvrhů). Zápisy nejvýš 60 za 10 min na uživatele, pak 429 s `Retry-After`. `subscribe` ověří token u FCM nanečisto (`send(…, dryRun)`): token, který FCM odmítne, je 400; při výpadku FCM se token přijme a zaloguje. Týž token v jedné dávce s vlastním zápisem odebere ze starých dokumentů 1.x (`anonymous-…`, osiřelé po nepovedeném převodu); dokumenty jiných `anon-…` nemění nikdy (stačila by k tomu znalost cizího tokenu). Zařízení pod dvěma ID proto řeší odesílání: stejnou zprávu (u změny dokument změn a text, u upomínky rozvrh, hodina a text) dostane jeden token nejvýš jednou; různé zprávy odejdou všechny, takže na pořadí dokumentů nezáleží. |
 | `POST /api/fcm/process-changes`, `GET /api/cron/{prefetch,process-notifications,lesson-reminders,cleanup}` | `Authorization: Bearer <CRON_SECRET>` | plánované úlohy; bez tajemství v produkci 503 |
 | `GET /api/ical/:type/:id.ics?schedule=…&group=…` | – (vypínač `ICAL_ENABLED`) | kalendář iCalendar (RFC 5545), ETag/304 |
 | `GET /api/admin/{health,runs,runs/intervals,changes,stats,audit}`, `POST /api/admin/prefetch/dispatch` | `Authorization: Bearer <ADMIN_SECRET>` | administrace (kap. 7) |
 | `POST /api/csp-report` | limit 60/min | hlášení porušení CSP do logu |
-| `GET /api/debug/status`; ostatní `/api/debug/*` | ostatní jen s `DEBUG=true` | ladění |
+| `GET /api/debug/*` (`status`, `users`, `simulate-change`, …) | jen `DEBUG=true` mimo produkci (nikdy na Vercelu ani s `NODE_ENV=production`) a z `127.0.0.1`; jinak obyčejná 404 | ladění |
 
 `requireUser` (`backend/auth-middleware.js`) ověří Firebase ID token
 (`verifyIdToken`): bez tokenu 401, cizí `userId` v cestě nebo těle 403.
@@ -259,18 +261,26 @@ Těla se validují v `routes/validation.js`.
 
 - **Identita (S1):** server vydává token jen pro `anon-<uuid v4>`; dřívější
   endpoint podepsal token pro libovolné uid. ID token se ověřuje na každém
-  volání s uživatelem.
+  volání s uživatelem. Nových identit nejvýš 60 z jedné adresy (IPv6 po /64)
+  za 10 min (`AUTH_NEW_ID_LIMIT`), aby jeden skript nenadělal stovky uživatelů
+  s upomínkami; obnova vlastní relace a převod starého ID se nepočítají.
 - **CORS** jen pro `CORS_ORIGINS` (výchozí produkční doména a localhost:3000).
 - **Hlavičky** (`backend/security-headers.js` pro Express, `vercel.json` pro CDN):
   `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`,
   `X-Frame-Options: DENY`, `Content-Security-Policy-Report-Only` s hashi tří
   inline skriptů a hlášením na `/api/csp-report`. Administrace má CSP vynucenou.
 - **Administrace (S5):** `ADMIN_SECRET` porovnávaný v konstantním čase, bez něj
-  503, v produkci minimálně 16 znaků; po 5 chybách z jedné IP blokace 15 min;
+  503, v produkci minimálně 16 znaků; po 5 chybách z jedné IP (IPv6 z jednoho
+  prefixu /64) blokace 15 min a jeden záznam v auditu;
   ruční spuštění sběru nejvýš 1× za 10 min přes GitHub `workflow_dispatch`
   (`GITHUB_DISPATCH_TOKEN`); statistiky jen agregacemi (`count()`, `sum()`), bez
   čtení dokumentů uživatelů; audit s hashovanou IP.
 - **Plánované úlohy:** `CRON_SECRET` v konstantním čase; bez něj v produkci 503.
+- **Ladění** (`/api/debug/*`, bez přihlášení: vypíše tokeny, pošle upozornění
+  všem) jen s `DEBUG=true`, mimo produkci a z adresy soketu `127.0.0.1`/`::1`
+  (ne z `X-Forwarded-For`); jinak 404 jako neexistující cesta. Server
+  poslouchá ve výchozím stavu jen na `127.0.0.1`, do sítě až s `HOST=0.0.0.0`
+  (nastavuje ho obraz Dockeru a `deploy/lepsi-rozvrh.service`).
 - **Firestore:** prohlížeč jen čte veřejná data a vlastní `users/{uid}`.
 - **Tajemství** (`.env`, servisní účet) jsou v `.gitignore`; vzor proměnných je
   `.env.example`.
@@ -313,7 +323,9 @@ Akce ve workflows jsou připnuté na SHA, nové verze navrhuje Dependabot
   řady v iCal nepromítají.
 - Upomínka se doručí nejvýš jednou (zábor `failed` se neopakuje).
 - Limit pokusů do administrace je pro každou serverless instanci zvlášť;
-  skutečnou ochranou je dlouhé náhodné tajemství.
+  skutečnou ochranou je dlouhé náhodné tajemství. Stejně tak limity nových
+  identit a zápisů upozornění: brzdí jeden skript, ne útok z mnoha adres (na
+  to Vercel Firewall nebo Firebase App Check).
 - Automatický audit přístupnosti nenahrazuje ruční test se čtečkou obrazovky a
   zvětšením 200 %; push na iOS a kiosk na televizi je nutné ověřit na zařízení.
 

@@ -3,19 +3,87 @@
  * Handles push notification subscriptions and preferences.
  *
  * Every user route goes through requireUser: the caller must send the Firebase
- * ID token of the user named in the path/body (contract S1).
+ * ID token of the user named in the path/body (contract S1). The writes are
+ * limited per signed-in user (limitWrites).
  */
 
 const express = require('express');
-const { getFirestore } = require('../backend/firebase-admin-init');
+const admin = require('firebase-admin');
+const { getFirestore, getMessaging } = require('../backend/firebase-admin-init');
 const { processPendingChanges, deriveWatchIndex } = require('../backend/fcm');
-const { requireUser, verifyCronRequest } = require('../backend/auth-middleware');
+const { requireUser, verifyCronRequest, isLegacyUserId } = require('../backend/auth-middleware');
+const { AttemptLimiter } = require('../backend/admin');
 const { validateFcmToken, validateWatchedTimetables, isPlainObject } = require('./validation');
 
 const router = express.Router();
 
+// Every write is a read and a write of the user's document. Per uid, not per
+// IP (the whole school shares one). 60, not fewer: every switch in the
+// notification settings saves at once (9 per timetable, plus groups).
+const WRITE_WINDOW_MS = 10 * 60 * 1000;
+const MAX_WRITES = 60;
+const writes = new AttemptLimiter({ max: MAX_WRITES, windowMs: WRITE_WINDOW_MS, lockMs: WRITE_WINDOW_MS });
+
+function limitWrites(req, res, next) {
+    const state = writes.status(req.uid);
+    if (state.locked) {
+        res.setHeader('Retry-After', String(state.retryAfterSec));
+        return res.status(429).json({ error: 'Příliš mnoho změn nastavení upozornění, zkuste to později.', retryAfterSec: state.retryAfterSec });
+    }
+    writes.fail(req.uid); // counts one write
+    return next();
+}
+
+// What FCM answers for a token that is malformed, of another project or no
+// longer registered (with a valid message, as the dry run below sends).
+const REJECTED_TOKEN_ERRORS = new Set([
+    'messaging/invalid-argument',
+    'messaging/invalid-registration-token',
+    'messaging/registration-token-not-registered',
+]);
+
+/**
+ * Ask FCM whether the token can receive messages, without delivering
+ * anything (dry run). Before, any string up to 4 kB was stored and the jobs
+ * kept sending to it (an 'invalid-argument' token is never pruned, see
+ * backend/fcm.js). Any other failure (FCM unreachable, quota) accepts the
+ * token: an outage at Google must not keep users from turning notifications
+ * on; a dead token is pruned at the next send.
+ */
+async function isTokenAccepted(token) {
+    try {
+        await getMessaging().send({ token, data: {} }, true);
+        return true;
+    } catch (error) {
+        if (error && REJECTED_TOKEN_ERRORS.has(error.code)) return false;
+        console.warn(`⚠️ FCM token check unavailable (${(error && (error.code || error.message)) || 'unknown error'}) - token accepted`);
+        return true;
+    }
+}
+
+/**
+ * 1.x documents (`anonymous-<ms>`) that hold the token: left behind when the
+ * migration could not prove the old ID, they keep sending to the device and
+ * the app cannot switch them off. Only these: the request proves nothing but
+ * the caller's own identity and knowledge of the token string, so documents
+ * of other `anon-<uuid>` users are never changed here (whoever knew a
+ * victim's token would otherwise switch off the victim's notifications).
+ * A token in two such documents is sent once per dispatch instead
+ * (takeUnsentTokens in backend/fcm.js). Best effort: without the lookup the
+ * token is still saved.
+ */
+async function otherHolders(db, userId, token) {
+    try {
+        const snap = await db.collection('users').where('tokens', 'array-contains', token).get();
+        return snap.docs.filter(doc => doc.id !== userId && isLegacyUserId(doc.id));
+    } catch (error) {
+        console.error('FCM subscribe: lookup of other holders of the token failed:', error.message);
+        return [];
+    }
+}
+
 // Subscribe user device to FCM notifications
-router.post('/subscribe', requireUser, async (req, res) => {
+router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
     try {
         const { userId, token } = req.body;
 
@@ -24,24 +92,29 @@ router.post('/subscribe', requireUser, async (req, res) => {
         }
         const tokenError = validateFcmToken(token);
         if (tokenError) return res.status(400).json({ error: tokenError });
+        if (!(await isTokenAccepted(token))) {
+            return res.status(400).json({ error: 'FCM rejected the token' });
+        }
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
+        const [userDoc, others] = await Promise.all([userRef.get(), otherHolders(db, userId, token)]);
 
+        // Taking the token from the 1.x documents and storing it here in one batch.
+        const batch = db.batch();
+        for (const doc of others) {
+            batch.update(doc.ref, { tokens: admin.firestore.FieldValue.arrayRemove(token) });
+        }
+
+        const oldTokens = userDoc.exists ? userDoc.data().tokens || [] : null;
         if (userDoc.exists) {
-            const oldTokens = userDoc.data().tokens || [];
-
-            await userRef.update({
+            batch.update(userRef, {
                 tokens: [token],
                 notificationsEnabled: true,
                 lastUpdated: new Date().toISOString()
             });
-
-            console.log(`✅ Updated FCM token for user ${userId}`);
-            console.log(`   Old tokens count: ${oldTokens.length} → New: 1`);
         } else {
-            await userRef.set({
+            batch.set(userRef, {
                 tokens: [token],
                 notificationsEnabled: true,
                 preferences: {
@@ -53,8 +126,16 @@ router.post('/subscribe', requireUser, async (req, res) => {
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
             });
+        }
+        await batch.commit();
+
+        if (oldTokens) {
+            console.log(`✅ Updated FCM token for user ${userId}`);
+            console.log(`   Old tokens count: ${oldTokens.length} → New: 1`);
+        } else {
             console.log(`✅ Created new user ${userId} with FCM token`);
         }
+        if (others.length) console.log(`   Token removed from ${others.length} legacy user document(s)`);
 
         res.json({ success: true, message: 'Token saved successfully' });
 
@@ -68,7 +149,7 @@ router.post('/subscribe', requireUser, async (req, res) => {
 // `token` is optional: without it every token of the user is removed, which is
 // what the app needs when the browser session never loaded its own token.
 // notificationsEnabled records the choice, so nothing re-enables it silently.
-router.post('/unsubscribe', requireUser, async (req, res) => {
+router.post('/unsubscribe', requireUser, limitWrites, async (req, res) => {
     try {
         const { userId, token } = req.body;
 
@@ -108,7 +189,7 @@ router.post('/unsubscribe', requireUser, async (req, res) => {
 });
 
 // Update user notification preferences
-router.post('/update-preferences', requireUser, async (req, res) => {
+router.post('/update-preferences', requireUser, limitWrites, async (req, res) => {
     try {
         const { userId, watchedTimetables } = req.body;
 
@@ -157,7 +238,7 @@ router.post('/update-preferences', requireUser, async (req, res) => {
 });
 
 // Update global notification preferences (systemStatus)
-router.post('/update-global-preferences', requireUser, async (req, res) => {
+router.post('/update-global-preferences', requireUser, limitWrites, async (req, res) => {
     try {
         const { userId, notificationTypes } = req.body;
 

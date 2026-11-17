@@ -124,6 +124,24 @@ test('špatné tajemství 401, po limitu 429 s Retry-After; audit bez IP v čite
     assert.equal((await get('/api/admin/health')).status, 200);
 });
 
+test('špatné tajemství z IPv6: limit i záznam v auditu po prefixu /64, ne po adrese', async () => {
+    process.env.TRUST_PROXY = '1';
+    try {
+        const before = auditDocs().length;
+        const wrong = (ip) => get('/api/admin/health', { authorization: 'Bearer wrong', 'x-real-ip': ip });
+        assert.equal((await wrong('2001:db8:5:6::1')).status, 401);
+        assert.equal((await wrong('2001:db8:5:6::2')).status, 401, 'another address of the same /64');
+        assert.equal((await wrong('2001:db8:5:6:ffff::3')).status, 429, 'the /64 is locked after 3 failures');
+        assert.equal((await wrong('2001:db8:5:7::1')).status, 401, 'another /64 has its own limit');
+
+        const records = auditDocs().slice(before);
+        assert.deepEqual(records.map(r => r.action), ['auth_failed', 'auth_locked', 'auth_failed'],
+            'one record per burst of the /64, not one per address');
+    } finally {
+        delete process.env.TRUST_PROXY;
+    }
+});
+
 test('AttemptLimiter: okno vyprší, zámek vyprší, úspěch vynuluje', () => {
     let t = 0;
     const l = new admin.AttemptLimiter({ max: 2, windowMs: 1000, lockMs: 5000, now: () => t });
