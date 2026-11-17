@@ -28,6 +28,23 @@
             } catch (e) { /* storage blocked: CSS default (dark) */ }
         })();
     </script>
+    <script>
+        // Which service worker served this page, whether another one takes it over and whether
+        // the user did anything yet: the app reloads once when a new worker brings the Firebase
+        // SDK this page could not load (public/js/sdk-recovery.js).
+        (function () {
+            var boot = window.__swBoot = { controller: null, takeover: false, input: false };
+            ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (type) {
+                window.addEventListener(type, function () { boot.input = true; }, { capture: true, passive: true });
+            });
+            try {
+                var sw = navigator.serviceWorker;
+                if (!sw) return;
+                boot.controller = sw.controller;
+                sw.addEventListener('controllerchange', function () { boot.takeover = true; });
+            } catch (e) { /* service workers unavailable (blocked storage) */ }
+        })();
+    </script>
     <link rel="apple-touch-icon" href="icon-180.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">

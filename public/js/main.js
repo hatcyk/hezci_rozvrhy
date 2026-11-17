@@ -15,7 +15,8 @@ import { loadFavorites } from './favorites.js';
 import { initFavoritesModal } from './favorites-modal.js';
 import { initLayoutSystem, initResizeListener } from './layout-manager.js';
 import { initOfflineDetection, outageBannerText } from './offline.js';
-import { initUpdateNotice } from './sw-update.js';
+import { initUpdateNotice, showUpdateNotice } from './sw-update.js';
+import { initSdkRecovery } from './sdk-recovery.js';
 import { parseDeepLinkParams, applyDeepLink } from './deeplink.js';
 import { debug } from './debug.js';
 import { initNextLessonWidget, refreshNextLessonWidget } from './next-lesson.js';
@@ -186,6 +187,9 @@ function initScheduleTypeButtons() {
 
 // Initialize application
 async function init() {
+    // The deferred SDK scripts have run by now. Missing after a deploy that the
+    // previous worker served: reload once the new worker has taken over.
+    initSdkRecovery({ sdkLoaded: isFirebaseSdkLoaded, showNotice: () => showUpdateNotice() });
     const route = parseRoute();
     if (route.kiosk) {
         try { await initKiosk(); } catch (e) { console.error('Kiosk initialization error:', e); }

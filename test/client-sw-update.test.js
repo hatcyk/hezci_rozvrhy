@@ -19,8 +19,8 @@ function page({ cacheNames = [OWN], css = 'css/app.css?v=aaaaaaaaaa', js = 'js/a
     const listeners = { sw: {}, doc: {}, button: {} };
     const hidden = new Set(['hidden']);
     const env = { cacheNames, reloads: 0, updates: 0, time: 0, visibilityState: 'visible' };
-    const banner = { classList: { add: (c) => hidden.add(c), remove: (c) => hidden.delete(c), contains: (c) => hidden.has(c) } };
-    const button = { addEventListener: (type, fn) => { listeners.button[type] = fn; } };
+    const banner = { dataset: {}, classList: { add: (c) => hidden.add(c), remove: (c) => hidden.delete(c), contains: (c) => hidden.has(c) } };
+    const button = { dataset: {}, addEventListener: (type, fn) => { (listeners.button[type] ||= []).push(fn); } };
     const attr = (value) => (value ? { getAttribute: () => value } : null);
     const doc = {
         getElementById: (id) => ({ updateBanner: banner, updateReload: button })[id] || null,
@@ -107,7 +107,7 @@ test('a newer worker takes over an open page: the banner offers a reload, nothin
     assert.equal(p.shown(), true);
     assert.equal(takeover.worker.listeners.length, 0, 'listener removed');
     assert.equal(p.env.reloads, 0, 'no automatic reload in the middle of work');
-    p.listeners.button.click();
+    p.listeners.button.click.forEach((fn) => fn());
     assert.equal(p.env.reloads, 1);
 });
 
@@ -174,6 +174,29 @@ test('the notice goes away once the version of the page is the active one again'
     p.env.cacheNames = [NEWER];
     await p.controllerChange();
     assert.equal(p.shown(), true);
+});
+
+test('showUpdateNotice (SDK recovery): shown at once and kept until the reload, one reload per click', async () => {
+    const { initUpdateNotice, showUpdateNotice } = await import('../public/js/sw-update.js');
+    // the page runs the version of the new worker: the regular check alone would hide the notice
+    const p = page({ cacheNames: [OWN] });
+    showUpdateNotice({ doc: p.doc, reload: p.options.reload });
+    assert.equal(p.shown(), true);
+    initUpdateNotice(p.options);
+    await new Promise((r) => setImmediate(r));
+    const takeover = await p.controllerChange({ state: 'activating' });
+    await takeover.activate();
+    await p.becomeVisible();
+    assert.equal(p.shown(), true, 'stays until the user reloads');
+    assert.equal(p.listeners.button.click.length, 1, 'the button is wired once');
+    p.listeners.button.click[0]();
+    assert.equal(p.env.reloads, 1);
+    // and the other way round: the regular notice first, then the SDK recovery
+    const q = page();
+    initUpdateNotice(q.options);
+    showUpdateNotice({ doc: q.doc, reload: q.options.reload });
+    assert.equal(q.listeners.button.click.length, 1);
+    assert.doesNotThrow(() => showUpdateNotice({ doc: { getElementById: () => null } }));
 });
 
 test('without service workers, cache storage or the banner nothing is wired and nothing throws', async () => {
