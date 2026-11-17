@@ -17,6 +17,9 @@ services:
     environment:
       TZ: Europe/Prague
       NODE_ENV: production
+      # Inside the container on every interface (the server's default is
+      # 127.0.0.1); who can reach it is decided by `ports` below.
+      HOST: 0.0.0.0
     ports:
       # Bind to localhost only: nginx (or another reverse proxy) terminates TLS
       # and forwards here. Change to "3000:3000" to expose it directly.

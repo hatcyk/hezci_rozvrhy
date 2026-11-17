@@ -18,6 +18,9 @@ WorkingDirectory=/srv/lepsi-rozvrh
 EnvironmentFile=/srv/lepsi-rozvrh/.env
 Environment=NODE_ENV=production
 Environment=TZ=Europe/Prague
+# The server's default is 127.0.0.1. Every interface, as before; with nginx on
+# this machine (deploy/nginx.conf.example) HOST=127.0.0.1 is enough.
+Environment=HOST=0.0.0.0
 ExecStart=/usr/bin/node index.js
 Restart=always
 RestartSec=5

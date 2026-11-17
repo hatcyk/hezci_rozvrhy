@@ -35,6 +35,18 @@ function parseCorsOrigins(value = process.env.CORS_ORIGINS) {
  */
 const securityHeaders = createSecurityHeaders();
 
+/**
+ * Address the server listens on: 127.0.0.1 unless HOST says otherwise, so a
+ * dev server is not reachable from the school Wi-Fi. HOST=0.0.0.0 opens it
+ * to the network (the Docker image and deploy/lepsi-rozvrh.service set it).
+ * On Vercel the platform runs the server; it keeps listening as before.
+ */
+function listenHost(env = process.env) {
+    const host = typeof env.HOST === 'string' ? env.HOST.trim() : '';
+    if (host) return host;
+    return env.VERCEL ? '0.0.0.0' : '127.0.0.1';
+}
+
 function createApp({ corsOrigins = parseCorsOrigins(), staticDir = path.join(__dirname, '..', 'public'), adminDeps = {} } = {}) {
     const groupsRoutes = require('./groups');
     const authRoutes = require('./auth');
@@ -97,6 +109,7 @@ function createApp({ corsOrigins = parseCorsOrigins(), staticDir = path.join(__d
 module.exports = {
     DEFAULT_CORS_ORIGINS,
     parseCorsOrigins,
+    listenHost,
     securityHeaders,
     createApp,
 };

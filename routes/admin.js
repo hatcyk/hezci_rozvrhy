@@ -3,7 +3,8 @@
  *
  * Every request needs `Authorization: Bearer <ADMIN_SECRET>` (constant-time
  * comparison). Without a configured secret the API is closed (503), also
- * outside production: the dev server listens on 0.0.0.0, i.e. the whole LAN.
+ * outside production: a dev server started with HOST=0.0.0.0 is open to the
+ * whole LAN.
  * Wrong secrets are rate limited per client and every request - allowed or
  * not - leaves a record in `audit` (with a keyed hash instead of the IP).
  *

@@ -83,7 +83,7 @@ git clone https://github.com/hatcyk/hezci_rozvrhy
 cd hezci_rozvrhy
 npm ci
 cp .env.example .env        # vyplň FIREBASE_SERVICE_ACCOUNT_PATH (a CRON_SECRET)
-npm start                   # http://localhost:3000, administrace /admin
+npm start                   # http://localhost:3000 (jen tento počítač, síť: HOST=0.0.0.0), administrace /admin
 ```
 
 Po úpravě souborů v `public/js` nebo `public/css` spusť `npm run build`
