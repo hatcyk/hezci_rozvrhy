@@ -265,7 +265,8 @@ Těla se validují v `routes/validation.js`.
   `X-Frame-Options: DENY`, `Content-Security-Policy-Report-Only` s hashi tří
   inline skriptů a hlášením na `/api/csp-report`. Administrace má CSP vynucenou.
 - **Administrace (S5):** `ADMIN_SECRET` porovnávaný v konstantním čase, bez něj
-  503, v produkci minimálně 16 znaků; po 5 chybách z jedné IP blokace 15 min;
+  503, v produkci minimálně 16 znaků; po 5 chybách z jedné IP (IPv6 z jednoho
+  prefixu /64) blokace 15 min a jeden záznam v auditu;
   ruční spuštění sběru nejvýš 1× za 10 min přes GitHub `workflow_dispatch`
   (`GITHUB_DISPATCH_TOKEN`); statistiky jen agregacemi (`count()`, `sum()`), bez
   čtení dokumentů uživatelů; audit s hashovanou IP.

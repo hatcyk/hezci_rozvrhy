@@ -17,6 +17,7 @@
  *   GET  /audit?limit=         the audit trail
  */
 
+const net = require('net');
 const express = require('express');
 const admin = require('../backend/admin');
 const { safeEqual, bearerToken, isProductionEnv } = require('../backend/auth-middleware');
@@ -40,6 +41,26 @@ function clientIp(req, env = process.env) {
         if (typeof xff === 'string' && xff.trim()) return xff.split(',')[0].trim();
     }
     return (req.socket && req.socket.remoteAddress) || 'unknown';
+}
+
+/**
+ * Key of a client address for the rate limits: an IPv4 address as is, IPv6
+ * by its /64 prefix. One connection gets a whole /64 and may use any address
+ * in it, so a limit per IPv6 address would not limit anything (and every new
+ * address would write another audit record).
+ */
+function rateLimitKey(ip) {
+    if (typeof ip !== 'string' || !ip) return 'unknown';
+    const address = ip.trim().toLowerCase().replace(/%.*$/, '');
+    const mapped = address.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+    if (mapped) return mapped[1];
+    if (!net.isIPv6(address)) return address;
+    const [head, tail] = address.split('::');
+    const groups = (part) => (part ? part.split(':') : []);
+    const left = groups(head);
+    const right = tail === undefined ? [] : groups(tail);
+    const full = [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+    return `${full.slice(0, 4).map(g => parseInt(g, 16).toString(16)).join(':')}::/64`;
 }
 
 /**
@@ -81,14 +102,17 @@ function createAdminRouter({
 
         const ip = clientIp(req);
         req.adminIp = ip;
-        const state = limiter.status(ip);
+        // Limit (and so the audit of failures) per /64 for IPv6; the audit
+        // hash keeps the full address.
+        const key = rateLimitKey(ip);
+        const state = limiter.status(key);
         if (state.locked) {
             res.setHeader('Retry-After', String(state.retryAfterSec));
             return res.status(429).json({ error: 'Příliš mnoho chybných pokusů, zkuste to později.', retryAfterSec: state.retryAfterSec });
         }
 
         if (!safeEqual(bearerToken(req) || '', secret)) {
-            const result = limiter.fail(ip);
+            const result = limiter.fail(key);
             // One record per burst (first failure, lock-out), not one per guess.
             if (result.first || result.lockedNow) {
                 await audit(req, result.lockedNow ? 'auth_locked' : 'auth_failed', `${req.method} ${req.path}`, { failures: result.failures });
@@ -100,7 +124,7 @@ function createAdminRouter({
             return res.status(401).json({ error: 'Neplatné nebo chybějící admin tajemství.' });
         }
 
-        limiter.reset(ip);
+        limiter.reset(key);
         return next();
     });
 
@@ -169,4 +193,4 @@ function createAdminRouter({
     return router;
 }
 
-module.exports = { createAdminRouter, clientIp, MIN_SECRET_LENGTH };
+module.exports = { createAdminRouter, clientIp, rateLimitKey, MIN_SECRET_LENGTH };
