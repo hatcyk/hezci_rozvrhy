@@ -7,7 +7,9 @@
  * - activate removes only older shell caches (also the names of 1.x);
  * - navigations are network-first with a time limit; the cached shell is
  *   served offline, on a timeout and on a 5xx answer, under the single key "/";
- * - static files are stale-while-revalidate, /api/ and /_vercel/ are never intercepted.
+ * - static files are stale-while-revalidate, /api/ and /_vercel/ are never intercepted;
+ * - the Firebase SDK is downloaded and served in cors mode, so the page can
+ *   check its integrity (SRI) also on the copy from the cache.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -508,17 +510,85 @@ test('API calls, other methods and foreign origins are never intercepted', () =>
     assert.equal(sw.fetches.length, 0);
 });
 
+/** gstatic answers like the real CDN: cors responses (Access-Control-Allow-Origin: *). */
+const cdn = (r, { status = 200 } = {}) => (r.url.startsWith(GSTATIC) ? res(`cdn:${r.path}`, { type: 'cors', status }) : net(r));
+
 test('Firebase SDK from gstatic: cache-first, so the app boots offline', async () => {
     let online = true;
-    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return r.url.startsWith(GSTATIC) ? res(`net:${r.path}`, { type: 'opaque', status: 0 }) : net(r); } });
+    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return cdn(r); } });
     await sw.install();
     sw.fetches.length = 0;
-    assert.equal((await sw.request(`${GSTATIC}firebase-auth-compat.js`).response).body, `net:${GSTATIC}firebase-auth-compat.js`);
+    assert.equal((await sw.request(`${GSTATIC}firebase-auth-compat.js`, { mode: 'cors' }).response).body, `cdn:${GSTATIC}firebase-auth-compat.js`);
     assert.equal(sw.fetches.length, 0, 'served from the cache without a request');
     online = false;
-    const sdk = sw.request(`${GSTATIC}firebase-app-compat.js`);
+    const sdk = sw.request(`${GSTATIC}firebase-app-compat.js`, { mode: 'cors' });
     assert.ok(sdk.intercepted);
-    assert.equal((await sdk.response).body, `net:${GSTATIC}firebase-app-compat.js`);
+    assert.equal((await sdk.response).body, `cdn:${GSTATIC}firebase-app-compat.js`);
+});
+
+test('Firebase SDK: precached in cors mode, so the page with integrity="…" can check the cached copy', async () => {
+    const sw = loadSW({ respond: cdn });
+    await sw.install();
+    const sdk = sw.fetches.filter((f) => f.url.startsWith(GSTATIC));
+    assert.deepEqual(sdk.map((f) => f.url), [...sw.constant('CROSS_ORIGIN_PRECACHE')]);
+    // an opaque (no-cors) copy cannot be checked: the page that asks with crossorigin gets a network error
+    for (const f of sdk) assert.equal(f.mode, 'cors', `${f.url}: mode`);
+    for (const url of sw.constant('CROSS_ORIGIN_PRECACHE')) assert.equal((await sw.shell().match(url)).type, 'cors', url);
+});
+
+test('Firebase SDK: an error answer of gstatic is not stored, neither at install nor later', async () => {
+    let status = 503;
+    const sw = loadSW({ respond: (r) => cdn(r, { status }) });
+    await sw.install();
+    assert.equal(sw.calls.skipWaiting, 1, 'best effort: the install still succeeds');
+    for (const url of sw.constant('CROSS_ORIGIN_PRECACHE')) assert.equal(await sw.shell().match(url), undefined, url);
+
+    const url = `${GSTATIC}firebase-app-compat.js`;
+    assert.equal((await sw.request(url, { mode: 'cors' }).response).status, 503, 'the page gets the answer');
+    await tick();
+    assert.equal(await sw.shell().match(url), undefined, 'an error page would be served forever (cache-first)');
+    status = 200;
+    sw.fetches.length = 0;
+    assert.equal((await sw.request(url, { mode: 'cors' }).response).body, `cdn:${url}`);
+    assert.deepEqual(sw.fetches.map((f) => [f.url, f.mode]), [[url, 'cors']]);
+    await tick();
+    assert.equal((await sw.shell().match(url)).type, 'cors', 'stored once it arrived whole');
+});
+
+test('Firebase SDK: a copy that is not in the cache yet is fetched in cors mode, whatever the page asked for', async () => {
+    for (const mode of ['cors', 'no-cors']) {
+        const sw = loadSW({ respond: cdn });
+        const url = `${GSTATIC}firebase-firestore-compat.js`;
+        const sdk = sw.request(url, { mode });
+        assert.ok(sdk.intercepted);
+        assert.equal((await sdk.response).type, 'cors', mode);
+        assert.deepEqual(sw.fetches.map((f) => f.mode), ['cors'], `${mode}: never no-cors`);
+    }
+});
+
+test('Firebase SDK: an opaque copy left by an older worker in the same cache is never served', async () => {
+    let online = true;
+    const sw = loadSW({ respond: (r) => { if (!online) throw new TypeError('Failed to fetch'); return cdn(r); } });
+    const url = `${GSTATIC}firebase-app-compat.js`;
+    const cache = await sw.sandbox.caches.open(sw.SHELL_CACHE);
+    await cache.put(url, res('', { type: 'opaque', status: 0 }));
+
+    online = false;
+    const offline = await sw.request(url, { mode: 'cors' }).response;
+    assert.equal(offline.type, 'error', 'offline: a network error, as the opaque copy would give the page anyway');
+
+    online = true;
+    const fresh = await sw.request(url, { mode: 'cors' }).response;
+    assert.equal(fresh.body, `cdn:${url}`, 'online: the network instead of the opaque copy');
+    await tick();
+    assert.equal((await cache.match(url)).type, 'cors', 'and the opaque copy is replaced');
+
+    // the install of a worker with the same cache name replaces them as well
+    const reinstall = loadSW({ respond: cdn, caches: {} });
+    const old = await reinstall.sandbox.caches.open(reinstall.SHELL_CACHE);
+    for (const u of reinstall.constant('CROSS_ORIGIN_PRECACHE')) await old.put(u, res('', { type: 'opaque', status: 0 }));
+    await reinstall.install();
+    for (const u of reinstall.constant('CROSS_ORIGIN_PRECACHE')) assert.equal((await old.match(u)).type, 'cors', u);
 });
 
 /* ────────────────────────── notification click ────────────────────────── */

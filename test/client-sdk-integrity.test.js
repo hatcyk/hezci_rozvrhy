@@ -1,5 +1,7 @@
 /**
  * Third-party code of the page (public/index.html):
+ * - the Firebase SDK from gstatic carries Subresource Integrity, so a changed
+ *   file - on the CDN or planted in the service worker cache - does not run;
  * - index.html, the service worker and the CSP name one and the same SDK version;
  * - Vercel Web Analytics and Speed Insights come from this origin (/_vercel/*),
  *   after the load event, never from a public npm CDN.
@@ -16,8 +18,27 @@ const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
 const sw = fs.readFileSync(path.join(PUBLIC, 'firebase-messaging-sw.js'), 'utf8');
 
 const GSTATIC_SCRIPT = /<script\b([^>]*\bsrc="(https:\/\/www\.gstatic\.com\/[^"]+)"[^>]*)><\/script>/g;
+const attr = (attrs, name) => (new RegExp(`\\b${name}(?:="([^"]*)")?(?=[\\s>]|$)`).exec(attrs) || [])[1];
+const has = (attrs, name) => new RegExp(`\\b${name}\\b`).test(attrs);
+
 const sdkScripts = [...html.matchAll(GSTATIC_SCRIPT)].map((m) => ({ attrs: m[1], src: m[2] }));
 const versionOf = (url) => (/\/firebasejs\/(\d+\.\d+\.\d+)\//.exec(url) || [])[1];
+
+test('every gstatic script of index.html has integrity (sha384) and crossorigin="anonymous"', () => {
+    assert.deepEqual(sdkScripts.map((s) => s.src.split('/').pop()),
+        ['firebase-app-compat.js', 'firebase-auth-compat.js', 'firebase-firestore-compat.js', 'firebase-messaging-compat.js']);
+    for (const { attrs, src } of sdkScripts) {
+        const integrity = attr(attrs, 'integrity');
+        assert.match(integrity || '', /^sha384-[A-Za-z0-9+/]{64}$/, `${src}: integrity`);
+        assert.equal(Buffer.from(integrity.slice(7), 'base64').length, 48, `${src}: a SHA-384 digest`);
+        // without CORS the response is opaque and the browser cannot check the hash
+        assert.equal(attr(attrs, 'crossorigin'), 'anonymous', `${src}: crossorigin`);
+        assert.ok(has(attrs, 'defer'), `${src}: stays deferred, in order before the app module`);
+    }
+    assert.equal(new Set(sdkScripts.map((s) => attr(s.attrs, 'integrity'))).size, sdkScripts.length, 'one hash per file');
+    // nothing else of the page is loaded from gstatic without a hash
+    assert.equal((html.match(/www\.gstatic\.com/g) || []).length, sdkScripts.length);
+});
 
 test('index.html, the service worker and the CSP use the same Firebase SDK version', () => {
     const htmlVersions = new Set(sdkScripts.map((s) => versionOf(s.src)));
@@ -29,7 +50,7 @@ test('index.html, the service worker and the CSP use the same Firebase SDK versi
     assert.equal(versionOf(FIREBASE_SDK_BASE), [...htmlVersions][0], 'backend/security-headers.js FIREBASE_SDK_BASE');
     for (const url of [...swUrls, ...sdkScripts.map((s) => s.src)]) assert.ok(url.startsWith(FIREBASE_SDK_BASE), url);
 
-    // the worker precaches exactly the scripts the page loads
+    // the worker precaches exactly the scripts the page loads (and checks)
     const precache = /const CROSS_ORIGIN_PRECACHE = \[([\s\S]*?)\];/.exec(sw)[1].match(/https:[^']+/g);
     assert.deepEqual(precache, sdkScripts.map((s) => s.src));
 });

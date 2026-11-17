@@ -206,8 +206,11 @@ const SHELL_URL = '/';
 // How long a navigation waits for the network before the cached shell is used.
 const NAVIGATION_TIMEOUT_MS = 3000;
 
-// Cross-origin scripts the app needs to boot. Cached as opaque responses
-// (status 0) so that offline loads still have the Firebase SDK available.
+// Cross-origin scripts the app needs to boot, so that offline loads still
+// have the Firebase SDK. index.html loads them with integrity="…" and
+// crossorigin, so they are fetched and served in cors mode: the browser checks
+// the hash also on the copy from this cache (a planted file does not run). An
+// opaque (no-cors) copy cannot be checked and fails such a page.
 const CROSS_ORIGIN_PRECACHE = [
     'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
     'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js',
@@ -229,6 +232,11 @@ const PRECACHE_URLS = [
     '/css/app.css?v=56fa08d61b',
     '/js/app.js?v=014392330b',
 ];
+
+/** The Firebase SDK as index.html asks for it: CORS without credentials. */
+function fetchSdk(url) {
+    return fetch(url, { mode: 'cors', credentials: 'omit' });
+}
 
 /**
  * Bundles with a content hash (?v=) never change under their address, so the
@@ -272,13 +280,13 @@ self.addEventListener('install', (event) => {
             throw new Error('[sw] index.html does not load the bundles of this worker');
         }
 
-        // Cross-origin precache (Firebase SDK). no-cors yields opaque responses
-        // which cache.addAll rejects, so we put them one-by-one. Best effort:
+        // Cross-origin precache (Firebase SDK), one by one. Best effort:
         // without them the app still starts from localStorage. The address
         // carries the SDK version, so the HTTP cache may answer.
         await Promise.all(CROSS_ORIGIN_PRECACHE.map(async (url) => {
             try {
-                const response = await fetch(url, { mode: 'no-cors' });
+                const response = await fetchSdk(url);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 await cache.put(url, response);
             } catch (err) {
                 console.warn(`[sw] Cross-origin precache failed for ${url}:`, err);
@@ -343,17 +351,19 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(request.url);
 
     // Firebase SDK served from gstatic — cache-first so it boots offline.
+    // Always cors (see CROSS_ORIGIN_PRECACHE); an opaque copy an older worker
+    // left in a cache of the same name is never served, the network replaces it.
     if (url.hostname === 'www.gstatic.com' && url.pathname.includes('/firebasejs/')) {
         event.respondWith((async () => {
             const cache = await caches.open(SHELL_CACHE);
             const cached = await cache.match(request);
-            if (cached) return cached;
+            if (cached && cached.type !== 'opaque') return cached;
             try {
-                const response = await fetch(request, { mode: 'no-cors' });
-                cache.put(request, response.clone()).catch(() => { /* ignore */ });
+                const response = await fetchSdk(request.url);
+                if (response.ok) cache.put(request.url, response.clone()).catch(() => { /* ignore */ });
                 return response;
             } catch (err) {
-                return cached || Response.error();
+                return Response.error();
             }
         })());
         return;
