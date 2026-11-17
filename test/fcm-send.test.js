@@ -254,6 +254,37 @@ test('úklid tokenů: smaže se jen token, který FCM označí za neplatný', as
     assert.equal(db._get('changes/c1').sentToDevices, 2);
 });
 
+test('jedno zařízení pod dvěma ID (týž token ve dvou dokumentech) dostane změnu jednou', async (t) => {
+    quiet(t);
+    reset({
+        'users/anon-new': user(['shared', 'own-new']),
+        'users/anonymous-1733211111111': user(['shared']),   // 1.x document left behind
+        'users/anon-third': user(['own-third', 'shared', 'own-third']),
+        'changes/c1': changeDoc(),
+    });
+    const result = await processPendingChanges();
+    assert.equal(sentTo('shared').length, 1, 'once, not three times');
+    assert.deepEqual(sent.map(m => m.tokens), [['shared', 'own-new'], ['own-third']],
+        'the legacy document has nothing new left; repeats within one document are dropped too');
+    assert.equal(result.sentCount, 3);
+    assert.equal(db._get('changes/c1').sentToDevices, 3);
+    assert.deepEqual(db._get('users/anonymous-1733211111111').tokens, ['shared'], 'sending changes no document');
+});
+
+test('dedup tokenů platí v rámci jednoho rozesílání: jiná změna týž token znovu dostane; mrtvý token se uklidí u toho, komu se poslal', async (t) => {
+    quiet(t);
+    reset({
+        'users/u1': user(['shared', 'dead']),
+        'users/u2': user(['shared', 'dead']),
+        'changes/c1': changeDoc(),
+        'changes/c2': changeDoc({ timestamp: '2026-11-09T08:00:00.000Z' }),
+    });
+    failing.set('dead', 'messaging/registration-token-not-registered');
+    await processPendingChanges();
+    assert.equal(sentTo('shared').length, 2, 'one per change document');
+    assert.deepEqual(db._get('users/u1').tokens, ['shared'], 'pruned where it was sent');
+});
+
 test('selhání odeslání jednomu uživateli nezastaví ostatní', async (t) => {
     quiet(t);
     reset({ 'users/u1': user(['t1']), 'users/u2': user(['t2']), 'changes/c1': changeDoc() });

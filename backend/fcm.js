@@ -63,6 +63,26 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
     }
 }
 
+/**
+ * The tokens of `tokens` that are not in `used` yet, each once, now marked as
+ * used. One dispatch (a change document, a reminder hour) keeps one `used`:
+ * a device whose token sits in two user documents (a 1.x document left
+ * behind by the migration, an ID replaced after the site data were cleared)
+ * gets one notification, not two.
+ * @param {Array<String>} tokens
+ * @param {Set<String>} used
+ * @returns {Array<String>}
+ */
+function takeUnsentTokens(tokens, used) {
+    const fresh = [];
+    for (const token of tokens || []) {
+        if (used.has(token)) continue;
+        used.add(token);
+        fresh.push(token);
+    }
+    return fresh;
+}
+
 // A change found on Friday evening still matters on Monday morning; after
 // three days it is old news. (FCM's default is to keep an undelivered message
 // for four weeks.)
@@ -486,6 +506,7 @@ async function processPendingChanges() {
 
             // Send to each user with their filtered changes
             let totalSent = 0;
+            const usedTokens = new Set();
 
             for (const user of watchingUsers) {
                 try {
@@ -507,11 +528,17 @@ async function processPendingChanges() {
                         continue;
                     }
 
-                    const result = await sendNotificationToTokens(user.tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
+                    const tokens = takeUnsentTokens(user.tokens, usedTokens);
+                    if (tokens.length === 0) {
+                        console.log(`⏭️  Devices of user ${user.userId} already notified of this change`);
+                        continue;
+                    }
+
+                    const result = await sendNotificationToTokens(tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
                     totalSent += result.successCount;
 
                     // Drop any tokens FCM reported as permanently invalid.
-                    await pruneInvalidTokens(user.userId, user.tokens, result);
+                    await pruneInvalidTokens(user.userId, tokens, result);
                 } catch (error) {
                     console.error(`Failed to send to user ${user.userId}:`, error.message);
                 }
@@ -615,6 +642,7 @@ module.exports = {
     preferenceKeyForChange,
     preferenceKeysForChange,
     sendNotificationToTokens,
+    takeUnsentTokens,
     getUsersWatchingTimetable,
     processPendingChanges,
     cleanupOldChanges,
