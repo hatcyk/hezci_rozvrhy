@@ -189,8 +189,8 @@ function initScheduleTypeButtons() {
 async function init() {
     // The deferred SDK scripts have run by now. Missing after a deploy that the
     // previous worker served: reload once the new worker has taken over.
-    initSdkRecovery({ sdkLoaded: isFirebaseSdkLoaded, showNotice: () => showUpdateNotice() });
     const route = parseRoute();
+    initSdkRecovery({ sdkLoaded: isFirebaseSdkLoaded, showNotice: () => showUpdateNotice(), unattended: Boolean(route.kiosk) });
     if (route.kiosk) {
         try { await initKiosk(); } catch (e) { console.error('Kiosk initialization error:', e); }
         return;

@@ -131,6 +131,23 @@ test('after about 10 s or after the first input: the notice, no reload', async (
     assert.deepEqual([noStorage.env.reloads, noStorage.env.notices], [0, 1], 'no sessionStorage: no reload');
 });
 
+test('kiosk (unattended): reloads after the window and despite input, still only once', async () => {
+    const { initSdkRecovery, AUTO_RELOAD_WINDOW_MS } = await import('../public/js/sdk-recovery.js');
+    const storage = memoryStorage();
+    const kiosk = start({ storage, input: true });
+    kiosk.options.unattended = true;
+    initSdkRecovery(kiosk.options);
+    kiosk.env.time = AUTO_RELOAD_WINDOW_MS * 6;
+    kiosk.takeOver();
+    assert.deepEqual([kiosk.env.reloads, kiosk.env.notices], [1, 0]);
+
+    const again = start({ storage });
+    again.options.unattended = true;
+    initSdkRecovery(again.options);
+    again.takeOver();
+    assert.deepEqual([again.env.reloads, again.env.notices], [0, 1], 'the loop guard holds for the kiosk too');
+});
+
 test('SDK missing without a takeover (gstatic down, wrong hash), SDK loaded, or a page no worker served: nothing happens', async () => {
     const { initSdkRecovery } = await import('../public/js/sdk-recovery.js');
     const outage = start();
