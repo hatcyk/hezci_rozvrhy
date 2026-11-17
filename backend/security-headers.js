@@ -6,8 +6,9 @@
  *
  * The Content-Security-Policy of the app is REPORT-ONLY for now: it lists the
  * sources the app really uses (Firebase SDK from gstatic, Firestore / Auth /
- * FCM APIs, Google Fonts, Vercel Analytics from jsDelivr, sunrisesunset.io)
- * and the sha256 hashes of the inline <script>s of index.html. Browsers only
+ * FCM APIs, sunrisesunset.io; Vercel Analytics and Speed Insights come from
+ * this origin, /_vercel/*) and the sha256 hashes of the inline <script>s of
+ * index.html. Browsers only
  * report violations to /api/csp-report; once the reports stay empty for a
  * while it can be switched to the enforcing header. The admin page has no
  * inline scripts and no third-party code, so its policy is enforced already.
@@ -54,10 +55,9 @@ function inlineScriptHashes(html) {
 function buildAppCsp({ scriptHashes = [] } = {}) {
     const directives = [
         ["default-src", "'self'"],
-        // Firebase compat SDK (gstatic), Vercel Analytics / Speed Insights loaded
-        // with import() from jsDelivr, their scripts from va.vercel-scripts.com
-        // (debug builds) or /_vercel/* (same origin), + the 3 inline scripts.
-        ["script-src", "'self'", ...scriptHashes, 'https://www.gstatic.com', 'https://cdn.jsdelivr.net', 'https://va.vercel-scripts.com'],
+        // Firebase compat SDK (gstatic), Vercel Analytics / Speed Insights from
+        // /_vercel/* ('self'), + the inline scripts.
+        ["script-src", "'self'", ...scriptHashes, 'https://www.gstatic.com'],
         // style="" attributes in index.html and the rendered markup need 'unsafe-inline'.
         ["style-src", "'self'", "'unsafe-inline'"],
         ["font-src", "'self'"],

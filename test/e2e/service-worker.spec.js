@@ -20,6 +20,8 @@ const school = buildSchool();
 // Atrapa SDK pro worker (importScripts) i pro stránku (tam už window.firebase
 // nastavila atrapa z addInitScript a tenhle skript nic nepřepíše)
 const SDK_STUB = 'if (!self.firebase) self.firebase = { initializeApp() {}, messaging: () => ({ onBackgroundMessage() {} }) };';
+// Skripty Vercel Analytics / Speed Insights jako na Vercelu se zapnutou analytikou
+const VERCEL_SCRIPTS = ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js'];
 
 const swSource = () => fs.readFileSync(path.join(PUBLIC, 'firebase-messaging-sw.js'), 'utf8');
 const SHELL_A = /const SHELL_CACHE = '([^']+)';/.exec(swSource())[1];
@@ -35,6 +37,7 @@ function startServer() {
   app.disable('x-powered-by');
   app.use((req, res, next) => { state.hits[req.path] = (state.hits[req.path] || 0) + 1; next(); });
   app.get('/__e2e/gstatic/:file', (req, res) => res.type('js').send(SDK_STUB));
+  app.get(VERCEL_SCRIPTS, (req, res) => res.set('Cache-Control', 'no-cache').type('js').send('self.__vercel = (self.__vercel || 0) + 1;'));
   app.use('/api', (req, res) => {
     if (req.method === 'POST' && req.path === '/auth') return res.json({ token: 'e2e-custom-token', userId: USER_ID });
     if (req.method === 'GET' && req.path === '/status') return res.json({ isHealthy: true, lastSuccessAt: new Date().toISOString(), dataAgeMin: 5 });
@@ -221,5 +224,22 @@ test.describe('Service worker', () => {
     site.state.failPath = null;
     await site.open('/');
     await expect.poll(() => site.caches()).toEqual({ [SHELL_B]: PRECACHE_COUNT });
+  });
+
+  test('Vercel Analytics a Speed Insights (/_vercel/*) jdou vždy na server a do mezipaměti se neukládají', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    for (let i = 0; i < 2; i++) {
+      const responses = VERCEL_SCRIPTS.map((p) => page.waitForResponse((r) => new URL(r.url()).pathname === p));
+      await site.open('/');
+      for (const r of await Promise.all(responses)) {
+        expect(r.status(), r.url()).toBe(200);
+        expect(r.fromServiceWorker(), `${r.url()}: mimo service worker`).toBe(false);
+      }
+      await expect.poll(() => page.evaluate(() => window.__vercel || 0)).toBe(2);
+    }
+    for (const name of Object.keys(await site.caches())) {
+      expect((await site.shellKeys(name)).filter((k) => k.startsWith('/_vercel/')), name).toEqual([]);
+    }
   });
 });

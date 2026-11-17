@@ -31,7 +31,7 @@ test('CSP aplikace pokrývá všechny inline skripty a skutečné zdroje index.h
     for (const h of hashes) assert.ok(csp.includes(h), h);
     // every external script / stylesheet / dynamic import host of index.html is allowed
     const hosts = new Set([...INDEX_HTML.matchAll(/(?:src|href)="(https:\/\/[^/"]+)|import\('(https:\/\/[^/']+)/g)].map(m => m[1] || m[2]));
-    const allowed = ['https://www.gstatic.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://cdn.jsdelivr.net', 'https://github.com', 'https://sunrisesunset.io'];
+    const allowed = ['https://www.gstatic.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://github.com', 'https://sunrisesunset.io'];
     for (const host of hosts) assert.ok(allowed.includes(host), `unexpected host in index.html: ${host}`);
     for (const src of ['https://firestore.googleapis.com', 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com',
         'https://fcmregistrations.googleapis.com', 'https://api.sunrisesunset.io', 'https://vitals.vercel-insights.com']) {

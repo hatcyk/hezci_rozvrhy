@@ -7,7 +7,7 @@
  * - activate removes only older shell caches (also the names of 1.x);
  * - navigations are network-first with a time limit; the cached shell is
  *   served offline, on a timeout and on a 5xx answer, under the single key "/";
- * - static files are stale-while-revalidate, /api/ is never intercepted.
+ * - static files are stale-while-revalidate, /api/ and /_vercel/ are never intercepted.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -498,6 +498,11 @@ test('API calls, other methods and foreign origins are never intercepted', () =>
     }
     assert.equal(sw.request('/', { mode: 'navigate', method: 'POST' }).intercepted, false);
     assert.equal(sw.request('/icons.svg', { method: 'POST' }).intercepted, false);
+    // Vercel Web Analytics / Speed Insights (script and beacons): always live, never cached
+    for (const url of ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js', '/_vercel/insights/view']) {
+        assert.equal(sw.request(url).intercepted, false, url);
+        assert.equal(sw.request(url, { mode: 'cors' }).intercepted, false, url);
+    }
     assert.equal(sw.request('https://firestore.googleapis.com/v1/projects/x').intercepted, false);
     assert.equal(sw.request('https://www.gstatic.com/other/lib.js').intercepted, false);
     assert.equal(sw.fetches.length, 0);

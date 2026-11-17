@@ -26,6 +26,9 @@ const violations = (page) => page.evaluate(() => window.__csp);
 
 test.describe('Vynucená CSP', () => {
   test('rozvrh, detail a panely běží bez porušení; vložený inline skript se zablokuje', async ({ page, app }) => {
+    // Vercel Analytics a Speed Insights z /_vercel/* politika pustí (zablokovaný skript by se vůbec nevyžádal)
+    const analytics = [];
+    page.on('response', (r) => { if (new URL(r.url()).pathname.startsWith('/_vercel/')) analytics.push(new URL(r.url()).pathname); });
     await app.open('/');
     await app.timetableReady();
     await page.locator(LESSON).filter({ visible: true }).first().click();
@@ -35,6 +38,7 @@ test.describe('Vynucená CSP', () => {
     await page.click('#calendarBtn');
     await expect(page.locator('#calendarModal')).toHaveAttribute('open', '');
     await page.keyboard.press('Escape');
+    await expect.poll(() => analytics.sort()).toEqual(['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js']);
     expect(await violations(page)).toEqual([]);
 
     // Kontrola, že politika opravdu platí: cizí inline skript neproběhne

@@ -93,7 +93,8 @@ const test = base.extend({
 
     // Každý test zároveň hlídá, že stránka nevyhodila výjimku a nešla mimo povolené adresy
     expect(errors, 'chyby JavaScriptu na stránce').toEqual([]);
-    const allowed = new Set(['fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com', 'cdn.jsdelivr.net', 'api.sunrisesunset.io']);
+    // www.gstatic.com: Firebase SDK (atrapa je z addInitScript); Vercel Analytics jde z vlastní domény (/_vercel/*), ne z jsDelivr
+    const allowed = new Set(['fonts.googleapis.com', 'fonts.gstatic.com', 'www.gstatic.com', 'api.sunrisesunset.io']);
     expect([...blocked].filter(h => !allowed.has(h)), 'neočekávané požadavky mimo lokální server').toEqual([]);
   },
 });

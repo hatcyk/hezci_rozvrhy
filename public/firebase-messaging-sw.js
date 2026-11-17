@@ -365,6 +365,10 @@ self.addEventListener('fetch', (event) => {
     // Don't intercept backend API calls (auth, status) — these must be live.
     if (url.pathname.startsWith('/api/')) return;
 
+    // Vercel Web Analytics / Speed Insights (script and beacons): always live,
+    // never in the shell cache.
+    if (url.pathname.startsWith('/_vercel/')) return;
+
     if (request.mode === 'navigate') {
         // Other pages (/admin, /design.html) are not part of the offline shell.
         if (!isShellNavigation(url)) return;

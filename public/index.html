@@ -633,15 +633,20 @@
         };
     </script>
 
-    <!-- Vercel Speed Insights + Web Analytics: loaded after the app, off the critical path -->
+    <!-- Vercel Speed Insights + Web Analytics from this origin (Vercel serves /_vercel/* once both are
+         enabled in the project; elsewhere 404, harmless): loaded after the app, off the critical path -->
     <script>
+        window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+        window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
         window.addEventListener('load', () => {
             const idle = window.requestIdleCallback || ((cb) => setTimeout(cb, 1500));
             idle(() => {
-                import('https://cdn.jsdelivr.net/npm/@vercel/speed-insights@1/dist/index.mjs')
-                    .then((m) => m.injectSpeedInsights()).catch(() => {});
-                import('https://cdn.jsdelivr.net/npm/@vercel/analytics@1/dist/index.mjs')
-                    .then((m) => m.inject()).catch(() => {});
+                for (const src of ['/_vercel/speed-insights/script.js', '/_vercel/insights/script.js']) {
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.defer = true;
+                    document.head.appendChild(script);
+                }
             });
         });
     </script>
