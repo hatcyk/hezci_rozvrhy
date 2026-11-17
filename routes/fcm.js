@@ -8,6 +8,7 @@
  */
 
 const express = require('express');
+const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('../backend/firebase-admin-init');
 const { processPendingChanges, deriveWatchIndex } = require('../backend/fcm');
 const { requireUser, verifyCronRequest } = require('../backend/auth-middleware');
@@ -60,6 +61,23 @@ async function isTokenAccepted(token) {
     }
 }
 
+/**
+ * Other users/* documents that hold the token. One device under two IDs (a
+ * 1.x document left behind when the migration could not prove the old ID, an
+ * ID replaced after the site data were cleared) gets every notification twice
+ * and cannot switch the old one off. Best effort: without the lookup the
+ * token is still saved.
+ */
+async function otherHolders(db, userId, token) {
+    try {
+        const snap = await db.collection('users').where('tokens', 'array-contains', token).get();
+        return snap.docs.filter(doc => doc.id !== userId);
+    } catch (error) {
+        console.error('FCM subscribe: lookup of other holders of the token failed:', error.message);
+        return [];
+    }
+}
+
 // Subscribe user device to FCM notifications
 router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
     try {
@@ -76,21 +94,23 @@ router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
 
         const db = getFirestore();
         const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
+        const [userDoc, others] = await Promise.all([userRef.get(), otherHolders(db, userId, token)]);
 
+        // Taking the token from the others and storing it here in one batch.
+        const batch = db.batch();
+        for (const doc of others) {
+            batch.update(doc.ref, { tokens: admin.firestore.FieldValue.arrayRemove(token) });
+        }
+
+        const oldTokens = userDoc.exists ? userDoc.data().tokens || [] : null;
         if (userDoc.exists) {
-            const oldTokens = userDoc.data().tokens || [];
-
-            await userRef.update({
+            batch.update(userRef, {
                 tokens: [token],
                 notificationsEnabled: true,
                 lastUpdated: new Date().toISOString()
             });
-
-            console.log(`✅ Updated FCM token for user ${userId}`);
-            console.log(`   Old tokens count: ${oldTokens.length} → New: 1`);
         } else {
-            await userRef.set({
+            batch.set(userRef, {
                 tokens: [token],
                 notificationsEnabled: true,
                 preferences: {
@@ -102,8 +122,16 @@ router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
                 createdAt: new Date().toISOString(),
                 lastUpdated: new Date().toISOString()
             });
+        }
+        await batch.commit();
+
+        if (oldTokens) {
+            console.log(`✅ Updated FCM token for user ${userId}`);
+            console.log(`   Old tokens count: ${oldTokens.length} → New: 1`);
+        } else {
             console.log(`✅ Created new user ${userId} with FCM token`);
         }
+        if (others.length) console.log(`   Token removed from ${others.length} other user document(s)`);
 
         res.json({ success: true, message: 'Token saved successfully' });
 

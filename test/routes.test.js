@@ -174,7 +174,7 @@ test('oblíbené: přihlášení, vlastnictví, validace a limit těla 50 kB', a
     assert.deepEqual((await r.json()).favoriteTimetables, [{ type: 'Room', id: 'A102' }]);
 });
 
-// ---- /api/fcm/subscribe: dry-run token check ------------------------------
+// ---- /api/fcm/subscribe: dry-run token check, one owner per token ----------
 const C = 'anon-2d9f8e3a-0c3f-4e5d-9b4a-3c4d5e6f7081';
 const fcmError = (code) => Object.assign(new Error(`synthetic ${code}`), { code });
 
@@ -213,6 +213,39 @@ test('subscribe: výpadek FCM uživatele nezablokuje, token se přijme a zaloguj
     } finally {
         messaging.send = realSend;
         console.warn = realWarn;
+    }
+});
+
+test('subscribe: stejný token se odebere z ostatních dokumentů users (jinak upozornění chodí dvakrát)', async () => {
+    const ORPHAN = 'anonymous-1733211111111';   // left behind by a migration that did not happen
+    const OTHER = 'anon-3e0a9f4b-1d4a-4f6e-8c5b-4d5e6f708192';
+    db._store.set(`users/${ORPHAN}`, { tokens: ['fcm-shared', 'fcm-orphan-own'], notificationsEnabled: true, hasReminders: true });
+    db._store.set(`users/${OTHER}`, { tokens: ['fcm-shared'], notificationsEnabled: true });
+    const realBatch = db.batch;
+    let commits = 0;
+    db.batch = () => { const b = realBatch(); const commit = b.commit; b.commit = async () => { commits++; return commit(); }; return b; };
+    try {
+        assert.equal((await post('/api/fcm/subscribe', { userId: C, token: 'fcm-shared' }, asUser(C))).status, 200);
+    } finally {
+        db.batch = realBatch;
+    }
+    assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-shared']);
+    assert.deepEqual(db._get(`users/${ORPHAN}`).tokens, ['fcm-orphan-own'], 'only the shared token goes');
+    assert.deepEqual(db._get(`users/${OTHER}`).tokens, []);
+    assert.equal(commits, 1, 'removal and the own write in one batch');
+});
+
+test('subscribe: když dotaz na ostatní držitele tokenu selže, token se stejně uloží', async () => {
+    const realError = console.error;
+    console.error = () => {};
+    db._failQuery = (q) => (q.collection === 'users' && q.filters.some(f => f.field === 'tokens')
+        ? Object.assign(new Error('9 FAILED_PRECONDITION: index disabled (synthetic)'), { code: 9 }) : null);
+    try {
+        assert.equal((await post('/api/fcm/subscribe', { userId: C, token: 'fcm-c3' }, asUser(C))).status, 200);
+        assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-c3']);
+    } finally {
+        db._failQuery = null;
+        console.error = realError;
     }
 });
 
