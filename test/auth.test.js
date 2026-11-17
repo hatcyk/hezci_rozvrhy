@@ -186,6 +186,88 @@ test('/api/auth: starý uživatel bez uloženého nastavení dostane při opakov
     assert.equal(db._get(`users/${first.userId}`), undefined, 'nic se nezakládá');
 });
 
+// ---- limit on new identities (security review, point 3) --------------------
+// Behind a proxy the client address comes from X-Real-IP (TRUST_PROXY=1, as
+// on Vercel), so every test uses its own documentation addresses.
+const fromIp = (ip, headers = {}) => ({ 'x-real-ip': ip, ...headers });
+async function withTrustProxy(fn) {
+    process.env.TRUST_PROXY = '1';
+    try { return await fn(); } finally { delete process.env.TRUST_PROXY; }
+}
+async function createIdentities(ip, n) {
+    for (let i = 0; i < n; i++) {
+        const r = await postJson('/api/auth', {}, fromIp(ip));
+        assert.equal(r.status, 200, `identity ${i + 1} from ${ip}`);
+    }
+}
+
+test('/api/auth: nejvýš 60 nových identit z jedné adresy za 10 min, pak 429 s Retry-After a českou hláškou', async () => {
+    await withTrustProxy(async () => {
+        await createIdentities('198.51.100.7', 60);
+        const r = await postJson('/api/auth', {}, fromIp('198.51.100.7'));
+        assert.equal(r.status, 429);
+        const retry = Number(r.headers.get('retry-after'));
+        assert.ok(retry > 0 && retry <= 600, `Retry-After ${retry}`);
+        const body = await r.json();
+        assert.match(body.error, /Příliš mnoho nových přihlášení/);
+        assert.equal(body.token, undefined);
+        assert.equal(body.userId, undefined);
+
+        // Another address is not affected.
+        assert.equal((await postJson('/api/auth', {}, fromIp('203.0.113.9'))).status, 200);
+    });
+});
+
+test('/api/auth: obnova vlastní relace a migrace s důkazem se do limitu nepočítají, cizí „důkaz“ ano', async () => {
+    await withTrustProxy(async () => {
+        const ip = '198.51.100.8';
+        await createIdentities(ip, 60);
+
+        const own = await postJson('/api/auth', { userId: A }, fromIp(ip, bearer(A)));
+        assert.equal(own.status, 200);
+        assert.equal((await own.json()).userId, A);
+
+        const OLD = 'anonymous-1733299999005';
+        const migrated = await postJson('/api/auth', { userId: OLD }, fromIp(ip, bearer(OLD)));
+        assert.equal(migrated.status, 200);
+        assert.equal((await migrated.json()).migratedFrom, OLD);
+
+        // Knowing an ID without its session means a new identity: counted.
+        assert.equal((await postJson('/api/auth', { userId: A }, fromIp(ip, bearer(B)))).status, 429);
+        assert.equal((await postJson('/api/auth', { userId: A }, fromIp(ip))).status, 429);
+    });
+});
+
+test('/api/auth: IPv6 se počítá po prefixu /64 (jinak by stačilo měnit adresu)', async () => {
+    await withTrustProxy(async () => {
+        await createIdentities('2001:db8:aa:bb::1', 60);
+        assert.equal((await postJson('/api/auth', {}, fromIp('2001:db8:aa:bb:ffff:1:2:3'))).status, 429, 'same /64');
+        assert.equal((await postJson('/api/auth', {}, fromIp('2001:DB8:AA:BB:0::9'))).status, 429, 'same /64, other spelling');
+        assert.equal((await postJson('/api/auth', {}, fromIp('2001:db8:aa:cc::1'))).status, 200, 'other /64');
+    });
+});
+
+test('limit nových identit: AUTH_NEW_ID_LIMIT, výchozí 60', () => {
+    const { newIdentityLimit } = require('../routes/auth');
+    assert.equal(newIdentityLimit({}), 60);
+    assert.equal(newIdentityLimit({ AUTH_NEW_ID_LIMIT: '200' }), 200);
+    for (const bad of ['', '0', '-5', '2.5', 'abc']) assert.equal(newIdentityLimit({ AUTH_NEW_ID_LIMIT: bad }), 60, bad);
+});
+
+test('rateLimitKey: IPv4 celá adresa, IPv6 prefix /64, IPv4 v IPv6 jako IPv4', () => {
+    const { rateLimitKey } = require('../routes/admin');
+    assert.equal(rateLimitKey('203.0.113.5'), '203.0.113.5');
+    assert.equal(rateLimitKey('::ffff:203.0.113.5'), '203.0.113.5');
+    assert.equal(rateLimitKey('2001:db8:1:2:3:4:5:6'), '2001:db8:1:2::/64');
+    assert.equal(rateLimitKey('2001:DB8:1:2::abcd'), '2001:db8:1:2::/64');
+    assert.equal(rateLimitKey('2001:0db8:0001:0002::'), '2001:db8:1:2::/64');
+    assert.equal(rateLimitKey('2001:db8::1'), '2001:db8:0:0::/64');
+    assert.equal(rateLimitKey('fe80::1%en0'), 'fe80:0:0:0::/64');
+    assert.equal(rateLimitKey('::1'), '0:0:0:0::/64');
+    assert.equal(rateLimitKey('unknown'), 'unknown');
+    assert.equal(rateLimitKey(undefined), 'unknown');
+});
+
 test('requireUser: bez tokenu 401, s neplatným tokenem 401', async () => {
     assert.equal((await fetch(`${base}/probe/${A}`)).status, 401);
     assert.equal((await fetch(`${base}/probe/${A}`, { headers: { authorization: 'Bearer forged' } })).status, 401);

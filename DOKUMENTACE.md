@@ -175,7 +175,7 @@ přes Admin SDK), složený index `runs (job ↑, startedAt ↓)` v
 
 | Endpoint | Ochrana | Účel |
 |---|---|---|
-| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. |
+| `POST /api/auth` `{ userId? }` | ID token jen k prokázání ID | přidělí nové prázdné `anon-<uuid>` a custom token. Uložené `anon-<uuid>` znovu vydá a starý `anonymous-<ms>` jednorázově převede (`migratedFrom`), **jen když požadavek nese ID token téže identity**: samotné ID není heslo. Převádí se nastavení, ne tokeny zařízení (prohlížeč si token při startu zaregistruje znovu). Opakovaný požadavek téže relace Firebase (ztracená odpověď) dostane totéž nové ID. Nových identit nejvýš `AUTH_NEW_ID_LIMIT` (výchozí 60) z jedné IP, u IPv6 z prefixu /64, za 10 min, pak 429 s `Retry-After`. |
 | `GET /api/status[?strict=1]` | – | stáří dat (3.3) |
 | `GET /api/groups/:classId` | – | skupiny třídy |
 | `GET\|POST /api/favorites/:userId` | ID token, vlastní `userId` | oblíbené rozvrhy (max. 50) |
@@ -258,7 +258,9 @@ Těla se validují v `routes/validation.js`.
 
 - **Identita (S1):** server vydává token jen pro `anon-<uuid v4>`; dřívější
   endpoint podepsal token pro libovolné uid. ID token se ověřuje na každém
-  volání s uživatelem.
+  volání s uživatelem. Nových identit nejvýš 60 z jedné adresy (IPv6 po /64)
+  za 10 min (`AUTH_NEW_ID_LIMIT`), aby jeden skript nenadělal stovky uživatelů
+  s upomínkami; obnova vlastní relace a převod starého ID se nepočítají.
 - **CORS** jen pro `CORS_ORIGINS` (výchozí produkční doména a localhost:3000).
 - **Hlavičky** (`backend/security-headers.js` pro Express, `vercel.json` pro CDN):
   `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`,
@@ -311,7 +313,9 @@ a `@firebase/rules-unit-testing`); postup je v DEPLOYMENT.md.
   řady v iCal nepromítají.
 - Upomínka se doručí nejvýš jednou (zábor `failed` se neopakuje).
 - Limit pokusů do administrace je pro každou serverless instanci zvlášť;
-  skutečnou ochranou je dlouhé náhodné tajemství.
+  skutečnou ochranou je dlouhé náhodné tajemství. Stejně tak limit nových
+  identit: brzdí jeden skript, ne útok z mnoha adres (na to Vercel Firewall
+  nebo Firebase App Check).
 - Automatický audit přístupnosti nenahrazuje ruční test se čtečkou obrazovky a
   zvětšením 200 %; push na iOS a kiosk na televizi je nutné ověřit na zařízení.
 

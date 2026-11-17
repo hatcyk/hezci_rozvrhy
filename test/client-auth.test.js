@@ -289,3 +289,45 @@ test('1.x migration: a failed Firebase sign-in keeps the old ID, the retry migra
         console.error = savedError;
     }
 });
+
+test('429 from /api/auth (too many new identities from one network): sign-in fails cleanly, nothing is lost, a later attempt asks again', async () => {
+    const saved = globalThis.firebase;
+    const savedError = console.error;
+    console.error = () => {};
+    const LIMIT = [429, { error: 'Příliš mnoho nových přihlášení z této sítě, zkuste to později.', retryAfterSec: 120 }];
+    let user = null;
+    let signedIn = 0;
+    globalThis.firebase = {
+        ...saved,
+        auth: () => ({
+            get currentUser() { return user; },
+            async signInWithCustomToken(token) { signedIn++; user = { uid: token.replace(/^custom-/, ''), getIdToken: async () => 'x' }; },
+        }),
+    };
+    localStorage.setItem('userId', STORED); // its session is gone (cleared site data)
+    try {
+        const fc = await import('../public/js/firebase-client.js?rate-limited');
+        routes = { '/api/auth': () => LIMIT };
+        calls.length = 0;
+        await assert.rejects(fc.authenticateWithFirebase());
+        assert.equal(calls.length, 1, 'one request, no retry loop');
+        assert.equal(signedIn, 0, 'no Firebase sign-in without a token');
+        assert.equal(localStorage.getItem('userId'), STORED, 'the stored ID is kept for the next start');
+
+        // Per-user calls fail the same way instead of hanging or looping.
+        const { apiFetch } = await import('../public/js/api.js');
+        calls.length = 0;
+        await assert.rejects(apiFetch((uid) => [`/api/favorites/${uid}`]));
+        assert.deepEqual(calls.map(c => c.url), ['/api/auth'], 'nothing is sent without a session');
+
+        // The limit is over: the next attempt is not stuck on the failure.
+        routes = { '/api/auth': () => [200, { token: `custom-${NEW_ID}`, userId: NEW_ID }] };
+        calls.length = 0;
+        assert.equal(await fc.authenticateWithFirebase(), true);
+        assert.equal(calls.length, 1);
+        assert.equal(localStorage.getItem('userId'), NEW_ID);
+    } finally {
+        globalThis.firebase = saved;
+        console.error = savedError;
+    }
+});
