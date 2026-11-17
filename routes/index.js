@@ -38,7 +38,7 @@ const securityHeaders = createSecurityHeaders();
 /**
  * Address the server listens on: 127.0.0.1 unless HOST says otherwise, so a
  * dev server is not reachable from the school Wi-Fi. HOST=0.0.0.0 opens it
- * to the network (the Docker image and deploy/lepsi-rozvrh.service set it).
+ * to the network (the Docker image sets it inside the container).
  * On Vercel the platform runs the server; it keeps listening as before.
  */
 function listenHost(env = process.env) {

@@ -18,9 +18,12 @@ WorkingDirectory=/srv/lepsi-rozvrh
 EnvironmentFile=/srv/lepsi-rozvrh/.env
 Environment=NODE_ENV=production
 Environment=TZ=Europe/Prague
-# The server's default is 127.0.0.1. Every interface, as before; with nginx on
-# this machine (deploy/nginx.conf.example) HOST=127.0.0.1 is enough.
-Environment=HOST=0.0.0.0
+# Behind nginx on this machine (deploy/nginx.conf.example proxies to
+# 127.0.0.1:3000): only reachable through it, and the client address for the
+# rate limits comes from its X-Real-IP. Never TRUST_PROXY=1 with the port
+# reachable from the network: anybody could then pick their own address.
+Environment=HOST=127.0.0.1
+Environment=TRUST_PROXY=1
 ExecStart=/usr/bin/node index.js
 Restart=always
 RestartSec=5

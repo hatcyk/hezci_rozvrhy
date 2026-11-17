@@ -441,9 +441,9 @@ lze `FIREBASE_SERVICE_ACCOUNT_PATH`). Navíc:
 | Proměnná | Význam |
 |---|---|
 | `PORT` | port aplikace (výchozí 3000) |
-| `HOST` | adresa, na které server poslouchá: výchozí `127.0.0.1` (jen tento počítač), `0.0.0.0` = celá síť. Obraz Dockeru a `deploy/lepsi-rozvrh.service` nastavují `0.0.0.0` samy |
+| `HOST` | adresa, na které server poslouchá: výchozí `127.0.0.1` (jen tento počítač), `0.0.0.0` = celá síť. Obraz Dockeru nastavuje `0.0.0.0` (uvnitř kontejneru; ven jen `127.0.0.1:3000` podle `docker-compose.yml`), `deploy/lepsi-rozvrh.service` `127.0.0.1` (nginx na stejném stroji) |
 | `CORS_ORIGINS` | doména serveru, např. `https://rozvrh.skola.cz` |
-| `TRUST_PROXY=1` | jen za vlastní reverzní proxy: IP z `X-Forwarded-For` pro limit pokusů a audit administrace |
+| `TRUST_PROXY=1` | jen za vlastní reverzní proxy: IP klienta z `X-Real-IP` (případně `X-Forwarded-For`) pro limity (administrace, noví uživatelé) a audit. `docker-compose.yml` i `deploy/lepsi-rozvrh.service` ho nastavují, protože obě varianty stojí za nginx (`deploy/nginx.conf.example` obě hlavičky přepíše na adresu, kterou vidí). **Bez proxy (port vystavený přímo) ho nastavit nesmíš:** hlavičky by si poslal kdokoli sám a obešel by limity. Jiná proxy musí `X-Real-IP` přepisovat, ne jen předávat (Apache `mod_proxy`, HAProxy `option forwardfor` ani Caddy to samy nedělají) |
 | `RUN_TRIGGER=cron` | označení běhů v `runs` (nastavuje ho `deploy/crontab.example`) |
 
 `.env` ani servisní účet nikdy necommituj (jsou v `.gitignore`).
@@ -459,6 +459,9 @@ docker compose up -d --build
 
 Kontejner poslouchá na `127.0.0.1:3000`, před něj patří reverzní proxy s TLS
 (vzor `deploy/nginx.conf.example`). Obraz má healthcheck na `/api/status`.
+`docker-compose.yml` nastavuje `TRUST_PROXY=1`: IP klienta pro limity bere
+z hlavičky proxy. Když port vystavíš přímo (`"3000:3000"`, bez proxy),
+`TRUST_PROXY` odstraň, jinak by si kdokoli poslal vlastní adresu.
 Při použití souboru se servisním účtem nech v `docker-compose.yml`
 odkomentovaný volume, jinak ho smaž a vyplň `FIREBASE_SERVICE_ACCOUNT`.
 
@@ -474,6 +477,10 @@ sudo chown -R rozvrh:rozvrh /srv/lepsi-rozvrh
 sudo cp deploy/lepsi-rozvrh.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now lepsi-rozvrh
 ```
+
+Služba poslouchá jen na `127.0.0.1:3000` s `TRUST_PROXY=1`; před ni patří
+nginx na stejném stroji podle `deploy/nginx.conf.example`. Bez proxy (port
+vystavený přímo, `HOST=0.0.0.0`) `TRUST_PROXY` nastavit nesmíš.
 
 ### 2.5 Plánované úlohy
 

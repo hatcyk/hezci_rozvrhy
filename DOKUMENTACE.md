@@ -284,7 +284,8 @@ Těla se validují v `routes/validation.js`.
   všem) jen s `DEBUG=true`, mimo produkci a z adresy soketu `127.0.0.1`/`::1`
   (ne z `X-Forwarded-For`); jinak 404 jako neexistující cesta. Server
   poslouchá ve výchozím stavu jen na `127.0.0.1`, do sítě až s `HOST=0.0.0.0`
-  (nastavuje ho obraz Dockeru a `deploy/lepsi-rozvrh.service`).
+  (nastavuje ho obraz Dockeru uvnitř kontejneru; `deploy/lepsi-rozvrh.service`
+  zůstává na `127.0.0.1` za nginx).
 - **Firestore:** prohlížeč jen čte veřejná data a vlastní `users/{uid}`.
 - **Tajemství** (`.env`, servisní účet) jsou v `.gitignore`; vzor proměnných je
   `.env.example`.

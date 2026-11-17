@@ -142,12 +142,36 @@ test('server poslouchá ve výchozím stavu jen na 127.0.0.1, LAN až s HOST=0.0
     assert.doesNotMatch(index, /HOST\s*=\s*['"]0\.0\.0\.0['"]/);
 });
 
-test('kontejner a služba systemd dál poslouchají na všech rozhraních (HOST=0.0.0.0)', () => {
+test('vlastní server za nginx: kontejner na všech rozhraních, služba systemd jen lokálně, obě s TRUST_PROXY=1', () => {
     const ROOT = path.join(__dirname, '..');
     const read = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
     // Docker publishes the port from outside the container: 127.0.0.1 inside
-    // would make it unreachable.
+    // would make it unreachable. Who reaches it decides `ports` (localhost only).
     assert.match(read('Dockerfile'), /^ENV HOST=0\.0\.0\.0$/m);
-    assert.match(read('docker-compose.yml'), /^\s+HOST: ["']?0\.0\.0\.0["']?$/m);
-    assert.match(read('deploy/lepsi-rozvrh.service'), /^Environment=HOST=0\.0\.0\.0$/m);
+    const compose = read('docker-compose.yml');
+    assert.match(compose, /^\s+HOST: ["']?0\.0\.0\.0["']?$/m);
+    assert.match(compose, /^\s+- "127\.0\.0\.1:3000:3000"$/m, 'the port is not exposed past the proxy');
+    assert.match(compose, /^\s+TRUST_PROXY: ["']1["']$/m);
+    // systemd: nginx on the same machine, so the port is not reachable around it
+    // (with TRUST_PROXY=1 a reachable port would let anybody pick their IP).
+    const unit = read('deploy/lepsi-rozvrh.service');
+    assert.match(unit, /^Environment=HOST=127\.0\.0\.1$/m);
+    assert.match(unit, /^Environment=TRUST_PROXY=1$/m);
+    // nginx sets both headers to the address it sees; the client's own values never pass.
+    const nginx = read('deploy/nginx.conf.example');
+    assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:3000;/);
+    assert.match(nginx, /^\s+proxy_set_header X-Real-IP\s+\$remote_addr;$/m);
+    assert.match(nginx, /^\s+proxy_set_header X-Forwarded-For\s+\$remote_addr;$/m);
+    assert.doesNotMatch(nginx, /\$proxy_add_x_forwarded_for/);
+});
+
+test('za nginx podle vzoru si klient IP nepodvrhne (X-Real-IP i X-Forwarded-For přepíše proxy)', () => {
+    const { clientIp } = require('../routes/admin');
+    // What the app gets from deploy/nginx.conf.example for a client at 203.0.113.7
+    // that sent X-Real-IP: 1.2.3.4 and X-Forwarded-For: 1.2.3.4 itself.
+    const fromNginx = { socket: { remoteAddress: '127.0.0.1' }, headers: { 'x-real-ip': '203.0.113.7', 'x-forwarded-for': '203.0.113.7' } };
+    assert.equal(clientIp(fromNginx, { TRUST_PROXY: '1' }), '203.0.113.7');
+    // Without TRUST_PROXY (a port exposed directly) the headers are ignored.
+    const direct = { socket: { remoteAddress: '198.51.100.9' }, headers: { 'x-real-ip': '1.2.3.4', 'x-forwarded-for': '1.2.3.4' } };
+    assert.equal(clientIp(direct, {}), '198.51.100.9');
 });
