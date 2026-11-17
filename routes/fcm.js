@@ -11,7 +11,7 @@ const express = require('express');
 const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('../backend/firebase-admin-init');
 const { processPendingChanges, deriveWatchIndex } = require('../backend/fcm');
-const { requireUser, verifyCronRequest } = require('../backend/auth-middleware');
+const { requireUser, verifyCronRequest, isLegacyUserId } = require('../backend/auth-middleware');
 const { AttemptLimiter } = require('../backend/admin');
 const { validateFcmToken, validateWatchedTimetables, isPlainObject } = require('./validation');
 
@@ -62,16 +62,20 @@ async function isTokenAccepted(token) {
 }
 
 /**
- * Other users/* documents that hold the token. One device under two IDs (a
- * 1.x document left behind when the migration could not prove the old ID, an
- * ID replaced after the site data were cleared) gets every notification twice
- * and cannot switch the old one off. Best effort: without the lookup the
+ * 1.x documents (`anonymous-<ms>`) that hold the token: left behind when the
+ * migration could not prove the old ID, they keep sending to the device and
+ * the app cannot switch them off. Only these: the request proves nothing but
+ * the caller's own identity and knowledge of the token string, so documents
+ * of other `anon-<uuid>` users are never changed here (whoever knew a
+ * victim's token would otherwise switch off the victim's notifications).
+ * A token in two such documents is sent once per dispatch instead
+ * (takeUnsentTokens in backend/fcm.js). Best effort: without the lookup the
  * token is still saved.
  */
 async function otherHolders(db, userId, token) {
     try {
         const snap = await db.collection('users').where('tokens', 'array-contains', token).get();
-        return snap.docs.filter(doc => doc.id !== userId);
+        return snap.docs.filter(doc => doc.id !== userId && isLegacyUserId(doc.id));
     } catch (error) {
         console.error('FCM subscribe: lookup of other holders of the token failed:', error.message);
         return [];
@@ -96,7 +100,7 @@ router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
         const userRef = db.collection('users').doc(userId);
         const [userDoc, others] = await Promise.all([userRef.get(), otherHolders(db, userId, token)]);
 
-        // Taking the token from the others and storing it here in one batch.
+        // Taking the token from the 1.x documents and storing it here in one batch.
         const batch = db.batch();
         for (const doc of others) {
             batch.update(doc.ref, { tokens: admin.firestore.FieldValue.arrayRemove(token) });
@@ -131,7 +135,7 @@ router.post('/subscribe', requireUser, limitWrites, async (req, res) => {
         } else {
             console.log(`✅ Created new user ${userId} with FCM token`);
         }
-        if (others.length) console.log(`   Token removed from ${others.length} other user document(s)`);
+        if (others.length) console.log(`   Token removed from ${others.length} legacy user document(s)`);
 
         res.json({ success: true, message: 'Token saved successfully' });
 

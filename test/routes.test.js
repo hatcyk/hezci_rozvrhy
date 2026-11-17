@@ -216,11 +216,12 @@ test('subscribe: výpadek FCM uživatele nezablokuje, token se přijme a zaloguj
     }
 });
 
-test('subscribe: stejný token se odebere z ostatních dokumentů users (jinak upozornění chodí dvakrát)', async () => {
-    const ORPHAN = 'anonymous-1733211111111';   // left behind by a migration that did not happen
+test('subscribe: týž token se odebere jen z osiřelých dokumentů 1.x (anonymous-…), cizí anon-… zůstane netknutý', async () => {
+    const ORPHAN = 'anonymous-1733211111111';   // left behind by a migration that could not be proven
     const OTHER = 'anon-3e0a9f4b-1d4a-4f6e-8c5b-4d5e6f708192';
     db._store.set(`users/${ORPHAN}`, { tokens: ['fcm-shared', 'fcm-orphan-own'], notificationsEnabled: true, hasReminders: true });
-    db._store.set(`users/${OTHER}`, { tokens: ['fcm-shared'], notificationsEnabled: true });
+    db._store.set(`users/${OTHER}`, { tokens: ['fcm-shared'], notificationsEnabled: true, lastUpdated: '2026-11-01T00:00:00.000Z' });
+    const otherBefore = db._get(`users/${OTHER}`);
     const realBatch = db.batch;
     let commits = 0;
     db.batch = () => { const b = realBatch(); const commit = b.commit; b.commit = async () => { commits++; return commit(); }; return b; };
@@ -231,8 +232,10 @@ test('subscribe: stejný token se odebere z ostatních dokumentů users (jinak u
     }
     assert.deepEqual(db._get(`users/${C}`).tokens, ['fcm-shared']);
     assert.deepEqual(db._get(`users/${ORPHAN}`).tokens, ['fcm-orphan-own'], 'only the shared token goes');
-    assert.deepEqual(db._get(`users/${OTHER}`).tokens, []);
+    // Knowing somebody's token must not let anyone switch off their notifications.
+    assert.deepEqual(db._get(`users/${OTHER}`), otherBefore, 'another anon-<uuid> document is never written');
     assert.equal(commits, 1, 'removal and the own write in one batch');
+    db._store.delete(`users/${OTHER}`);
 });
 
 test('subscribe: když dotaz na ostatní držitele tokenu selže, token se stejně uloží', async () => {
