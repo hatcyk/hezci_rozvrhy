@@ -53,7 +53,11 @@ API nefunguje správně. Proto:
    větve (standardně `main`, ověř v Settings → Git), ale `prefetch.yml`
    (spouštěný z `main`) checkoutuje kód sběru z větve `dev` (`ref: dev`).
    Nový sběr zapisuje `weekStart`, `date`, `daysOff` a agregáty, které nový
-   frontend čte. Co způsobí, když se povede jen jedna větev, je v 1.9.
+   frontend čte. **Nový sběr nesmí běžet dřív než nový web:** starý odesílač
+   na Vercelu nezná nové typy změn (`lesson_replaced`, `lesson_restored`) a
+   poslal by upozornění s prázdným textem. Opačně (nový web, starý sběr) je
+   to v pořádku. Proto se sběr na dobu pushe pozastaví (1.8, krok 1.3). Co
+   způsobí, když se povede jen jedna větev, je v 1.9.
 3. Bundle frontendu je commitnutý; před sloučením ověř `npm run build` (nesmí
    vzniknout rozdíl), `npm test` a `npm run test:e2e`. E2E v CI běží jen na
    pull requestu (`e2e.yml`), při přímém pushi ne. Proto nejdřív otevři PR a
@@ -308,9 +312,9 @@ starým a prvním novým během se nikdy neohlásí.
 |---|---|---|---|
 | 1.1 | Ručně pustit starý sběr (Actions → Prefetch → Run workflow) a nechat doběhnout upozornění | běh zelený; ve `changes` nic se `sent == false` | — |
 | 1.2 | `git checkout -B release origin/main && git merge --no-ff origin/design-g`, pak `npm ci && npm test` | testy zelené, `git diff origin/design-g` prázdný | `git branch -D release` |
-| 1.3 | `git push --atomic origin release:main release:dev` | `git ls-remote origin main dev` = stejné SHA; Vercel: nasazení toho SHA „Ready“ na produkční doméně; `test.yml` zelené | 1.9 |
+| 1.3 | Pozastavit sběr: cron-job.org → úloha Prefetch vypnout, GitHub → Actions → *Prefetch Timetable Data* → *Disable workflow*. Pak `git push --atomic origin release:main release:dev`, počkat na nasazení na Vercelu a teprve potom workflow znovu povolit (*Enable workflow*) | `git ls-remote origin main dev` = stejné SHA; Vercel: nasazení toho SHA „Ready“ na produkční doméně; `test.yml` zelené | 1.9 |
 | 1.4 | Kontroly `curl` z 1.7 včetně kladné zkoušky cronu | `/api/auth` → `anon-…`; oblíbené 401; ladění 404; cron s tajemstvím 200; v logu „Watch index backfilled“ | — |
-| 1.5 | Ruční nový sběr č. 1, po něm č. 2 | č. 1: „Login successful“, „not compared: previous_without_week“, `runs` `status: ok`, `system/health.lastSuccessAt` čerstvé, existují `aggregates/changes_*` a `freeRooms_*`. Č. 2: porovnává, nových dokumentů `changes` je málo | — |
+| 1.5 | Ruční nový sběr č. 1, po něm č. 2 | č. 1: „Login successful“, „not compared: previous_without_week“, `runs` `status: ok`, `system/health.lastSuccessAt` čerstvé, existují `aggregates/changes_*` a `freeRooms_*`. Č. 2: porovnává, nových dokumentů `changes` je málo. Pak znovu zapnout úlohu Prefetch na cron-job.org | — |
 | 1.6 | Zařízení s 1.x a zapnutými upozorněními: otevřít aplikaci (bod z 1.7); v DevTools nový service worker a jediná mezipaměť `bakalari-shell-…` | `users/anon-…` s `migratedFrom` a tokenem; Změny a Volné učebny mají data; konzole bez chyb a 401 | — |
 | 1.7 | Pravidla a indexy (1.4, kroky 3–4) | aplikace bez `permission-denied`; v simulátoru pravidel přihlášený nečte `users/…` ani `list` na `timetables` | vložit uložená pravidla zpět |
 | 1.8 | cron-job.org: úlohy Notifikace a Upomínky (1.5, kroky 3–4); `/admin` přihlášení | historie úloh 200/202; semafor stáří dat zelený | vypnout úlohy |
@@ -337,7 +341,9 @@ Co se v okamžiku 1.3 stane uživatelům 1.x:
 
 Pořadí je podstatné:
 
-1. Pozastavit úlohu Notifikace na cron-job.org a workflow `process-notifications`.
+1. Pozastavit úlohy Notifikace a Prefetch na cron-job.org a v GitHub Actions
+   vypnout workflow *Prefetch Timetable Data* a `process-notifications`.
+   Starý web s novým sběrem by posílal upozornění s prázdným textem.
 2. Vercel → Deployments → nasazení poznamenané v kroku 0.5 → *Instant
    Rollback*. Pozor: Instant Rollback pozastaví automatické přiřazení
    produkční domény a další push do `main` se sám neprojeví, dokud návrat v
