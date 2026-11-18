@@ -1,6 +1,6 @@
 /* ==========================================================================
    Návrh G — spodní panely (Nastavení, Upozornění, Oblíbené, Přidat do kalendáře)
-   a toasty (agent V). Panely jsou sklo (g-sheet), seznamy v nich plné řádky
+   a toasty. Panely jsou sklo (g-sheet), seznamy v nich plné řádky
    jako seskupené seznamy v iOS. Přepínač .g-switch, poznámka .sheet-note.
    ========================================================================== */
 @layer views {
