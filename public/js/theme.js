@@ -142,7 +142,7 @@ export function initThemeToggle() {
     }
 }
 
-// agent V: režim vzhledu v Nastavení (Systém / Světlý / Tmavý), používá settings.js
+// Režim vzhledu v Nastavení (Systém / Světlý / Tmavý), používá settings.js
 
 /** Appearance mode: the saved 'light' / 'dark', or 'system' when nothing is saved. */
 export function getThemeMode() {
