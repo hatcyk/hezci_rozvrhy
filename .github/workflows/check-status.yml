@@ -29,7 +29,9 @@ jobs:
           # --fail-with-body: exit 22 on HTTP >= 400 but still print the JSON
           # (dataAgeMin, lastStatus, lastError) into the log.
           # --retry also retries 503, so a blip right at a deploy is not an alert.
-          curl --fail-with-body -sS \
+          # -L --max-redirs 0: a redirect (VERCEL_URL still on an old domain that
+          # now redirects) is exit 47, not a green run that checked nothing.
+          curl --fail-with-body -sS -L --max-redirs 0 \
             --connect-timeout 10 --max-time 30 \
             --retry 2 --retry-delay 20 \
             -H "Accept: application/json" \

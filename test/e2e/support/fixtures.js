@@ -116,4 +116,4 @@ async function axeViolations(page, { include } = {}) {
   }));
 }
 
-module.exports = { test, expect, axeViolations, school, NOW, HEALTHY, LESSON, USER_ID };
+module.exports = { test, expect, axeViolations, apiResponse, school, NOW, HEALTHY, LESSON, USER_ID };

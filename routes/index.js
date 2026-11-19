@@ -12,15 +12,22 @@ const path = require('path');
 const { createSecurityHeaders } = require('../backend/security-headers');
 
 const DEFAULT_CORS_ORIGINS = [
-    'https://spsd-rozvrhy.vercel.app',
     'http://localhost:3000',
     'http://127.0.0.1:3000',
 ];
 
 /**
- * Allowed browser origins: CORS_ORIGINS (comma separated) or the defaults.
- * cors() used to answer every origin with "*", so any website could call the
- * API from its visitors' browsers.
+ * Allowed FOREIGN browser origins: CORS_ORIGINS (comma separated) or the
+ * defaults. cors() used to answer every origin with "*", so any website could
+ * call the API from its visitors' browsers.
+ *
+ * The app's own pages never need to be listed, whatever domain serves them
+ * (*.vercel.app, a custom domain, both at once): their requests are
+ * same-origin, the browser applies no CORS check to them, and cors() only
+ * adds headers, it never refuses a request. So the server does not need to
+ * know its own address and reads neither Host nor X-Forwarded-Host here
+ * (Host is whatever a non-browser client sends, X-Forwarded-Host too unless
+ * a proxy in front overwrites it).
  */
 function parseCorsOrigins(value = process.env.CORS_ORIGINS) {
     if (!value || !value.trim()) return DEFAULT_CORS_ORIGINS.slice();
