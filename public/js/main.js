@@ -4,10 +4,10 @@ import { initTheme, initThemeToggle } from './theme.js';
 import { initModalListeners } from './modal.js';
 import { loadTimetable, populateValueSelect } from './timetable.js';
 import { fetchDefinitions, fetchBackendStatus } from './api.js';
-import { initCustomDropdown, setDropdownValue, refreshDropdownHeartIndicator } from './dropdown.js';
+import { initCustomDropdown, setDropdownValue, getDropdownValue, refreshDropdownHeartIndicator } from './dropdown.js';
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek, setPressed } from './utils.js';
 import { initSunData } from './suntime.js';
-import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime, isFirebaseSdkLoaded, FIREBASE_UNAVAILABLE_MESSAGE } from './firebase-client.js';
+import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime, isFirebaseSdkLoaded, FIREBASE_UNAVAILABLE_MESSAGE, withTimeout, isTimeout, STEP_LIMITS, TIMEOUT_MESSAGE } from './firebase-client.js';
 import { registerServiceWorker, initializeMessaging, reconcileLessonReminderToken, initNotificationButton, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
@@ -253,11 +253,12 @@ async function init() {
         // Initialize custom dropdown
         initCustomDropdown(loadTimetable);
 
-        // Fetch definitions and check data freshness in parallel
+        // Fetch definitions and check data freshness in parallel. Favourites
+        // (an API call) must not hold the timetable up when they hang.
         const [definitions, backendStatus] = await Promise.all([
             fetchDefinitions(),
             fetchBackendStatus(),
-            loadFavorites()
+            withTimeout(loadFavorites(), STEP_LIMITS.read).catch(() => console.warn('Favourites still loading, continuing without them')),
         ]);
 
         updateState('definitions', definitions);
@@ -364,11 +365,13 @@ async function init() {
         if (dom.errorDiv) {
             // Without the Firebase SDK (blocked script, no connection on first
             // visit) say what to do instead of a generic failure
-            dom.errorDiv.textContent = isFirebaseSdkLoaded()
-                ? 'Nepodařilo se načíst rozvrhy. Zkuste stránku obnovit.'
-                : FIREBASE_UNAVAILABLE_MESSAGE;
+            dom.errorDiv.textContent = !isFirebaseSdkLoaded() ? FIREBASE_UNAVAILABLE_MESSAGE
+                : isTimeout(e) ? TIMEOUT_MESSAGE
+                    : 'Nepodařilo se načíst rozvrhy. Zkuste to prosím znovu.';
             dom.errorDiv.classList.remove('hidden');
         }
+        // No endless "Načítám…" next to the error
+        if (dom.valueDropdownLabel && !getDropdownValue()) dom.valueDropdownLabel.textContent = 'Nenačteno';
     }
 }
 

@@ -2,7 +2,7 @@
  * API Layer - reads from Firebase instead of Bakalari API directly
  */
 
-import { fetchDefinitionsFromFirebase, fetchTimetableFromFirebase, fetchAggregateFromFirebase, watchAggregateFromFirebase, authenticateWithFirebase, getIdToken, getCurrentUserId } from './firebase-client.js';
+import { fetchDefinitionsFromFirebase, fetchTimetableFromFirebase, fetchAggregateFromFirebase, watchAggregateFromFirebase, authenticateWithFirebase, getIdToken, getCurrentUserId, withTimeout, isTimeout, STEP_LIMITS } from './firebase-client.js';
 import { setCache, getCacheEvenExpired, getCacheAge, TTL } from './cache.js';
 import { setOfflineMode, isOffline } from './offline.js';
 
@@ -94,6 +94,8 @@ export async function fetchDefinitions() {
             return cached;
         }
 
+        // No answer in time: the error says so (main.js shows TIMEOUT_MESSAGE)
+        if (isTimeout(error)) throw error;
         throw new Error('Nepodařilo se načíst seznamy z Firebase');
     }
 }
@@ -282,18 +284,21 @@ export function clearSessionCache() {
  * @returns {Promise<{ isHealthy: boolean, dataAgeMin: number|null, lastSuccessAt: string|null, lastStatus: string|null }>}
  */
 export async function fetchBackendStatus() {
+    // The start waits for this answer too: a hang counts as "unreachable"
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
     try {
-        const response = await fetch('/api/status', {
+        const request = fetch('/api/status', {
             method: 'GET',
-            cache: 'no-store'
-        });
+            cache: 'no-store',
+            ...(controller ? { signal: controller.signal } : {}),
+        }).then(async (response) => ({ response, data: response.ok ? await response.json() : null }));
+        const { response, data } = await withTimeout(request, STEP_LIMITS.read);
 
         if (!response.ok) {
             console.error('⚠️ Failed to fetch backend status');
             return { isHealthy: true, dataAgeMin: null, lastSuccessAt: null };
         }
 
-        const data = await response.json();
         return {
             isHealthy: data.isHealthy !== false,
             dataAgeMin: Number.isFinite(data.dataAgeMin) ? data.dataAgeMin : null,
@@ -301,6 +306,7 @@ export async function fetchBackendStatus() {
             lastStatus: typeof data.lastStatus === 'string' ? data.lastStatus : null,
         };
     } catch (error) {
+        if (controller && isTimeout(error)) controller.abort();
         console.error('⚠️ Backend status check failed:', error.message);
         return { isHealthy: true, dataAgeMin: null, lastSuccessAt: null };
     }
