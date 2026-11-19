@@ -11,7 +11,7 @@
  * and blur costs a lot on cheap players), type sized by the screen height.
  */
 
-import { watchAggregate, fetchBackendStatus } from './api.js';
+import { watchAggregate, storedAggregate, fetchBackendStatus } from './api.js';
 import { boardDayOptions, pickBoardDate, boardEntries, groupByClass, dayLabel, czPlural, freshnessText } from './changes-core.js';
 import { briefHtml, afterHtml, hourHtml, kindTone } from './changes-render.js';
 import { KIOSK_SWITCH_AT, KIOSK_LOAD_TIMEOUT_MS, msUntilNightlyReload, lessonNowText, clockText, nextScroll, emptyBoardState } from './kiosk-core.js';
@@ -219,8 +219,13 @@ export function startKiosk() {
     const failed = () => { load.failed = true; render(); };
     watchAggregate('changes_Actual', (v) => { aggs.Actual = v; render(); }, failed);
     watchAggregate('changes_Next', (v) => { aggs.Next = v; render(); }, failed);
-    // A stuck connection answers neither with data nor with an error
-    setTimeout(() => { load.timedOut = true; render(); }, KIOSK_LOAD_TIMEOUT_MS);
+    // A stuck connection answers neither with data nor with an error: show the stored copy, if any
+    setTimeout(() => {
+        load.timedOut = true;
+        if (!aggs.Actual) aggs.Actual = storedAggregate('changes_Actual');
+        if (!aggs.Next) aggs.Next = storedAggregate('changes_Next');
+        render();
+    }, KIOSK_LOAD_TIMEOUT_MS);
     refreshStatus();
     setInterval(() => { if (!document.hidden) refreshStatus(); }, 5 * 60 * 1000);
 

@@ -159,6 +159,17 @@ const aggregateSession = new Map(); // id -> { value, at }
 const AGGREGATE_SESSION_MS = 2 * 60 * 1000;
 
 /**
+ * The last copy of aggregates/{id} stored in this browser, or null.
+ * @param {string} id
+ * @returns {{ data: object, fromCache: true, cacheAgeMs: number|null } | null}
+ */
+export function storedAggregate(id) {
+    const cached = getCacheEvenExpired(aggregateKey(id));
+    if (cached === null || cached === undefined) return null;
+    return { data: cached, fromCache: true, cacheAgeMs: getCacheAge(aggregateKey(id)) };
+}
+
+/**
  * Read aggregates/{id} with the same offline fallback as timetables: the last
  * copy stays in localStorage, so the changes board and free rooms still open
  * without a connection (with a note how old the data are).
@@ -170,11 +181,7 @@ export async function fetchAggregate(id, { fresh = false } = {}) {
     const hit = aggregateSession.get(id);
     if (!fresh && hit && Date.now() - hit.at < AGGREGATE_SESSION_MS) return hit.value;
 
-    const fromCache = () => {
-        const cached = getCacheEvenExpired(aggregateKey(id));
-        if (cached === null || cached === undefined) return null;
-        return { data: cached, fromCache: true, cacheAgeMs: getCacheAge(aggregateKey(id)) };
-    };
+    const fromCache = () => storedAggregate(id);
 
     if (!navigator.onLine) {
         const cached = fromCache();

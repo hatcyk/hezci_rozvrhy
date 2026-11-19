@@ -40,3 +40,15 @@ test.describe('Chybějící nebo nedostupný agregát', () => {
     });
   }
 });
+
+test('kiosk: Firestore neodpoví, ale prohlížeč má uloženou kopii → po časovém limitu tabule z ní', async ({ page, app }) => {
+  const cached = (id) => JSON.stringify({ data: app.school.docs[`aggregates/${id}`], timestamp: Date.parse('2026-11-04T07:00:00+01:00'), ttl: 600000 });
+  await page.clock.install({ time: new Date('2026-11-04T08:20:00+01:00') });
+  await app.open('/?kiosk=changes', {
+    stalled: ['aggregates/changes_Actual', 'aggregates/changes_Next'],
+    storage: { bakalari_cache_aggregate_changes_Actual: cached('changes_Actual'), bakalari_cache_aggregate_changes_Next: cached('changes_Next') },
+  });
+  await expect(page.locator('#kioskBoard')).toContainText('Načítám změny');
+  await page.clock.runFor(16_000);
+  await expect(page.locator('.k-row').first()).toBeVisible();
+});
