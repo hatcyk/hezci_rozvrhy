@@ -2,7 +2,7 @@
  * API Layer - reads from Firebase instead of Bakalari API directly
  */
 
-import { fetchDefinitionsFromFirebase, fetchTimetableFromFirebase, fetchAggregateFromFirebase, watchAggregateFromFirebase, authenticateWithFirebase, getIdToken, getCurrentUserId } from './firebase-client.js';
+import { fetchDefinitionsFromFirebase, fetchTimetableFromFirebase, fetchAggregateFromFirebase, watchAggregateFromFirebase, authenticateWithFirebase, getIdToken, getCurrentUserId, withTimeout, isTimeout, STEP_LIMITS } from './firebase-client.js';
 import { setCache, getCacheEvenExpired, getCacheAge, TTL } from './cache.js';
 import { setOfflineMode, isOffline } from './offline.js';
 
@@ -49,6 +49,34 @@ const sessionCache = {
 const DEFINITIONS_KEY = 'definitions';
 const timetableKey = (type, id, scheduleType) => `timetable_${type}_${id}_${scheduleType}`;
 
+/*
+ * Start: Firestore reads need the signed-in session (contract S1), but the
+ * saved copy of the last timetable can be on screen before that. While
+ * main.js signs in, reads wait here; callers that render the saved
+ * timetable right away (`early`) take the saved copy instead and are
+ * refreshed by main.js once the sign-in is over.
+ */
+let signInGate = null;
+
+/** Reads wait for `promise` (the sign-in; it must not reject for good). */
+export function holdReadsUntil(promise) {
+    const gate = Promise.resolve(promise).catch(() => {}).then(() => {
+        if (signInGate === gate) signInGate = null;
+    });
+    signInGate = gate;
+    return gate;
+}
+
+/** Saved definitions (any age) or null - for the first paint, no network. */
+export function cachedDefinitions() {
+    return getCacheEvenExpired(DEFINITIONS_KEY);
+}
+
+/** Saved copy of a timetable (any age) or null - for the first paint, no network. */
+export function cachedTimetable(type, id, scheduleType) {
+    return getCacheEvenExpired(timetableKey(type, id, scheduleType));
+}
+
 /**
  * Fetch definitions (classes, teachers, rooms) from Firebase
  * Falls back to localStorage cache when offline.
@@ -70,6 +98,8 @@ export async function fetchDefinitions() {
             return cached;
         }
     }
+
+    if (signInGate) await signInGate;
 
     try {
         const definitions = await fetchDefinitionsFromFirebase();
@@ -94,6 +124,8 @@ export async function fetchDefinitions() {
             return cached;
         }
 
+        // No answer in time: the error says so (main.js shows TIMEOUT_MESSAGE)
+        if (isTimeout(error)) throw error;
         throw new Error('Nepodařilo se načíst seznamy z Firebase');
     }
 }
@@ -102,7 +134,7 @@ export async function fetchDefinitions() {
  * Fetch timetable from Firebase
  * Falls back to localStorage cache when offline.
  */
-export async function fetchTimetable(type, id, scheduleType, date = null) {
+export async function fetchTimetable(type, id, scheduleType, date = null, { early = false, noWait = false } = {}) {
     const sessionKey = `${type}_${id}_${scheduleType}_${date || 'current'}`;
     const persistKey = timetableKey(type, id, scheduleType);
 
@@ -121,6 +153,15 @@ export async function fetchTimetable(type, id, scheduleType, date = null) {
             setOfflineMode(true, getCacheAge(persistKey));
             return cached;
         }
+    }
+
+    if (signInGate) {
+        // Not kept in the session cache: the refresh after the sign-in reads Firestore
+        const saved = early ? getCacheEvenExpired(persistKey) : null;
+        if (saved) return saved;
+        // noWait: an optional extra of the first paint (next week in the overview) - not now
+        if (early && noWait) throw new Error('Rozvrh se načte po přihlášení.');
+        await signInGate;
     }
 
     try {
@@ -174,10 +215,12 @@ export function storedAggregate(id) {
  * copy stays in localStorage, so the changes board and free rooms still open
  * without a connection (with a note how old the data are).
  * @param {string} id - changes_Actual | changes_Next | freeRooms_Actual | freeRooms_Next
- * @param {{ fresh?: boolean }} [opts] - skip the 2-minute session cache
+ * @param {{ fresh?: boolean, early?: boolean }} [opts] - skip the 2-minute session cache;
+ *   early: during the sign-in the saved copy, or no data at all, right away
+ *   (the overview tile; it is refreshed after the sign-in)
  * @returns {Promise<{ data: object|null, fromCache: boolean, cacheAgeMs: number|null }>}
  */
-export async function fetchAggregate(id, { fresh = false } = {}) {
+export async function fetchAggregate(id, { fresh = false, early = false } = {}) {
     const hit = aggregateSession.get(id);
     if (!fresh && hit && Date.now() - hit.at < AGGREGATE_SESSION_MS) return hit.value;
 
@@ -186,6 +229,11 @@ export async function fetchAggregate(id, { fresh = false } = {}) {
     if (!navigator.onLine) {
         const cached = fromCache();
         if (cached) return cached;
+    }
+
+    if (signInGate) {
+        if (early) return fromCache() || { data: null, fromCache: true, cacheAgeMs: null };
+        await signInGate;
     }
 
     try {
@@ -297,18 +345,21 @@ export function clearSessionCache() {
  * @returns {Promise<{ isHealthy: boolean, dataAgeMin: number|null, lastSuccessAt: string|null, lastStatus: string|null }>}
  */
 export async function fetchBackendStatus() {
+    // The start waits for this answer too: a hang counts as "unreachable"
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
     try {
-        const response = await fetch('/api/status', {
+        const request = fetch('/api/status', {
             method: 'GET',
-            cache: 'no-store'
-        });
+            cache: 'no-store',
+            ...(controller ? { signal: controller.signal } : {}),
+        }).then(async (response) => ({ response, data: response.ok ? await response.json() : null }));
+        const { response, data } = await withTimeout(request, STEP_LIMITS.read);
 
         if (!response.ok) {
             console.error('⚠️ Failed to fetch backend status');
             return { isHealthy: true, dataAgeMin: null, lastSuccessAt: null };
         }
 
-        const data = await response.json();
         return {
             isHealthy: data.isHealthy !== false,
             dataAgeMin: Number.isFinite(data.dataAgeMin) ? data.dataAgeMin : null,
@@ -316,6 +367,7 @@ export async function fetchBackendStatus() {
             lastStatus: typeof data.lastStatus === 'string' ? data.lastStatus : null,
         };
     } catch (error) {
+        if (controller && isTimeout(error)) controller.abort();
         console.error('⚠️ Backend status check failed:', error.message);
         return { isHealthy: true, dataAgeMin: null, lastSuccessAt: null };
     }

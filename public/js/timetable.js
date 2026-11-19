@@ -44,6 +44,16 @@ function ensureSkeletonElement() {
     return el;
 }
 
+/** Zástupné bloky hned po spuštění (první návštěva: zatím nic uloženého). */
+export function showLoadingSkeleton() {
+    showSkeleton();
+}
+
+/** Start se nepovedl: místo zástupných bloků jen chybová hláška. */
+export function hideLoadingSkeleton() {
+    hideSkeleton();
+}
+
 function showSkeleton() {
     const el = ensureSkeletonElement();
     if (!el) return;
@@ -170,9 +180,16 @@ export async function selectDay(index) {
 export function renderTimetable() {}
 
 let loadSeq = 0;
+let shownKey = ''; // type|id|týden vykresleného rozvrhu
 
-// Load timetable
-export async function loadTimetable() {
+/**
+ * Load timetable
+ * @param {{ early?: boolean, keepShown?: boolean }} [opts]
+ *   early: start of the app - the saved copy is fine until the sign-in is over;
+ *   keepShown: refresh of the timetable already on screen - it stays there
+ *   (no skeleton, no empty grid) and is re-rendered only when the data changed.
+ */
+export async function loadTimetable({ early = false, keepShown = false } = {}) {
     if (!dom.errorDiv || !dom.timetableGrid) {
         console.error('Required DOM elements not found');
         return;
@@ -193,10 +210,16 @@ export async function loadTimetable() {
         localStorage.setItem('selectedValue', id);
     } catch { /* storage blocked */ }
 
+    const key = `${state.selectedType}|${id}|${state.selectedScheduleType}`;
+    const inPlace = keepShown && shownKey === key && dom.timetableGrid.childElementCount > 0;
+
     dom.errorDiv.classList.add('hidden');
-    dom.timetableGrid.innerHTML = '';
-    showSkeleton();
-    document.dispatchEvent(new CustomEvent('timetableloading'));
+    if (!inPlace) {
+        shownKey = '';
+        dom.timetableGrid.innerHTML = '';
+        showSkeleton();
+        document.dispatchEvent(new CustomEvent('timetableloading'));
+    }
 
     try {
         // The current Monday is only part of the session-cache key, so a tab left
@@ -204,7 +227,7 @@ export async function loadTimetable() {
         const monday = getMondayOfWeek(0);
         const dateParam = monday.toISOString().split('T')[0]; // Format: YYYY-MM-DD
 
-        const data = await fetchTimetable(state.selectedType, id, state.selectedScheduleType, dateParam);
+        const data = await fetchTimetable(state.selectedType, id, state.selectedScheduleType, dateParam, { early });
         if (superseded()) return;
 
         // Filter out "empty" absent lessons (placeholders)
@@ -219,15 +242,18 @@ export async function loadTimetable() {
             return true;
         });
 
+        // Same data as on screen: nothing to redraw (focus, scroll and the open day stay)
+        const unchanged = inPlace && JSON.stringify(filteredData) === JSON.stringify(state.currentTimetableData);
         updateState('currentTimetableData', filteredData);
         hideSkeleton();
-        createDaySelector();
-
-        // Reset card view index when switching timetables
-        const { applyLayout, updateLayoutPreference } = await import('./layout-manager.js');
-        updateLayoutPreference('card-view', { cardIndex: 0 });
-
-        await applyLayout();
+        if (!unchanged) {
+            createDaySelector();
+            const { applyLayout, updateLayoutPreference } = await import('./layout-manager.js');
+            // Reset card view index when switching timetables (not when refreshing the shown one)
+            if (!inPlace) updateLayoutPreference('card-view', { cardIndex: 0 });
+            await applyLayout();
+        }
+        shownKey = key;
 
         // Overview, "now" card and the counts for the freshly loaded timetable
         refreshNextLessonWidget();

@@ -5,21 +5,32 @@
 
 /**
  * @param {{ docs: Record<string, object>, storage: Record<string, string>, offline: boolean, userId: string,
- *   denied?: string[], stalled?: string[] }} opts
+ *   denied?: string[], stalled?: string[], slow?: Record<string, number|'hang'>, requireSignIn?: boolean }} opts
  *   denied: dokumenty, jejichž čtení pravidla odmítnou (permission-denied);
- *   stalled: dokumenty, na které Firestore vůbec neodpoví (zaseknuté spojení)
+ *   stalled: dokumenty, na které Firestore vůbec neodpoví (zaseknuté spojení);
+ *   slow: zpoždění (ms) nebo zaseknutí ('hang') čtení dokumentu (klíč = cesta, např. 'definitions/current')
+ *   nebo přihlášení (klíč 'signIn'); časovače jdou přes setTimeout, takže je posune page.clock.
+ *   requireSignIn: čtení bez přihlášení selže jako u Firestore s pravidly (permission-denied).
  */
-function installFakeFirebase({ docs, storage, offline, userId, denied = [], stalled = [] }) {
+function installFakeFirebase({ docs, storage, offline, userId, denied = [], stalled = [], slow = {}, requireSignIn = false }) {
   const store = docs;
   const listeners = {};
   const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const snap = (p) => ({ exists: store[p] != null, data: () => clone(store[p]) });
+  const wait = (key) => {
+    const v = slow[key];
+    if (v === 'hang') return new Promise(() => {});
+    return v ? new Promise((r) => setTimeout(r, v)) : Promise.resolve();
+  };
   const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+  let signedIn = !requireSignIn;
   const ref = (p) => ({
     get: async () => {
       (window.__reads ||= []).push(p);
       if (stalled.includes(p)) return new Promise(() => {});
-      if (denied.includes(p)) throw refused();
+      await wait(p);
+      if (denied.includes(p) || !signedIn) throw refused();
+      (window.__readsDone ||= []).push(p);
       return snap(p);
     },
     onSnapshot(next, error) {
@@ -32,10 +43,14 @@ function installFakeFirebase({ docs, storage, offline, userId, denied = [], stal
   });
   const db = { collection: (c) => ({ doc: (id) => ref(`${c}/${id}`) }) };
   const user = { uid: userId, getIdToken: async () => 'e2e-id-token' };
+  const auth = {
+    signInWithCustomToken: async () => { await wait('signIn'); signedIn = true; return { user }; },
+    get currentUser() { return signedIn ? user : null; },
+  };
   window.firebase = {
     initializeApp: () => ({}),
     firestore: () => db,
-    auth: () => ({ signInWithCustomToken: async () => ({ user }), currentUser: user }),
+    auth: () => auth,
   };
   // Pomocníci pro testy: změna dokumentu „na serveru“ (doručí onSnapshot) a počet odběrů
   window.__fakeSet = (p, data) => { store[p] = data; (listeners[p] || []).forEach(fn => fn(snap(p))); };

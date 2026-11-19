@@ -45,11 +45,29 @@
             } catch (e) { /* service workers unavailable (blocked storage) */ }
         })();
     </script>
+    <!-- Connections for the sign-in and the first reads, opened while the SDK still downloads.
+         crossorigin: both are CORS requests without cookies, which use the anonymous connection pool -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+    <script>
+        // First visit (no saved identity): ask /api/auth for one now, in parallel with the Firebase SDK
+        // download. The same request firebase-client.js would send later (no ID, no token), only earlier;
+        // it takes this answer instead (and its own limit and retry, public/js/firebase-client.js).
+        (function () {
+            try {
+                if (localStorage.getItem('userId') || !window.fetch || !window.AbortController) return;
+                var controller = new AbortController();
+                var response = fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}', signal: controller.signal });
+                response.catch(function () { /* handled where it is used */ });
+                window.__authEarly = { response: response, abort: function () { controller.abort(); } };
+            } catch (e) { /* storage blocked: the app asks by itself */ }
+        })();
+    </script>
     <link rel="apple-touch-icon" href="icon-180.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Rozvrhy">
-    <link rel="stylesheet" href="css/app.css?v=da8db543ff">
+    <link rel="stylesheet" href="css/app.css?v=acb7e2744c">
 </head>
 <body>
 
@@ -194,6 +212,7 @@
                     <svg class="i" aria-hidden="true"><use href="icons.svg#wifi-off"></use></svg>
                     <span>Režim offline – zobrazuji uložená data</span>
                 </div>
+                <button type="button" class="g-btn g-btn--small" id="offlineRetry" hidden>Zkusit znovu</button>
             </div>
             <div id="outageBanner" class="g-banner g-banner--warn sh-banner hidden" role="status">
                 <svg class="i" aria-hidden="true"><use href="icons.svg#triangle-alert"></use></svg>
@@ -207,6 +226,7 @@
             <div class="g-banner g-banner--error sh-banner sh-banner--error" id="errorBox">
                 <svg class="i" aria-hidden="true"><use href="icons.svg#circle-alert"></use></svg>
                 <div id="error" class="error hidden" role="alert"></div>
+                <button type="button" class="g-btn g-btn--small" id="errorRetry">Zkusit znovu</button>
             </div>
         </div>
 
@@ -669,6 +689,6 @@
         });
     </script>
 
-    <script type="module" src="js/app.js?v=926e8714e6"></script>
+    <script type="module" src="js/app.js?v=75916b5bf3"></script>
 </body>
 </html>

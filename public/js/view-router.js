@@ -65,6 +65,7 @@ function applyChrome(view) {
  */
 export async function showView(view, params = {}, { history: mode = 'push', focus = true } = {}) {
     if (!VIEWS.includes(view)) view = 'timetable';
+    const from = current;
     const changed = view !== current;
     current = view;
     currentParams = { ...params };
@@ -76,7 +77,7 @@ export async function showView(view, params = {}, { history: mode = 'push', focu
 
     const handler = enterHandlers[view];
     if (handler) {
-        try { await handler(params); } catch (err) { console.error(`View ${view} failed:`, err); }
+        try { await handler(params, { from }); } catch (err) { console.error(`View ${view} failed:`, err); }
     }
 
     // Move focus to the new content so keyboard and screen reader users are

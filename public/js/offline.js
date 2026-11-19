@@ -18,6 +18,12 @@ function formatAge(ageMs) {
     return `před ${days} d`;
 }
 
+/** "dnes v 14:03" or "18. 11. v 14:03" - when saved or downloaded data are from. */
+export function whenText(at, now = new Date()) {
+    const hhmm = `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`;
+    return at.toDateString() === now.toDateString() ? `dnes v ${hhmm}` : `${at.getDate()}. ${at.getMonth() + 1}. v ${hhmm}`;
+}
+
 /**
  * Text of the "data are stale" banner from /api/status (contract S4).
  * Says how old the data are instead of a vague "outage": the backend now
@@ -43,17 +49,34 @@ export function outageBannerText(status = {}, now = new Date()) {
     const ageText = formatAge((ageMin !== null ? ageMin : Math.max(0, Math.floor((now - validAt) / 60000))) * 60000);
     if (!validAt) return partial ? `${base} Všechny byly naposledy staženy ${ageText}.` : `${base} – zobrazená data jsou stažena ${ageText}.`;
 
-    const hhmm = `${validAt.getHours()}:${String(validAt.getMinutes()).padStart(2, '0')}`;
-    const sameDay = validAt.toDateString() === now.toDateString();
-    const when = sameDay ? `dnes v ${hhmm}` : `${validAt.getDate()}. ${validAt.getMonth() + 1}. v ${hhmm}`;
+    const when = whenText(validAt, now);
     if (partial) return `${base} Všechny byly naposledy staženy ${when} (${ageText}).`;
     return `${base} – zobrazená data jsou z ${when} (${ageText}).`;
+}
+
+/**
+ * Banner text when the browser is online but the fresh data did not come (no
+ * answer within the limit, an error) and the saved copy is shown instead.
+ * @param {number|null} ageMs  age of the saved copy
+ */
+export function savedCopyText(ageMs, now = new Date()) {
+    const base = 'Aktuální data se nepodařilo načíst – zobrazuji uložený rozvrh';
+    if (ageMs == null) return `${base}.`;
+    return `${base} z ${whenText(new Date(now.getTime() - ageMs), now)}.`;
 }
 
 function renderBanner(ageMs) {
     if (!dom.offlineBanner) return;
     const span = dom.offlineBanner.querySelector('.offline-banner-content span');
     if (!span) return;
+    // Online, yet the data did not come: say from when the shown copy is and offer another try
+    const failed = navigator.onLine !== false;
+    const retry = document.getElementById('offlineRetry');
+    if (retry) retry.hidden = !failed;
+    if (failed) {
+        span.textContent = savedCopyText(ageMs);
+        return;
+    }
     const ageText = formatAge(ageMs);
     span.textContent = ageText
         ? `Režim offline — data aktualizována ${ageText}`
@@ -105,7 +128,19 @@ function handleOffline() {
     setOfflineMode(true);
 }
 
+/**
+ * "Zkusit znovu" (saved copy banner, error box): start over. The saved
+ * timetable is back on screen at once, so a reload costs no blank page.
+ */
+function initRetryButtons() {
+    for (const id of ['offlineRetry', 'errorRetry']) {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', () => window.location.reload());
+    }
+}
+
 export function initOfflineDetection() {
+    initRetryButtons();
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     if (!navigator.onLine) {

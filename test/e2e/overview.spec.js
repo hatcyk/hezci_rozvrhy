@@ -2,7 +2,7 @@
 // dělená hodina s odpadlou skupinou, data z jiného týdne, celodenní akce,
 // nenačtený rozvrh, hledání z jiného pohledu, souběh načítání, víkend,
 // historie Dne a názvy hodin pro čtečku.
-const { test, expect, school } = require('./support/fixtures');
+const { test, expect, school, NOW } = require('./support/fixtures');
 
 const KEY = 'timetables/Class_C2A_Actual';
 const WED = 2;
@@ -380,5 +380,20 @@ test.describe('Názvy hodin pro čtečku', () => {
       await expect(btn).toHaveAccessibleName(name); // viditelné zkratky se nečtou podruhé
       expect(name).not.toMatch(/, změna$|zrušeno|nekoná se/);
     }
+  });
+});
+
+test.describe('Přehled: obnovení „teď“', () => {
+  test('pravidelné obnovení hrdiny (15 s) nechá nadpis, na který sekce odkazuje (aria-labelledby)', async ({ page, app }) => {
+    await page.clock.install({ time: NOW });
+    await app.open('/', { time: null });
+    await app.timetableReady();
+    await expect(page.locator('#ovHero > h2#ovHeroLabel')).toHaveText('Teď');
+    await page.evaluate(() => { window.__big = document.querySelector('#ovHero .ov-big'); });
+    await page.clock.fastForward(16_000);
+    // hrdina se překreslil (nový prvek), sekce pořád má svůj nadpis
+    await expect.poll(() => page.evaluate(() => !!document.querySelector('#ovHero .ov-big') && window.__big !== document.querySelector('#ovHero .ov-big'))).toBe(true);
+    await expect(page.locator('#ovHero')).toHaveAttribute('aria-labelledby', 'ovHeroLabel');
+    await expect(page.locator('#ovHero > h2#ovHeroLabel')).toHaveText('Teď');
   });
 });

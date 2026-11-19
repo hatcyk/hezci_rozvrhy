@@ -2,12 +2,12 @@ import { initDOM, dom } from './dom.js';
 import { state, updateState } from './state.js';
 import { initTheme, initThemeToggle } from './theme.js';
 import { initModalListeners } from './modal.js';
-import { loadTimetable, populateValueSelect } from './timetable.js';
-import { fetchDefinitions, fetchBackendStatus } from './api.js';
-import { initCustomDropdown, setDropdownValue, refreshDropdownHeartIndicator } from './dropdown.js';
+import { loadTimetable, populateValueSelect, showLoadingSkeleton, hideLoadingSkeleton } from './timetable.js';
+import { fetchDefinitions, fetchBackendStatus, holdReadsUntil, cachedDefinitions, cachedTimetable } from './api.js';
+import { initCustomDropdown, setDropdownValue, getDropdownValue, refreshDropdownHeartIndicator } from './dropdown.js';
 import { buildTeacherAbbreviationMap, shouldAutoSwitchToNextWeek, setPressed } from './utils.js';
 import { initSunData } from './suntime.js';
-import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime, isFirebaseSdkLoaded, FIREBASE_UNAVAILABLE_MESSAGE } from './firebase-client.js';
+import { initializeFirebase, authenticateWithFirebase, getLastUpdateTime, isFirebaseSdkLoaded, FIREBASE_UNAVAILABLE_MESSAGE, withTimeout, isTimeout, STEP_LIMITS, TIMEOUT_MESSAGE } from './firebase-client.js';
 import { registerServiceWorker, initializeMessaging, reconcileLessonReminderToken, initNotificationButton, closeNotificationModal, enableNotifications, disableNotificationsHandler } from './notifications.js';
 import { initSettings } from './settings.js';
 import { initRefresh } from './refresh.js';
@@ -26,6 +26,7 @@ import { initViewRouter, onViewEnter, onViewReselect, showView } from './view-ro
 import { initTimetableTools } from './timetable-tools.js';
 import { applyLayout } from './layout-manager.js';
 import { initShell, syncScreenFromHistory, backToOverview } from './shell.js';
+import { showOverviewSkeleton } from './overview.js';
 
 /**
  * Register the views behind the navigation. They are imported on first use:
@@ -33,11 +34,12 @@ import { initShell, syncScreenFromHistory, backToOverview } from './shell.js';
  * ever looks at the timetable.
  */
 function initViews() {
-    onViewEnter('timetable', async () => {
+    onViewEnter('timetable', async (params, { from } = {}) => {
         // Phones: overview or day, as the history entry says (Back from a day)
         syncScreenFromHistory();
-        // Back from another view: re-render and catch up on "now"
-        if (state.currentTimetableData && state.currentTimetableData.length) {
+        // Back from another view: re-render and catch up on "now" (not at the
+        // start: the saved timetable on screen stays as it is)
+        if (from && from !== 'timetable' && state.currentTimetableData && state.currentTimetableData.length) {
             await applyLayout();
             refreshNextLessonWidget();
         }
@@ -185,6 +187,57 @@ function initScheduleTypeButtons() {
 // Value select handler (now handled by custom dropdown)
 // The custom dropdown will call loadTimetable on selection
 
+/**
+ * Firebase SDK + sign-in (contract S1). Never rejects: every step has its own
+ * time limit (firebase-client.js), and without Firebase the app still runs
+ * on the saved copies (offline fallback).
+ */
+async function startFirebase() {
+    try {
+        await initializeFirebase(window.firebaseConfig);
+        try {
+            await authenticateWithFirebase();
+            console.log('Firebase ready!');
+        } catch (authErr) {
+            console.warn('⚠️ Firebase auth failed — offline fallback mode:', authErr?.message || authErr);
+        }
+    } catch (initErr) {
+        console.warn('⚠️ Firebase init failed — offline fallback mode:', initErr?.message || initErr);
+    }
+}
+
+function savedSelection() {
+    try {
+        return { type: localStorage.getItem('selectedType'), value: localStorage.getItem('selectedValue') };
+    } catch {
+        return { type: null, value: null };
+    }
+}
+
+/**
+ * Repeat visit: the saved copy of the last timetable goes on screen at once,
+ * before the sign-in and the reads; init() refreshes it in place afterwards.
+ * First visit (nothing saved): skeleton of the overview and the layout.
+ * @returns {Promise<boolean>} whether the saved timetable is on screen
+ */
+async function paintSavedTimetable() {
+    const { type, value } = savedSelection();
+    const definitions = type && value ? cachedDefinitions() : null;
+    if (!definitions || !cachedTimetable(type, value, state.selectedScheduleType)) {
+        showOverviewSkeleton();
+        showLoadingSkeleton();
+        return false;
+    }
+    updateState('definitions', definitions);
+    updateState('teacherAbbreviationMap', buildTeacherAbbreviationMap(definitions.teachers || []));
+    updateState('selectedType', type);
+    updateTypeButtons();
+    populateValueSelect();
+    setDropdownValue(value);
+    await loadTimetable({ early: true });
+    return true;
+}
+
 // Initialize application
 async function init() {
     // The deferred SDK scripts have run by now. Missing after a deploy that the
@@ -215,20 +268,30 @@ async function init() {
 
         // Initialize Firebase. Both SDK init and auth require network; if they
         // fail (e.g. offline, Firebase SDK script not in SW cache), the app
-        // still boots and falls back to localStorage cache.
+        // still boots and falls back to localStorage cache. Firestore reads
+        // wait for the sign-in (contract S1); meanwhile the saved timetable is
+        // already on screen.
         console.log('Initializing Firebase...');
-        try {
-            await initializeFirebase(window.firebaseConfig);
-            try {
-                // Before any Firestore read or per-user API call (contract S1)
-                await authenticateWithFirebase();
-                console.log('Firebase ready!');
-            } catch (authErr) {
-                console.warn('⚠️ Firebase auth failed — offline fallback mode:', authErr?.message || authErr);
+        const firebaseReady = holdReadsUntil(startFirebase());
+
+        initModalListeners();
+        initCustomDropdown(loadTimetable);
+
+        // A notification deep link opens its own timetable and week; otherwise
+        // the saved one, on Friday afternoon already the next week
+        const deepLink = parseDeepLinkParams();
+        let painted = false;
+        if (!deepLink) {
+            if (shouldAutoSwitchToNextWeek() && state.selectedScheduleType === 'actual') {
+                console.log('Friday afternoon detected - auto-switching to next week');
+                updateState('selectedScheduleType', 'next');
+                updateScheduleTypeButtons();
             }
-        } catch (initErr) {
-            console.warn('⚠️ Firebase init failed — offline fallback mode:', initErr?.message || initErr);
+            try { painted = await paintSavedTimetable(); } catch (err) { console.warn('Saved timetable not shown:', err?.message || err); }
         }
+
+        // Before any per-user API call (contract S1)
+        await firebaseReady;
 
         // Cleanup old Service Workers before initializing new ones
         await cleanupOldServiceWorkers();
@@ -247,17 +310,12 @@ async function init() {
         // Initialize sun data (async, doesn't block)
         initSunData().catch(err => console.error('Failed to load sun data:', err));
 
-        // Initialize modal listeners with error handling
-        initModalListeners();
-
-        // Initialize custom dropdown
-        initCustomDropdown(loadTimetable);
-
-        // Fetch definitions and check data freshness in parallel
+        // Fetch definitions and check data freshness in parallel. Favourites
+        // (an API call) must not hold the timetable up when they hang.
         const [definitions, backendStatus] = await Promise.all([
             fetchDefinitions(),
             fetchBackendStatus(),
-            loadFavorites()
+            withTimeout(loadFavorites(), STEP_LIMITS.read).catch(() => console.warn('Favourites still loading, continuing without them')),
         ]);
 
         updateState('definitions', definitions);
@@ -316,7 +374,6 @@ async function init() {
 
         // If we were opened from a notification deep link (/?type=...&id=...),
         // honor it instead of the saved/default selection.
-        const deepLink = parseDeepLinkParams();
         if (deepLink) {
             console.log('🔗 Opening from notification deep link:', deepLink);
             await showView('timetable', {}, { history: 'none', focus: false });
@@ -334,22 +391,15 @@ async function init() {
         await showView(route.view, route.params, { history: route.view === 'timetable' ? 'none' : 'replace', focus: false });
 
         // Restore saved selection
-        const savedType = localStorage.getItem('selectedType');
-        const savedValue = localStorage.getItem('selectedValue');
-
-        // Check if we should auto-switch to next week (Friday afternoon)
-        if (shouldAutoSwitchToNextWeek() && state.selectedScheduleType === 'actual') {
-            console.log('Friday afternoon detected - auto-switching to next week');
-            updateState('selectedScheduleType', 'next');
-            updateScheduleTypeButtons();
-        }
+        const { type: savedType, value: savedValue } = savedSelection();
 
         if (savedType && savedValue) {
             updateState('selectedType', savedType);
             updateTypeButtons();
             populateValueSelect();
             setDropdownValue(savedValue);
-            await loadTimetable();
+            // The saved copy on screen is replaced in place by the fresh data
+            await loadTimetable({ keepShown: painted });
         } else {
             // Default to class ZL
             updateState('selectedType', 'Class');
@@ -364,11 +414,16 @@ async function init() {
         if (dom.errorDiv) {
             // Without the Firebase SDK (blocked script, no connection on first
             // visit) say what to do instead of a generic failure
-            dom.errorDiv.textContent = isFirebaseSdkLoaded()
-                ? 'Nepodařilo se načíst rozvrhy. Zkuste stránku obnovit.'
-                : FIREBASE_UNAVAILABLE_MESSAGE;
+            dom.errorDiv.textContent = !isFirebaseSdkLoaded() ? FIREBASE_UNAVAILABLE_MESSAGE
+                : isTimeout(e) ? TIMEOUT_MESSAGE
+                    : 'Nepodařilo se načíst rozvrhy. Zkuste to prosím znovu.';
             dom.errorDiv.classList.remove('hidden');
         }
+        // No endless "Načítám…" or skeleton next to the error
+        if (dom.valueDropdownLabel && !getDropdownValue()) dom.valueDropdownLabel.textContent = 'Nenačteno';
+        hideLoadingSkeleton();
+        const ov = document.getElementById('overview');
+        if (ov && ov.querySelector('.ov-hero--skel')) ov.innerHTML = '';
     }
 }
 

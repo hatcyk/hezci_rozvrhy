@@ -21,6 +21,44 @@ let authPromise = null;
 export const FIREBASE_UNAVAILABLE_MESSAGE =
     'Nepodařilo se připojit k databázi rozvrhů. Zkontrolujte připojení k internetu, případně vypněte blokování obsahu pro tuto stránku, a obnovte ji.';
 
+/**
+ * Every step of the start has a time limit, so a request that never answers
+ * (a proxy holding the connection, an extension, a dead Wi-Fi) cannot leave
+ * "Načítám…" on screen for good. Normal answers take well under a second
+ * (sign-in ~1 s, a read ~0.3-0.8 s); the limits only cut off a hang.
+ */
+export const STEP_LIMITS = Object.freeze({
+    authState: 5000,  // restoring the saved Firebase session
+    authFetch: 6000,  // POST /api/auth, per attempt (one retry)
+    signIn: 8000,     // signInWithCustomToken, getIdToken
+    read: 8000,       // one Firestore document (definitions, timetable, aggregate)
+});
+
+/** Shown when a step ran out of time. */
+export const TIMEOUT_MESSAGE =
+    'Server rozvrhů neodpovídá. Zkontrolujte připojení k internetu, případně vypněte blokování obsahu pro tuto stránku, a zkuste to znovu.';
+
+/**
+ * Rejects with a `code: 'timeout'` error when `promise` takes longer than
+ * `ms`. The work itself goes on (Firestore cannot be cancelled); its outcome
+ * stays in `error.pending` for callers that can still use a late answer.
+ * Plain setTimeout, so the limit also works with fake timers in tests.
+ */
+export function withTimeout(promise, ms, message = TIMEOUT_MESSAGE) {
+    let timer = null;
+    const limit = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+            const error = new Error(message);
+            error.code = 'timeout';
+            error.pending = promise;
+            reject(error);
+        }, ms);
+    });
+    return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
+export const isTimeout = (error) => !!error && error.code === 'timeout';
+
 /** True when the Firebase compat SDK scripts from index.html are loaded. */
 export function isFirebaseSdkLoaded() {
     return typeof firebase !== 'undefined' && !!firebase && typeof firebase.initializeApp === 'function';
@@ -48,6 +86,17 @@ export async function initializeFirebase(config) {
 
         // Initialize Firestore
         firestore = sdk.firestore();
+        // Long-polling auto-detection: a proxy or an antivirus that buffers the
+        // streamed answers (WebChannel) would otherwise stall every read. It is
+        // the SDK default since 9.22.0; stated here so that an SDK change
+        // cannot switch it off unnoticed. Must come before the first read.
+        if (typeof firestore.settings === 'function') {
+            try {
+                firestore.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+            } catch (err) {
+                console.warn('Firestore settings not applied:', err?.message || err);
+            }
+        }
 
         console.log('✅ Firebase Client initialized');
 
@@ -60,14 +109,14 @@ export async function initializeFirebase(config) {
 
 // Same format check as the server (backend/auth-middleware.js).
 const USER_ID_RE = /^anon-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const AUTH_STATE_TIMEOUT_MS = 5000;
 
 /**
  * Wait until Firebase has restored the session saved in the browser:
  * auth().currentUser is null until then, even for a signed-in user.
  */
 function authStateReady(auth) {
-    if (typeof auth.authStateReady === 'function') return auth.authStateReady();
+    // Past the limit the start goes on as if there were no saved session
+    if (typeof auth.authStateReady === 'function') return withTimeout(auth.authStateReady(), STEP_LIMITS.authState).catch(() => {});
     if (typeof auth.onAuthStateChanged !== 'function') return Promise.resolve();
     return new Promise((resolve) => {
         let unsubscribe = null;
@@ -79,7 +128,7 @@ function authStateReady(auth) {
             if (unsubscribe) unsubscribe();
             resolve();
         };
-        const timer = setTimeout(done, AUTH_STATE_TIMEOUT_MS);
+        const timer = setTimeout(done, STEP_LIMITS.authState);
         unsubscribe = auth.onAuthStateChanged(done, done);
         if (settled) unsubscribe();
     });
@@ -125,31 +174,22 @@ async function signIn(force = false) {
         let idToken = null;
         if (ownsStoredId) {
             try {
-                idToken = await user.getIdToken(force);
-            } catch {
-                idToken = null; // refresh failed: the server hands out a new ID
+                idToken = await withTimeout(user.getIdToken(force), STEP_LIMITS.signIn);
+            } catch (err) {
+                // No answer: give up this sign-in and keep the stored ID with its
+                // session, the next start proves it again. A refused refresh is
+                // final: the server hands out a new ID.
+                if (isTimeout(err)) throw err;
+                idToken = null;
             }
         }
-        const headers = { 'Content-Type': 'application/json' };
-        if (idToken) headers.Authorization = `Bearer ${idToken}`;
 
         // Get custom token from backend
-        const response = await fetch('/api/auth', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ userId: storedId }),
-        });
-
-        if (!response.ok) {
-            // Shown in toasts (enabling notifications): Czech, with the limit's own text on 429
-            throw await apiError(response, 'Nepodařilo se přihlásit k serveru aplikace. Zkuste to prosím znovu.');
-        }
-
-        const { token, userId, migratedFrom } = await response.json();
+        const { token, userId, migratedFrom } = await requestCustomToken(storedId, idToken);
         if (!token || !userId) throw new Error('Auth response is missing token or userId');
 
         // Sign in with custom token
-        await auth.signInWithCustomToken(token);
+        await withTimeout(auth.signInWithCustomToken(token), STEP_LIMITS.signIn);
 
         // Save the server-issued userId (it changes once when an old ID is
         // migrated) only now: while the sign-in fails, the old ID and its
@@ -166,6 +206,64 @@ async function signIn(force = false) {
         console.error('❌ Firebase authentication failed:', error);
         throw error;
     }
+}
+
+// Shown in toasts (enabling notifications): Czech, with the limit's own text on 429
+const AUTH_FAILED_MESSAGE = 'Nepodařilo se přihlásit k serveru aplikace. Zkuste to prosím znovu.';
+
+/**
+ * The /api/auth request that index.html sends on a first visit (no saved ID,
+ * nothing to prove) while the SDK still downloads: the same request as below,
+ * only earlier. Used once.
+ */
+function takeEarlyAuth() {
+    const early = typeof window !== 'undefined' ? window.__authEarly : null;
+    if (!early || !early.response) return null;
+    window.__authEarly = null;
+    return early;
+}
+
+/** One POST /api/auth (or the early one), answer and body within STEP_LIMITS.authFetch. */
+function postAuth(early, headers, body) {
+    const controller = early || typeof AbortController === 'undefined' ? null : new AbortController();
+    const request = early
+        ? early.response
+        : fetch('/api/auth', { method: 'POST', headers, body, ...(controller ? { signal: controller.signal } : {}) });
+    const read = request.then(async (response) => ({ response, data: response.ok ? await response.json() : null }));
+    return withTimeout(read, STEP_LIMITS.authFetch).catch((err) => {
+        if (isTimeout(err)) {
+            if (early && early.abort) early.abort();
+            else if (controller) controller.abort();
+        }
+        throw err;
+    });
+}
+
+/**
+ * Custom token from POST /api/auth. A hang, a dropped connection or a 5xx
+ * (cold start of the serverless function, a lost answer) gets one more try;
+ * a 4xx - the limit's 429 - is the server's answer and is not repeated.
+ */
+async function requestCustomToken(storedId, idToken) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (idToken) headers.Authorization = `Bearer ${idToken}`;
+    const body = JSON.stringify({ userId: storedId });
+    let lastError = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const early = attempt === 0 && !storedId && !idToken ? takeEarlyAuth() : null;
+        let result;
+        try {
+            result = await postAuth(early, headers, body);
+        } catch (err) {
+            lastError = isTimeout(err) ? err : new Error(AUTH_FAILED_MESSAGE);
+            continue;
+        }
+        const { response, data } = result;
+        if (response.ok) return data || {};
+        lastError = await apiError(response, AUTH_FAILED_MESSAGE);
+        if (response.status < 500) break;
+    }
+    throw lastError;
 }
 
 /**
@@ -218,7 +316,7 @@ export function getFirestore() {
 export async function fetchDefinitionsFromFirebase() {
     try {
         const db = getFirestore();
-        const doc = await db.collection('definitions').doc('current').get();
+        const doc = await withTimeout(db.collection('definitions').doc('current').get(), STEP_LIMITS.read);
 
         if (!doc.exists) {
             throw new Error('Seznam tříd, učitelů a učeben zatím není k dispozici.');
@@ -245,7 +343,7 @@ export async function fetchTimetableFromFirebase(type, id, scheduleType) {
         // Capitalize schedule type to match Firebase document keys (Actual/Permanent/Next)
         const capitalizedScheduleType = scheduleType.charAt(0).toUpperCase() + scheduleType.slice(1);
         const docKey = `${type}_${id}_${capitalizedScheduleType}`;
-        const doc = await db.collection('timetables').doc(docKey).get();
+        const doc = await withTimeout(db.collection('timetables').doc(docKey).get(), STEP_LIMITS.read);
 
         if (!doc.exists) {
             // Shown to the user (loadTimetable), so Czech and without the doc key
@@ -267,7 +365,7 @@ export async function fetchTimetableFromFirebase(type, id, scheduleType) {
  */
 export async function fetchAggregateFromFirebase(id) {
     const db = getFirestore();
-    const doc = await db.collection('aggregates').doc(id).get();
+    const doc = await withTimeout(db.collection('aggregates').doc(id).get(), STEP_LIMITS.read);
     return doc.exists ? doc.data() : null;
 }
 
@@ -290,7 +388,7 @@ export function watchAggregateFromFirebase(id, onData, onError) {
 export async function getLastUpdateTime() {
     try {
         const db = getFirestore();
-        const doc = await db.collection('metadata').doc('lastPrefetch').get();
+        const doc = await withTimeout(db.collection('metadata').doc('lastPrefetch').get(), STEP_LIMITS.read);
 
         if (!doc.exists) {
             return null;
