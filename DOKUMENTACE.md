@@ -268,7 +268,10 @@ Těla se validují v `routes/validation.js`.
   `routes/new-users.js`), aby jeden skript nenadělal stovky uživatelů
   s upomínkami. Zápisy existujících uživatelů se nepočítají; uživatel bez
   tokenu zařízení úlohu upomínek nic nestojí (přeskočí ho před čtením rozvrhu).
-- **CORS** jen pro `CORS_ORIGINS` (výchozí produkční doména a localhost:3000).
+- **CORS** jen pro cizí původy z `CORS_ORIGINS` (výchozí localhost:3000 a
+  127.0.0.1:3000 pro vývoj). Vlastní stránky volají API na svém původu a CORS
+  nepotřebují, aplikace proto běží na jakékoli doméně bez změny kódu; `Host`
+  ani `X-Forwarded-Host` server pro CORS nečte.
 - **Hlavičky** (`backend/security-headers.js` pro Express, `vercel.json` pro CDN):
   `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`,
   `X-Frame-Options: DENY`, `Content-Security-Policy-Report-Only` s hashi tří

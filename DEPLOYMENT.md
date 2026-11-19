@@ -4,7 +4,8 @@ Produkce běží na **Vercelu** (statické soubory z CDN + Express API jako
 serverless funkce), sběr dat na **GitHub Actions** a data ve **Firebase**
 (projekt `barat-bakalari`). Kapitola 1 popisuje přechod na verzi 2.0.0:
 sekce 1.1–1.7 jednotlivé části, **postup vydání krok za krokem je v 1.8**,
-návrat v 1.9. Kapitola 2 popisuje provoz na vlastním serveru.
+návrat v 1.9. Kapitola 2 popisuje provoz na vlastním serveru, kapitola 3
+vlastní doménu (např. `rozvrh.baratslab.eu`) a přechod uživatelů na ni.
 
 ## 1. Nasazení verze 2.0.0 (Vercel)
 
@@ -22,7 +23,7 @@ tytéž hodnoty patří do `.env` (vzor s komentáři je `.env.example`).
 | **`GITHUB_DISPATCH_TOKEN`** | Vercel | pro „Spustit sběr“ | fine-grained PAT jen pro tento repozitář, oprávnění **Actions: Read and write** |
 | **`GITHUB_REPO`** | Vercel | pro „Spustit sběr“ | `hatcyk/hezci_rozvrhy` |
 | `GITHUB_DISPATCH_REF`, `GITHUB_DISPATCH_WORKFLOW` | Vercel | ne | větev a workflow pro ruční sběr (výchozí `main`, `prefetch.yml`) |
-| **`CORS_ORIGINS`** | Vercel | ne | povolené původy oddělené čárkou, bez lomítka na konci; výchozí `https://spsd-rozvrhy.vercel.app,http://localhost:3000,http://127.0.0.1:3000`. Při vlastní doméně ji sem přidej. |
+| **`CORS_ORIGINS`** | Vercel | ne | **cizí** původy, které smí volat API z prohlížeče, oddělené čárkou, bez lomítka na konci; výchozí jen vývojové `http://localhost:3000,http://127.0.0.1:3000`. Doménu, na které aplikace běží (`*.vercel.app` i vlastní), sem nepiš: stránky volají API na svém původu a ten CORS nepotřebuje (kap. 3). |
 | **`ICAL_ENABLED`** | Vercel | ne | `false` vypne `/api/ical/*` (404). Výchozí zapnuto – rozhodnutí o zveřejnění strojově čitelného rozvrhu patří škole. |
 | **`SEMESTER_END`** | Vercel | ne | poslední den pololetí pro stálý rozvrh v iCal (`2027-01-31`); výchozí 31. 1. nebo 30. 6. podle data |
 | **`PREFETCH_CONCURRENCY`** | `prefetch.yml` | ne | souběžné požadavky na Bakaláře; výchozí i nastavená hodnota **3** (víc jen zatěžuje školní server) |
@@ -34,7 +35,9 @@ tytéž hodnoty patří do `.env` (vzor s komentáři je `.env.example`).
 
 GitHub → Settings → Secrets and variables → Actions potřebuje secrets
 `BAKALARI_USERNAME`, `BAKALARI_PASSWORD`, `FIREBASE_SERVICE_ACCOUNT`,
-`CRON_SECRET` a `VERCEL_URL` (např. `https://spsd-rozvrhy.vercel.app`).
+`CRON_SECRET` a `VERCEL_URL` (adresa produkce bez lomítka na konci, např.
+`https://spsd-rozvrhy.vercel.app`; přímo, ne adresa, která přesměrovává:
+`check-status.yml` a `prefetch.yml` na přesměrování selžou, kap. 3).
 
 Vercel → Settings → General → Node.js Version: **22.x** (`engines` ji vynucuje).
 
@@ -174,7 +177,7 @@ protože stará `prefetch.yml` v `main` `workflow_dispatch` přijímá.
    - tělo `{"ref":"main"}`; úspěch = HTTP 200 (`workflow_run_id`, `html_url`)
    - plán každých 15 min, Po–Pá 6–18 h, **časové pásmo Europe/Prague**
      (nastavuje se u úlohy, výchozí je UTC); druhá úloha 1× za hodinu mimo tuto dobu.
-3. Úloha **Notifikace** (po vydání): `GET https://spsd-rozvrhy.vercel.app/api/cron/process-notifications`,
+3. Úloha **Notifikace** (po vydání): `GET <VERCEL_URL>/api/cron/process-notifications`,
    hlavička `Authorization: Bearer <CRON_SECRET>`, každých 5 min.
 4. Úloha **Upomínky** (po vydání): `GET …/api/cron/lesson-reminders`, stejná
    hlavička, každou minutu, Po–Pá 7–17 h, Europe/Prague. cron-job.org čeká
@@ -245,7 +248,7 @@ Po každé změně inline skriptu v `public/index.html` spusť `npm run build`
 ### 1.7 Kontrolní seznam po nasazení
 
 ```bash
-URL=https://spsd-rozvrhy.vercel.app
+URL=https://spsd-rozvrhy.vercel.app            # po přechodu na vlastní doménu https://$DOMENA (kap. 3)
 curl -s $URL/api/status                       # po prvním sběru isHealthy: true, čerstvé lastSuccessAt
 curl -sI $URL/ | grep -iE 'content-security-policy|x-frame-options|nosniff'
 curl -s -X POST -H 'Content-Type: application/json' -d '{}' $URL/api/auth   # userId: anon-…
@@ -446,7 +449,7 @@ lze `FIREBASE_SERVICE_ACCOUNT_PATH`). Navíc:
 |---|---|
 | `PORT` | port aplikace (výchozí 3000) |
 | `HOST` | adresa, na které server poslouchá: výchozí `127.0.0.1` (jen tento počítač), `0.0.0.0` = celá síť. Obraz Dockeru nastavuje `0.0.0.0` (uvnitř kontejneru; ven jen `127.0.0.1:3000` podle `docker-compose.yml`), `deploy/lepsi-rozvrh.service` `127.0.0.1` (nginx na stejném stroji) |
-| `CORS_ORIGINS` | doména serveru, např. `https://rozvrh.skola.cz` |
+| `CORS_ORIGINS` | jen cizí původy, které volají API z prohlížeče; doménu serveru (např. `https://rozvrh.skola.cz`) sem psát nemusíš, stránky z ní volají API na svém původu (kap. 3) |
 | `TRUST_PROXY=1` | jen za vlastní reverzní proxy: IP klienta z `X-Real-IP` (případně `X-Forwarded-For`) pro limity (administrace, noví uživatelé) a audit. `docker-compose.yml` i `deploy/lepsi-rozvrh.service` ho nastavují, protože obě varianty stojí za nginx (`deploy/nginx.conf.example` obě hlavičky přepíše na adresu, kterou vidí). **Bez proxy (port vystavený přímo) ho nastavit nesmíš:** hlavičky by si poslal kdokoli sám a obešel by limity. Jiná proxy musí `X-Real-IP` přepisovat, ne jen předávat (Apache `mod_proxy`, HAProxy `option forwardfor` ani Caddy to samy nedělají) |
 | `RUN_TRIGGER=cron` | označení běhů v `runs` (nastavuje ho `deploy/crontab.example`) |
 
@@ -525,3 +528,407 @@ npm run prefetch                                    # ruční sběr (produkční
 V prohlížeči zkontroluj, že se rozvrh načte, že jdou zapnout notifikace (bez
 HTTPS selže) a že v konzoli není chyba service workeru. Dál platí kontrolní
 seznam 1.7.
+
+## 3. Vlastní doména
+
+Aplikace na doméně nezávisí a na nové adrese běží bez změny kódu:
+
+- klient volá jen relativní adresy (`/api/…`, `/firebase-messaging-sw.js`) a
+  odkazy skládá z `location.origin` (sdílení, odběr iCal, deep linky z
+  upozornění v service workeru přes `self.location.origin`);
+- manifest má `id`, `start_url` i `scope` relativní (`/`), CSP povoluje
+  `'self'`, iCal má `PRODID` a `UID` bez domény (`…@lepsi-rozvrh`), takže
+  tentýž rozvrh z obou domén má stejné události;
+- adresa nasazení je jen v nastavení: GitHub secret `VERCEL_URL`, úlohy na
+  cron-job.org, omezení klíče Firebase a tento dokument. Hlídají to
+  `test/domain.test.js` (žádná adresa nasazení v kódu, `vercel.json`,
+  workflow ani `deploy/`; přesměrování shodí úlohy) a
+  `test/e2e/domain.spec.js` (aplikace na cizí doméně se přihlásí, sdílí a
+  nabízí kalendář s adresou té domény).
+
+**CORS se kvůli doméně nemění.** Prohlížeč posílá `Origin` i u požadavků na
+vlastní původ (u každého POST, PUT a DELETE), ale na stejný původ CORS
+neuplatňuje a `cors()` požadavek nikdy neodmítne, jen nepřidá hlavičky.
+Server proto svou adresu znát nemusí a `Host` ani `X-Forwarded-Host` pro CORS
+nečte. Obojí si klient mimo prohlížeč pošle, jaké chce; `X-Forwarded-Host`
+Vercel nastavuje shodně s `host` (doména, kterou návštěvník otevřel), ale
+vlastní server bez proxy ho nepřepisuje. Porovnávat `Origin` s nimi by nic
+nepřidalo (stejný původ CORS nepotřebuje) a rozhodnutí by záviselo na
+hlavičkách, které server neřídí. Test v
+`test/routes.test.js`: stránka na libovolné doméně (Origin = její Host)
+projde bez `CORS_ORIGINS`, cizí původ povolení nedostane ani s podvrženým
+`Host` nebo `X-Forwarded-Host`.
+
+### 3.1 Postup
+
+Název domény je v celé kapitole jen v proměnné níže. Pro jiný název změň
+tento řádek a hodnoty, které podle něj vyplníš v administracích:
+
+```bash
+DOMENA=rozvrh.baratslab.eu
+STARA=spsd-rozvrhy.vercel.app
+```
+
+Kroky 1–4 zprovozní doménu vedle staré a nic nerozbijí. Kroky 5–6 přepnou
+plánované úlohy, zbytek jsou kontroly. Stará adresa po celou dobu běží dál
+(varianta A ve 3.2).
+
+0. **Před začátkem:** jméno je v zóně volné a certifikát půjde vydat.
+   ```bash
+   dig +short $DOMENA                      # prázdné: žádný starý záznam ani zástupný *
+   dig CAA $DOMENA +noall +answer; dig CAA baratslab.eu +noall +answer
+   ```
+   Žádný záznam CAA je v pořádku. Pokud nějaký je, musí obsahovat
+   `0 issue "letsencrypt.org"`: Vercel vydává certifikát Let's Encrypt
+   výzvou HTTP-01.
+1. **Vercel** → projekt → Settings → **Domains** → **Add Existing** →
+   `rozvrh.baratslab.eu`. Prostředí Production a **žádné** „Redirect to“.
+   Vercel ukáže záznam `CNAME`, jehož hodnota je jedinečná pro projekt
+   (např. `d1d4fc829fe7bc7c.vercel-dns-017.com.`). Zkopíruj ji přesně,
+   i s případnou tečkou na konci, ne hodnotu z jiného návodu. Když Vercel místo toho chce ověření záznamem `TXT` na
+   `_vercel.baratslab.eu`, doménu už používá jiný účet nebo tým Vercelu
+   (třeba kvůli `odjezdy`). Ten záznam pak přidej v kroku 2 také.
+   *Ověření:* v Domains je `rozvrh.baratslab.eu` (čeká na DNS) a
+   `spsd-rozvrhy.vercel.app` beze změny.
+2. **Cloudflare** → zóna `baratslab.eu` → DNS → Records → **Add record**:
+   Type `CNAME`, Name `rozvrh`, Target = hodnota z Vercelu, **Proxy status
+   vypnutý (DNS only, šedý mráček)**, TTL Auto → Save. Záznam `AAAA`
+   nepřidávej, Vercel IPv6 nepodporuje. Proč ne proxy, je pod tímto
+   postupem.
+   *Ověření:*
+   ```bash
+   dig +short CNAME $DOMENA @karsyn.ns.cloudflare.com   # hodnota z Vercelu
+   dig +short $DOMENA          # adresy Vercelu, ne Cloudflare (104.x, 172.64–71.x, 188.114.x)
+   curl -sS -D - -o /dev/null http://$DOMENA/.well-known/acme-challenge/test-token   # 404 a server: Vercel
+   ```
+   Ve Vercelu u domény **Valid Configuration** a vydaný certifikát (obvykle
+   během minut).
+3. **HTTPS a aplikace na nové adrese.**
+   *Ověření:*
+   ```bash
+   openssl s_client -connect $DOMENA:443 -servername $DOMENA </dev/null 2>/dev/null \
+     | openssl x509 -noout -subject -issuer          # CN = rozvrh.baratslab.eu, vydavatel Let's Encrypt
+   curl -sI https://$DOMENA/ | grep -iE '^(server|x-vercel-id|cf-ray)'   # server: Vercel, x-vercel-id, žádné cf-ray
+   ```
+   Pak kontrolní seznam 1.7 s `URL=https://$DOMENA`.
+4. **Klíč Firebase (omezení na weby).** Google Cloud Console, projekt
+   `barat-bakalari` → APIs & Services → **Credentials** → API keys → klíč,
+   jehož hodnota je `apiKey` v `public/index.html` (obvykle „Browser key
+   (auto created by Firebase)“) → Application restrictions: **Websites** →
+   **Add** → `https://rozvrh.baratslab.eu/*` → Done → **Save**. Stávající
+   položky nemaž: stará doména musí fungovat dál a
+   `tools/e2e-notifications.js` posílá ve výchozím stavu `Referer` staré
+   domény (jiný nastavíš přes `E2E_REFERER`). Podle tohoto nástroje je klíč
+   omezený na web aplikace. Bez nové položky by na nové doméně selhalo
+   přihlášení Firebase, čtení rozvrhů z Firestore i registrace upozornění.
+   *Ověření* (bez vedlejších účinků, s neplatným tokenem):
+   ```bash
+   KEY=$(grep -o 'apiKey: "[^"]*"' public/index.html | cut -d'"' -f2)
+   curl -s -H "Referer: https://$DOMENA/" -H 'Content-Type: application/json' -d '{"idToken":"x"}' \
+     "https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=$KEY" | grep -o '"message": *"[^"]*"'
+   ```
+   `INVALID_ID_TOKEN` znamená, že klíč z nové domény projde.
+   `Requests from referer … are blocked.` (`API_KEY_HTTP_REFERRER_BLOCKED`)
+   znamená, že položka chybí nebo se ještě neprojevila (může to trvat
+   několik minut). Pak otevři `https://$DOMENA` v anonymním okně: rozvrh se
+   načte, v DevTools → Network nejsou 403 u `*.googleapis.com`, `/api/auth`
+   vrátí 200 a Application → Local Storage má `userId` = `anon-…`.
+   Volitelně Firebase Console → Authentication → Settings → **Authorized
+   domains** → Add domain. Autorizované domény se týkají přihlašování
+   přesměrováním nebo oknem (OAuth). Aplikace se přihlašuje vlastním
+   tokenem, takže je nepotřebuje; přidání neuškodí.
+5. **GitHub** → Settings → Secrets and variables → Actions → `VERCEL_URL` →
+   Update → `https://rozvrh.baratslab.eu` (bez lomítka na konci). Tentýž
+   secret berou `check-status.yml`, `prefetch.yml`, `process-notifications.yml`,
+   `cleanup.yml` a `lesson-reminders.yml`.
+   *Ověření:* Actions → *Check API Status* → Run workflow: zelený běh a
+   v logu `HTTP Status: 200` (adresa je v logu jako `***`, je to secret).
+   Po dalším sběru je zelený i krok *Process notifications after prefetch*.
+   Kdyby `VERCEL_URL` mířil na adresu, která přesměrovává, oba kroky skončí
+   `curl: (47) Maximum (0) redirects followed`. Dřív takový běh prošel
+   zeleně a nic neudělal. `lesson-reminders.yml` neselže nikdy, u něj
+   zkontroluj v logu `HTTP 200`.
+6. **cron-job.org:** úlohy Notifikace a Upomínky (1.5, kroky 3–4) → Edit →
+   URL `https://rozvrh.baratslab.eu/api/cron/process-notifications` a
+   `https://rozvrh.baratslab.eu/api/cron/lesson-reminders`. Hlavička
+   `Authorization: Bearer <CRON_SECRET>` zůstává. Úloha Prefetch volá GitHub
+   API a nemění se. Na přesměrování ze staré adresy nespoléhej: při
+   přesměrování na jiný host se `Authorization` nepředá (curl ji zahodí;
+   jak se chová cron-job.org, jsem neověřil).
+   *Ověření:* historie obou úloh hlásí 200/202 s časy po změně.
+7. **`CORS_ORIGINS`:** nic nenastavuj. Je-li na Vercelu nastavená, nech v ní
+   jen cizí původy, které opravdu volají API z prohlížeče (dnes žádné).
+   *Ověření:*
+   ```bash
+   curl -s -o /dev/null -D - -H 'Origin: https://evil.example' https://$DOMENA/api/status \
+     | grep -i '^access-control-allow-origin' || echo 'OK: cizí původ bez povolení'
+   ```
+   Aplikace na nové doméně přitom funguje (krok 4).
+8. **Uživatelé s odběrem iCal:** odebíraný kalendář má v adrese doménu, ze
+   které ho uživatel přidal (`webcal://spsd-rozvrhy.vercel.app/api/ical/…`).
+   Dokud stará adresa běží (varianta A), funguje dál beze změny. Nové odběry
+   dostanou novou adresu. Kalendářové aplikace ale berou dvě adresy jako dva
+   kalendáře: kdo kalendář přidá znovu z nové domény, má starý odebrat, jinak
+   uvidí hodiny dvakrát. Adresu existujícího odběru většina aplikací upravit
+   nedovolí. Proto `/api/ical/*` na staré doméně nikdy nepřesměrovávej (3.2,
+   varianta C).
+   *Ověření* (stejné události z obou domén; `DTSTAMP` se liší, `UID` ne):
+   ```bash
+   diff <(curl -s "https://$STARA/api/ical/Class/<id>.ics" | grep '^UID') \
+        <(curl -s "https://$DOMENA/api/ical/Class/<id>.ics" | grep '^UID') && echo 'stejné UID'
+   ```
+9. **Google Search Console** není potřeba. Aplikace nemá `sitemap.xml`,
+   `robots.txt`, `canonical` ani `og:url` a přes vyhledávač se nehledá.
+10. **Až je nová adresa hlavní:** odkaz *Produkce* v `README.md`, `URL=` v
+    1.7, `E2E_REFERER` pro `npm run test:e2e-notifications`, QR kódy a
+    plakáty. `/admin` chce na nové doméně heslo znovu, protože je v
+    `sessionStorage` původu.
+
+**Návrat:** smazat záznam `CNAME` v Cloudflare a doménu ve Vercelu, vrátit
+`VERCEL_URL` a adresy úloh na `https://$STARA`. Stará adresa mezitím
+nepřestala fungovat.
+
+#### Proč „DNS only“, a ne proxy Cloudflare
+
+`odjezdy.baratslab.eu` jde přes proxy Cloudflare (`server: cloudflare`, IP
+`188.114.96.9` a `.97.9`). Pro tuto aplikaci proxy nedoporučuji:
+
+- Vercel proxy před sebou nedoporučuje. Jeho firewall a ochrana proti DDoS
+  ztratí přehled o provozu a funkce může dostat adresu proxy místo adresy
+  návštěvníka. Zachování adresy slibuje jen „Verified Proxy Advanced“ na
+  plánu Enterprise. Aplikace přitom z adresy klienta počítá limity: 5
+  chybných hesel do administrace a 60 nových uživatelů za 10 minut
+  (`NEW_USERS_PER_IP_LIMIT`). Za proxy by se mohli sčítat všichni uživatelé
+  jednoho uzlu Cloudflare, nebo by někdo cizí zablokoval administraci. Co
+  přesně funkce za Cloudflare na plánu Hobby v `x-real-ip` dostane,
+  dokumentace neuvádí (neověřeno).
+- Dvojí mezipaměť: nasazení na Vercelu mezipaměť Cloudflare neobnoví. Hrozí
+  zastaralé `index.html` nebo service worker proti novým bundlům.
+- Úpravy stránky na Cloudflare (Rocket Loader) přepisují načítání skriptů.
+  Podle Cloudflare je pak potřeba upravit CSP, což by rozbilo hashe inline
+  skriptů a otisky SRI (1.6).
+- Vercel vydává a obnovuje certifikát výzvou na
+  `http://…/.well-known/acme-challenge/*`. Ta musí projít na port 80 bez
+  přesměrování, mezipaměti a výzev proti botům.
+- Proxy nic nepřidá: Vercel sám je CDN s TLS a ochranou proti DDoS.
+
+Kdyby proxy přesto byla potřeba:
+
+- SSL/TLS → Overview → **Full (strict)**. Ne Flexible: Cloudflare by k
+  Vercelu šel přes HTTP, Vercel přesměruje na HTTPS a vznikne smyčka
+  `ERR_TOO_MANY_REDIRECTS`. Full bez „strict“ certifikát neověřuje.
+- `http://$DOMENA/.well-known/acme-challenge/*` bez přesměrování na HTTPS a
+  bez WAF a výzev proti botům; `https://$DOMENA/.well-known/vercel/*` nikdy
+  necachovat.
+- Necachovat HTML ani `firebase-messaging-sw.js` a vypnout Rocket Loader.
+- Ověřit limity podle IP: počítat s 429, když se přihlásí celá třída
+  najednou.
+
+Zdroje (ověřeno 19. 11. 2026):
+[Vercel: Adding & Configuring a Custom Domain](https://vercel.com/docs/domains/working-with-domains/add-a-domain),
+[Vercel: Troubleshooting domains](https://vercel.com/docs/domains/troubleshooting) (CAA, HTTP-01, `dig`, „for Cloudflare, use DNS only“),
+[Vercel: Using Cloudflare and other reverse proxies](https://vercel.com/kb/guide/can-i-use-a-proxy-on-top-of-my-vercel-deployment),
+[Vercel: Reverse Proxy Servers and Vercel](https://vercel.com/docs/security/reverse-proxy) (Full (strict), smyčka u Flexible, `/.well-known`),
+[Vercel: Request headers](https://vercel.com/docs/headers/request-headers) (`host`, `x-forwarded-host`, `x-forwarded-for`),
+[Vercel: Deploying & Redirecting Domains](https://vercel.com/docs/domains/working-with-domains/deploying-and-redirecting),
+[Vercel: vercel.json – redirects, `has`](https://vercel.com/docs/project-configuration/vercel-json),
+[Cloudflare: Proxy status](https://developers.cloudflare.com/dns/proxy-status/),
+[Cloudflare: Create DNS records](https://developers.cloudflare.com/dns/manage-dns-records/how-to/create-dns-records/),
+[Cloudflare: Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/),
+[Cloudflare: Rocket Loader](https://developers.cloudflare.com/speed/optimization/content/rocket-loader/),
+[Google Cloud: API keys – website restrictions](https://docs.cloud.google.com/docs/authentication/api-keys).
+
+### 3.2 Přechod uživatelů na nový původ
+
+Prohlížeč drží všechno po **původech** (schéma + host + port). Pro něj je
+`https://rozvrh.baratslab.eu` jiná aplikace než `https://spsd-rozvrhy.vercel.app`:
+
+| Co | Kde to je | Na novém původu |
+|---|---|---|
+| `localStorage`: `userId`, motiv, rozvržení, vybraný rozvrh, skryté učebny, poslední rozvrhy, mezipaměť dat | prohlížeč, po původech | prázdné |
+| relace Firebase (IndexedDB `firebaseLocalStorageDb`), jediný důkaz, že `userId` patří tomuto prohlížeči | prohlížeč, po původech | žádná; `/api/auth` bez důkazu vydá nové prázdné `anon-…` (záměrně, 1.3) |
+| oblíbené, sledované rozvrhy, typy upozornění | Firestore `users/{userId}` | nedosažitelné (nové ID) |
+| service worker a mezipaměť `bakalari-shell-…` | prohlížeč, po původech | instaluje se znovu |
+| povolení upozornění, odběr push, token FCM | prohlížeč po původech, `users/{userId}.tokens` (jeden token na uživatele) | nové povolení a nový token; **starý token dostává upozornění dál**, push nepotřebuje otevřenou stránku |
+| nainstalovaná PWA | identita = původ + `id` z manifestu | jiná aplikace; stará ikona otevírá starou adresu |
+| odběr iCal | adresa v kalendáři | beze změny, pořád stará adresa |
+| heslo `/admin` | `sessionStorage` | přihlásit znovu |
+
+Na iPhonu má navíc aplikace přidaná na plochu vlastní úložiště, oddělené od
+Safari i na stejném původu (ověřit na zařízení).
+
+Přesměrování starého původu proto uživatele „odpojí“: na nové adrese je to
+nová identita bez nastavení, zatímco jeho starý token dál dostává upozornění
+k nastavení, které už nevidí ani nevypne. Když na nové adrese upozornění
+zapne, chodí mu dvakrát.
+
+**Varianta A: obě domény souběžně, nová jen pro nové uživatele.** Obě adresy
+jsou ve Vercelu přiřazené k produkci (3.1, krok 1 bez přesměrování). Všechny
+nové odkazy, QR kódy a README vedou na novou doménu, kdo má starou, používá
+ji dál.
+
+- Práce: jen 3.1, žádný kód. Návrat: kdykoli (smazat doménu).
+- Rizika: dvě adresy dlouhodobě; kdo otevře obě a na obou zapne upozornění,
+  má dvě identity a upozornění dvakrát (nic je nespáruje); stará adresa
+  závisí na názvu projektu na Vercelu (přejmenování projektu ji změní).
+  Upozornění, odběry iCal, nainstalované PWA i otevřené karty fungují dál.
+
+**Varianta B: jednorázový bezpečný převod.** Starý původ si s ID tokenem
+vyžádá krátkodobý jednorázový kód, nový původ ho vymění za přihlášení k
+téže identitě, stará zařízení se odhlásí z odběru. Uživatel si nastavení i
+upozornění odnese. Návrh je ve 3.3 (neimplementováno).
+
+- Práce: dva endpointy, klientská část na obou původech, testy a zkouška na
+  telefonech (Android, iPhone se zvláštním úložištěm aplikace na ploše).
+- Rizika: kód je na pár desítek sekund plnohodnotné přihlášení (únik,
+  podvržený kód), viz 3.3; na iPhonu automatický převod do aplikace na
+  ploše nedojde, je potřeba opsat kód.
+
+**Varianta C: tvrdé přesměrování.** Vercel → Domains → `spsd-rozvrhy.vercel.app`
+→ Edit → Redirect to `rozvrh.baratslab.eu` (přesměruje všechny cesty; zda
+Vercel tuto volbu nabízí i u domény `*.vercel.app`, jsem neověřil, jinak
+redirect ve `vercel.json`).
+
+- Každý stávající uživatel je na nové adrese nový a prázdný (oblíbené,
+  sledované rozvrhy a nastavení zůstanou ve Firestore pod ID, ke kterému se
+  už nikdo nepřihlásí).
+- Starý service worker a odběr push běží dál: upozornění chodí podle starého
+  nastavení, klepnutí otevře starou adresu a přesměruje na novou jako
+  cizího. Vypnout je jde jen v nastavení prohlížeče (oprávnění staré
+  domény). Zapnutím na nové adrese chodí dvakrát.
+- Otevřené karty: volání `/api/*` dostanou 308 na jiný původ, prohlížeč při
+  tom podle specifikace Fetch zahodí `Authorization` a požadavek je navíc
+  cross-origin, takže 401 nebo chyba CORS.
+- Nainstalovaná PWA otevře starou adresu a přesměrování ji vyvede mimo svůj
+  rozsah (otevře se v prohlížeči); nainstalovat znovu.
+- Odběry iCal dostanou 308. Zda je kalendářová aplikace následuje, závisí na
+  aplikaci (neověřeno). Hrozí, že se kalendář tiše přestane aktualizovat.
+- Úlohy se starou adresou selžou (od této opravy viditelně, 3.1, krok 5).
+- Mírnější podoba: přesměrovat jen navigace, ne `/api/*` (redirect ve
+  `vercel.json` s podmínkou `has` na `host`; to dá adresu do
+  `vercel.json` a `test/domain.test.js` to záměrně odhalí). Identity ale
+  osiří stejně.
+
+**Doporučení: A.** Nic nemění pro stávající uživatele (upozornění, iCal,
+PWA, otevřené karty), nepotřebuje kód a jde kdykoli vrátit. B má smysl, až
+by se stará adresa měla opravdu zrušit, jako samostatná změna s vlastními
+testy a zkouškou na telefonech. C jen po B, až většina uživatelů přejde, a
+i pak bez `/api/*`. Rozhoduje student.
+
+### 3.3 Návrh varianty B (jednorázový převod, neimplementováno)
+
+Převádí se identita, ne data: oblíbené a nastavení upozornění jsou ve
+Firestore pod uid a s identitou přejdou samy; `settings` nese jen místní
+nastavení z `localStorage`. Cílová adresa je jen v proměnné prostředí
+`TRANSFER_TARGET_ORIGIN` (např. `https://rozvrh.baratslab.eu`). Bez ní je
+převod vypnutý (404). Klient ji dostane od serveru a nikdy ji nebere z adresy
+stránky, takže nevznikne otevřené přesměrování.
+
+**Tok (prohlížečová karta, Android):**
+
+1. Nový původ si vyrobí náhodný `state` (32 bajtů, `sessionStorage`) a pošle
+   uživatele na `https://<starý>/#prevod-start=<state>`. Když uživatel přijde
+   na starou adresu sám (záložka, stará PWA), stará stránka ho po klepnutí
+   na „Přejít na novou adresu“ nejdřív pošle na nový původ pro `state`.
+2. Stará stránka (vlastní `userId` i relaci) zavolá
+   `POST /api/transfer` s `Authorization: Bearer <ID token>` a tělem
+   `{ userId, stateHash, settings }`.
+3. Stará stránka si uloží `localStorage.movedTo = <cíl>` a přejde na
+   `https://<nový>/#prevod=<kód>`. Kód je ve fragmentu: neposílá se na
+   server, není v logu Vercelu ani v `Referer`. Nic dalšího nemaže: když
+   výměna neproběhne (kód vyprší, karta se zavře), stará relace platí dál a
+   převod jde zopakovat. Stará zařízení odpojí server při výměně (krok 5).
+4. Nový původ hned `history.replaceState` (kód zmizí z adresního řádku i ze
+   záznamu historie) a zavolá `POST /api/transfer/redeem { code, state }`.
+5. Server kód spotřebuje, vyprázdní `tokens` starých zařízení, zneplatní
+   staré relace (pořadí v odstavci „TTL a vazba“) a vrátí vlastní token pro
+   tutéž identitu a nastavení. Nový původ se přihlásí
+   (`signInWithCustomToken`), uloží `userId` a nastavení. Má-li uživatel
+   `notificationsEnabled`, nabídne „Zapnout upozornění na této adrese“
+   (povolení je po původech a iPhone ho chce z klepnutí).
+6. Další otevření staré adresy (i staré PWA) uvidí `movedTo`. Když stará
+   relace už neplatí (výměna proběhla), smaže `userId`, odhlásí se z FCM
+   (`deleteToken`) i z Firebase a přejde na novou adresu. Když platí,
+   nabídne převod znovu.
+
+**Tok s opsaným kódem (iPhone, jiné zařízení):** stará aplikace ukáže kód
+o 10 znacích (Crockford base32, 50 bitů, platnost 5 min), nová ho přijme v
+poli „Mám kód z původní adresy“. Je to totéž `redeem`, jen bez `state`.
+
+**Endpointy:**
+
+| Endpoint | Ochrana | Odpověď |
+|---|---|---|
+| `POST /api/transfer` `{ userId, stateHash?, settings }` | `requireUser` (uid tokenu = `userId`), `limitWrites`; nejvýš 3 nevyužité kódy na uid | 200 `{ code, expiresIn, target }`; 401/403/429; 404 bez `TRANSFER_TARGET_ORIGIN` |
+| `POST /api/transfer/redeem` `{ code, state? }` | `Origin` = `TRANSFER_TARGET_ORIGIN`; limit pokusů na IP (celá škola je za jednou IP: kolem 100 za 10 min, proto dlouhé kódy) | 200 `{ token, userId, settings }`; jakákoli chyba jednotně 400 „Kód převodu je neplatný nebo vypršel.“ (bez rozlišení, co nesedí); 429 |
+
+Firestore `transfers/{sha256(kód)}`: `{ uid, stateHash, settings, createdAt,
+expiresAt, usedAt }`. Uložený je jen otisk kódu, ne kód. Klientům kolekci
+zakazuje už pravidlo „vše ostatní“ ve `firestore.rules`. Prošlé záznamy maže
+`scripts/cleanup.js` (nebo zásada TTL na `expiresAt`). `settings` jen
+z výčtu klíčů (`theme`, `layoutMode`, `layoutPreferences`, `transparency`,
+`selectedType`, `selectedValue`, `hiddenRooms`, `recentTimetables`),
+s ověřenými hodnotami a nejvýš 4 kB.
+
+**TTL a vazba:** kód ve fragmentu platí 120 s (přechod trvá sekundy, rezerva
+pro pomalý telefon), opsaný 5 min. Kód je vázaný na uid z ověřeného ID tokenu
+(ne z těla), na `state` nového původu (otisk), na cílový původ (`Origin`) a
+je jednorázový: `redeem` v jedné transakci ověří platnost, zapíše `usedAt`,
+v `users/{uid}` vyprázdní `tokens` (stará zařízení přestanou dostávat
+upozornění hned, i když je uživatel na nové adrese nezapne) a teprve potom
+zavolá `revokeRefreshTokens(uid)` a vydá nový vlastní token (selže-li
+revokace, 500 a převod od začátku; stará relace pak pořád platí). Pořadí je
+podstatné: revokace zneplatní všechny dřívější relace té identity, i tu,
+kterou by si útočník s podvrženým kódem nechal, a nová relace vznikne až po
+ní. `/api/auth` pak musí ověřovat s `checkRevoked`, jinak by si stará relace
+s ještě platným ID tokenem (do 1 h) vyžádala nový vlastní token. Ostatní API
+revokaci nekontrolují, starý ID token tam platí nejvýš hodinu. Vlastní token
+platí 1 h. Nový původ ho drží v `sessionStorage` pro opakování, kdyby
+přihlášení selhalo (například chybí omezení klíče z 3.1, krok 4; to musí být
+hotové dřív, než se převod zapne).
+
+**Bezpečnostní rizika:**
+
+- *Únik kódu* (historie prohlížeče, synchronizované karty, snímek obrazovky,
+  rozšíření): jednorázový, krátký TTL, otisk v databázi,
+  `replaceState` hned po načtení, fragment místo query.
+- *Podvržený kód (login CSRF, fixace relace):* útočník pošle oběti odkaz se
+  svým kódem a oběť pak nastavuje upozornění pod jeho identitou. Brání tomu
+  vazba na `state` z `sessionStorage` nového původu (kód z cizího prohlížeče
+  nesedí) a revokace relací útočníka při výměně. U opsaného kódu zbývá jen
+  sociální inženýrství.
+- *Hádání kódu:* 256 bitů ve fragmentu, 50 bitů u opsaného. Platnost 5 min a
+  limit pokusů na IP dělají hádání bezcenným i při volném limitu kvůli
+  sdílené školní IP.
+- *Souběh a opakování:* dvě současné výměny téhož kódu, uspěje jen jedna
+  (transakce, `usedAt`).
+- *Obsah `settings`:* jen povolené klíče a hodnoty; vykreslují se stávajícími
+  cestami přes `esc()`.
+- *Dostupnost:* když výměna proběhne a přihlášení na nové adrese selže,
+  stará relace už je zneplatněná. Proto token v `sessionStorage` pro
+  opakování a hotový krok 4 z 3.1 před zapnutím.
+
+**Testy (před nasazením B):**
+
+- Unit (`test/transfer.test.js`, falešný Firestore a Firebase jako
+  `routes.test.js`):
+  - `transfer`: bez tokenu 401, za cizí uid 403; kód má dost entropie a ve
+    Firestore není (jen otisk); neznámé klíče `settings` se zahodí, nad 4 kB
+    400; bez `TRANSFER_TARGET_ORIGIN` 404; čtvrtý nevyužitý kód 429.
+  - `redeem`: platný kód vrátí token pro totéž uid a nastavení; druhé použití
+    400; prošlý (posunutý čas) 400; špatný `state` nebo `Origin` 400 se
+    stejným tělem jako neznámý kód; dvě současné výměny dají právě jednu
+    200; `tokens` vyprázdněné; `revokeRefreshTokens` před `createCustomToken`.
+  - `/api/auth`: s ID tokenem relace zneplatněné výměnou nevydá převedené
+    uid; limit pokusů 429.
+- Pravidla (emulátor): `transfers` klient nečte ani nezapíše.
+- E2E: dva původy stejnou technikou jako `test/e2e/domain.spec.js` (např.
+  `https://stara.test` a `https://nova.test`). Nový původ skončí se stejným
+  `userId` a nastavením; `location.hash` je prázdný; starý původ má `movedTo`
+  a nemá `userId`; prošlý nebo použitý kód ukáže chybu a ponechá vlastní
+  identitu.
+- Ručně na zařízení:
+  - Android Chrome: karta i nainstalovaná PWA;
+  - iPhone: Safari i aplikace na ploše (opsaný kód);
+  - počítač: Chrome a Firefox;
+  - upozornění po převodu chodí jednou, stará ikona přejde na novou adresu.
