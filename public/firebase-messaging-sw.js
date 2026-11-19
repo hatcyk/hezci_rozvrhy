@@ -197,7 +197,7 @@ self.addEventListener('notificationclick', (event) => {
  * The cache name carries the hashes of the bundles (tools/build.js), so a
  * deploy that changes them installs into a new cache.
  * ──────────────────────────────────────────────────────────────────── */
-const SHELL_CACHE = 'bakalari-shell-602df62b14-685046b12d';
+const SHELL_CACHE = 'bakalari-shell-602df62b14-79ab1eb924';
 
 // The app shell (index.html) is kept under this single key, whatever address
 // it was opened with (deep links, /index.html).
@@ -230,7 +230,7 @@ const PRECACHE_URLS = [
     '/spsd_logo_white.png',
     '/icons.svg',
     '/css/app.css?v=602df62b14',
-    '/js/app.js?v=685046b12d',
+    '/js/app.js?v=79ab1eb924',
 ];
 
 /** The Firebase SDK as index.html asks for it: CORS without credentials. */

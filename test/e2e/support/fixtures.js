@@ -60,16 +60,16 @@ const test = base.extend({
        * @param {string} [url]
        * @param {{ time?: string|null, theme?: 'dark'|'light', layout?: string, selected?: string,
        *   docs?: Record<string, object|null>, storage?: Record<string,string>, offline?: boolean,
-       *   reducedMotion?: 'reduce'|'no-preference', status?: object }} [opts]
+       *   reducedMotion?: 'reduce'|'no-preference', status?: object, denied?: string[], stalled?: string[] }} [opts]
        */
       async open(url = '/', opts = {}) {
-        const { time = NOW, theme = 'dark', layout, selected = 'Class:C2A', docs = {}, storage = {}, offline = false, reducedMotion = 'no-preference' } = opts;
+        const { time = NOW, theme = 'dark', layout, selected = 'Class:C2A', docs = {}, storage = {}, offline = false, reducedMotion = 'no-preference', denied = [], stalled = [] } = opts;
         if (opts.status) status = opts.status;
         if (time) await page.clock.setFixedTime(new Date(time));
         await page.emulateMedia({ colorScheme: theme, reducedMotion });
         const [selectedType, selectedValue] = selected.split(':');
         const seed = { selectedType, selectedValue, theme, ...(layout ? { layoutMode: layout } : {}), ...storage };
-        await page.addInitScript(installFakeFirebase, { docs: { ...school.docs, ...docs }, storage: seed, offline, userId: USER_ID });
+        await page.addInitScript(installFakeFirebase, { docs: { ...school.docs, ...docs }, storage: seed, offline, userId: USER_ID, denied, stalled });
         await page.goto(url, { waitUntil: 'domcontentloaded' });
       },
       /** Počká, až je vykreslený rozvrh s daným názvem (popisek tlačítka hledání). */

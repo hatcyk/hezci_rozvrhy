@@ -198,17 +198,25 @@ export async function fetchAggregate(id, { fresh = false } = {}) {
 /**
  * Follow aggregates/{id} live (Firestore onSnapshot). Without Firestore
  * (SDK blocked, offline boot) it falls back to polling every 5 minutes.
+ * A document that does not exist is an answer ({ data: null }); a read that
+ * fails with no stored copy (Firestore rules, no SDK, offline) goes to
+ * `onError`, so the caller can say so instead of loading forever.
  * @param {string} id
  * @param {(value: { data, fromCache, cacheAgeMs }) => void} onUpdate
+ * @param {(error: Error) => void} [onError]
  * @returns {() => void} stop
  */
-export function watchAggregate(id, onUpdate) {
+export function watchAggregate(id, onUpdate, onError) {
     let stopped = false;
     let timer = null;
     const poll = async () => {
         if (stopped) return;
-        try { onUpdate(await fetchAggregate(id, { fresh: true })); } catch { /* keep the last board */ }
-        timer = setTimeout(poll, 5 * 60 * 1000);
+        try {
+            onUpdate(await fetchAggregate(id, { fresh: true }));
+        } catch (err) {
+            if (onError && !stopped) onError(err); // keep the last board, but tell the caller
+        }
+        if (!stopped) timer = setTimeout(poll, 5 * 60 * 1000);
     };
     let unsubscribe = null;
     try {
