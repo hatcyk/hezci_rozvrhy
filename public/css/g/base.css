@@ -52,6 +52,10 @@
   /* fokus: zlatý obrys, kontrastní na ranní i noční obloze, na skle i na blocích */
   :focus-visible { outline: 3px solid var(--now); outline-offset: 2px; }
   :focus:not(:focus-visible) { outline: none; }
+  /* nadpis nebo oblast, kam fokus přesune skript (tabindex="-1", jen ten jde z kódu): čtečka je oznámí,
+     rámeček se nekreslí, protože to nejsou ovládací prvky. Safari na iPhonu ho po přechodu mezi pohledy
+     kreslilo kolem nadpisu; další Tab vede na ovládací prvek a ten rámeček má. */
+  [tabindex="-1"]:focus { outline: none; }
 
   /* ikony ze spritu: <svg class="i"><use href="icons.svg#name"></use></svg> */
   svg.i { width: var(--is, 20px); height: var(--is, 20px); flex: none; }

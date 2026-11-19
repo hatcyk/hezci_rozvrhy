@@ -88,8 +88,6 @@
   .who-chev { --is: 16px; }
   .tb-head { min-width: 0; flex: 1; }
   .tb-title { font-size: var(--fs-title); font-weight: 700; letter-spacing: -.01em; line-height: 1.1; }
-  .tb-title:focus { outline: none; }
-  .tb-title:focus-visible { outline: 3px solid var(--now); outline-offset: 4px; border-radius: 6px; }
   .tb-sub { margin-top: 2px; font-size: var(--fs-body); font-weight: 500; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tb-sub:empty { display: none; }
   .tb-tools, .tb-nav, .tb-layout { display: none; }
