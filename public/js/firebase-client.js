@@ -48,6 +48,17 @@ export async function initializeFirebase(config) {
 
         // Initialize Firestore
         firestore = sdk.firestore();
+        // Long-polling auto-detection: a proxy or an antivirus that buffers the
+        // streamed answers (WebChannel) would otherwise stall every read. It is
+        // the SDK default since 9.22.0; stated here so that an SDK change
+        // cannot switch it off unnoticed. Must come before the first read.
+        if (typeof firestore.settings === 'function') {
+            try {
+                firestore.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+            } catch (err) {
+                console.warn('Firestore settings not applied:', err?.message || err);
+            }
+        }
 
         console.log('✅ Firebase Client initialized');
 
