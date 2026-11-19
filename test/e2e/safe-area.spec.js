@@ -113,6 +113,83 @@ test.describe('Bezpečná oblast: telefon na šířku', () => {
   });
 });
 
+// iPhone s Dynamic Island na výšku v aplikaci na ploše (black-translucent): stránka sahá pod stavový řádek
+const PORTRAIT = { top: 59, topMax: 59, left: 0, leftMax: 0, right: 0, rightMax: 0, bottom: 34, bottomMax: 34 };
+
+/** Viditelné prvky, které do pásu stavového řádku (0 … top) něco kreslí: text, obrázek nebo vlastní pozadí. */
+function inStatusBar(page, top) {
+  return page.evaluate((top) => {
+    const bad = [];
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el.closest('[inert], [hidden], .sr-only, .vh')) continue;
+      if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) continue;
+      const b = el.getBoundingClientRect();
+      if (b.width < 2 || b.height < 2 || b.bottom <= 0.5 || b.top >= top - 0.5) continue;
+      const cs = getComputedStyle(el);
+      const paints = /^(img|svg|video|canvas)$/i.test(el.tagName)
+        || [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())
+        || !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) || cs.backgroundImage !== 'none';
+      if (paints) bad.push(`${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${String(el.className.baseVal ?? el.className).split(' ')[0]} ${Math.round(b.top)}..${Math.round(b.bottom)}`);
+    }
+    return bad.slice(0, 12);
+  }, top);
+}
+
+test.describe('Bezpečná oblast: telefon na výšku pod stavovým řádkem', () => {
+  test.beforeEach(async ({ page, context, isMobile }) => {
+    test.skip(!isMobile, 'telefon');
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: PORTRAIT });
+  });
+
+  test('do pásu stavového řádku nic nevyčnívá: přehled, den a ostatní pohledy', async ({ page, app, isMobile }) => {
+    await app.open('/');
+    await app.timetableReady();
+    expect(await page.evaluate(() => {
+      const d = document.createElement('div');
+      d.style.cssText = 'position:fixed;top:env(safe-area-inset-top);left:0;width:1px;height:1px';
+      document.body.appendChild(d);
+      const t = d.getBoundingClientRect().top;
+      d.remove();
+      return t;
+    }), 'emulace bezpečné oblasti').toBe(PORTRAIT.top);
+    expect(await inStatusBar(page, PORTRAIT.top), 'přehled').toEqual([]);
+    await app.openDay(isMobile);
+    expect(await inStatusBar(page, PORTRAIT.top), 'den').toEqual([]);
+    for (const view of ['changes', 'rooms', 'common']) {
+      await page.click(`#viewNav a[data-view="${view}"]`);
+      await expect(page.locator('html')).toHaveAttribute('data-view', view);
+      expect(await inStatusBar(page, PORTRAIT.top), view).toEqual([]);
+    }
+  });
+
+  test('obsah posunutý pod stavový řádek zakryje pás oblohy, bez výřezu pás nic nezabírá', async ({ page, app }) => {
+    await app.open('/');
+    await app.timetableReady();
+    const band = () => page.evaluate(() => {
+      const cs = getComputedStyle(document.body, '::after');
+      return { position: cs.position, top: cs.top, height: cs.height, image: cs.backgroundImage !== 'none', events: cs.pointerEvents, z: Number(cs.zIndex) };
+    });
+    const zTabbar = await page.evaluate(() => Number(getComputedStyle(document.documentElement).getPropertyValue('--z-tabbar')));
+    expect(await band()).toEqual({ position: 'fixed', top: '0px', height: `${PORTRAIT.top}px`, image: true, events: 'none', z: zTabbar });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { ...PORTRAIT, top: 0, topMax: 0 } });
+    expect((await band()).height).toBe('0px');
+  });
+
+  test('kiosk na telefonu: hlavička i patička jsou v bezpečné oblasti', async ({ page, app }) => {
+    await app.open('/?kiosk=changes');
+    await expect(page.locator('.k-row').first()).toBeVisible();
+    const box = await page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      return { head: r('.kiosk-head').top, foot: innerHeight - r('.kiosk-foot').bottom };
+    });
+    expect(box.head).toBeGreaterThanOrEqual(PORTRAIT.top);
+    expect(box.foot).toBeGreaterThanOrEqual(PORTRAIT.bottom);
+    expect(await inStatusBar(page, PORTRAIT.top), 'kiosk').toEqual([]);
+  });
+});
+
 test.describe('Bezpečná oblast: počítač a kiosk', () => {
   test.beforeEach(async ({ page, context, isMobile }) => {
     test.skip(isMobile, 'rozvržení počítače');

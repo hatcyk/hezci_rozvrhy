@@ -29,11 +29,21 @@
     overflow-x: clip;
   }
   /* obloha: pevná vrstva pod vším (ne background-attachment: fixed, které na iOS nefunguje) */
-  body::before {
-    content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  body::before, body::after {
     background:
       radial-gradient(120% 60% at 85% -8%, var(--glow), transparent 60%),
       linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 48%, var(--sky-3) 100%);
+  }
+  body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+  /* pás pod stavovým řádkem (aplikace na ploše, viewport-fit=cover): obsah posunutý pod hodiny a výřez
+     zakryje stejný kus oblohy, který je pod ním, takže se texty nepletou se stavovým řádkem. Obloha má
+     velikost celé obrazovky, aby pás navazoval; bez výřezu má pás nulovou výšku. */
+  body::after {
+    content: ""; position: fixed; z-index: var(--z-tabbar); top: 0; left: 0; right: 0; pointer-events: none;
+    height: env(safe-area-inset-top, 0px);
+    background-size: 100% 100vh;
+    -webkit-mask-image: linear-gradient(#000 calc(100% - 8px), transparent);
+    mask-image: linear-gradient(#000 calc(100% - 8px), transparent);
   }
   h1, h2, h3, h4 { font-weight: 700; line-height: 1.15; letter-spacing: -.01em; }
   a { text-decoration-thickness: 1px; text-underline-offset: 2px; }
@@ -52,11 +62,12 @@
   }
   .hidden { display: none !important; }
 
-  /* odkaz „Přeskočit na obsah“ */
+  /* odkaz „Přeskočit na obsah“: mimo fokus celý nad horním okrajem obrazovky; posun o dvojnásobek
+     výšky nestačil, pod stavovým řádkem (odsazení 59 px) z něj vykukovala žlutá skvrna */
   .skip-link {
     position: fixed; left: max(12px, env(safe-area-inset-left)); top: max(12px, env(safe-area-inset-top)); z-index: 1000; padding: 10px 16px; border-radius: var(--r-pill);
     background: var(--now); color: var(--now-ink); font-weight: 700; text-decoration: none;
-    transform: translateY(-200%);
+    transform: translateY(calc(-100% - max(12px, env(safe-area-inset-top)) - 8px));
   }
   .skip-link:focus-visible { transform: none; }
 }
@@ -257,6 +268,7 @@
   /* vysoký kontrast: systémové barvy, žádná obloha ani sklo */
   @media (forced-colors: active) {
     body::before { display: none; }
+    body::after { background: Canvas; }
     .g-glass, .g-veil, .g-sheet, .g-btn, .g-chip, .g-seg, .g-circle, .g-input, .g-select { border: 1px solid CanvasText; background: Canvas; -webkit-backdrop-filter: none; backdrop-filter: none; }
     /* vybrané položky: bez forced-color-adjust: none by Chrome pod text nakreslil podložku v barvě Canvas
        a slovo by na zvýraznění zmizelo (ověřeno emulací 13. 11.) */

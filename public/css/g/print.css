@@ -13,7 +13,7 @@
     @page { size: A4 landscape; margin: 8mm; }
 
     html, body { height: auto; min-height: 0; overflow: visible; background: #fff; color: #000; }
-    body::before { display: none; }
+    body::before, body::after { display: none; }
     *, *::before, *::after {
       box-shadow: none; text-shadow: none; animation: none; transition: none;
       -webkit-backdrop-filter: none; backdrop-filter: none;

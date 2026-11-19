@@ -110,7 +110,13 @@
 
   /* úzká / svislá obrazovka: řádek ve dvou patrech */
   @media (max-aspect-ratio: 4/3) {
-    .kiosk { --k: clamp(15px, min(2.2vh, 3.6vw), 64px); padding: 1em; }
+    /* telefon: hlavička nesmí pod stavový řádek a výřez, patička nad domovskou lištu */
+    .kiosk {
+      --k: clamp(15px, min(2.2vh, 3.6vw), 64px);
+      padding:
+        max(1em, env(safe-area-inset-top)) max(1em, env(safe-area-inset-right))
+        max(1em, env(safe-area-inset-bottom)) max(1em, env(safe-area-inset-left));
+    }
     .kiosk-head { flex-direction: column; gap: .6em; }
     .kiosk-clock { justify-items: start; text-align: left; }
     .kiosk-time { font-size: 3.2em; }
