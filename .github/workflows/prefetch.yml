@@ -3,31 +3,55 @@ name: Prefetch Timetable Data
 on:
   schedule:
     # Every 15 minutes | Prázdninový provoz: Every 60 minutes
+    # GitHub runs scheduled workflows late or not at all under load (measured
+    # ~5 h between runs). The reliable trigger is workflow_dispatch from an
+    # external scheduler (cron-job.org, see ZMENY/DEPLOYMENT); this schedule
+    # stays as a fallback.
     - cron: '*/15 * * * *'
     #- cron: '0 * * * *'
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch: # cron-job.org → POST /repos/{owner}/{repo}/actions/workflows/prefetch.yml/dispatches
+
+# One prefetch at a time: a dispatch arriving while the scheduled run is still
+# downloading waits instead of racing it on the same Firestore documents.
+concurrency:
+  group: prefetch
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   prefetch:
     name: Prefetch Timetable Data
     runs-on: ubuntu-latest
+    # A normal run takes ~3 min (220 pages), September ~5 min (310 pages);
+    # a hung login must not hold the concurrency slot for the default 6 h.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Scheduled runs use the workflow file from main, but the prefetch
           # code (Bakaláři parser) is maintained on dev - run that.
           ref: dev
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '20'
+          # Node 20 is out of support since 30 April 2026.
+          node-version: '22'
           cache: 'npm'
 
+      # --ignore-scripts: no package code runs before the step that gets the
+      # Bakaláři password and the service account (a script could write
+      # $GITHUB_ENV, e.g. NODE_OPTIONS=--require ..., and take that step over).
+      # The only install scripts in the production tree are not needed:
+      # protobufjs only warns about version ranges, @firebase/util regenerates
+      # dist/postinstall.js from FIREBASE_WEBAPP_CONFIG (unset here) - the
+      # shipped file already returns `undefined`, the same result.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=dev --ignore-scripts
         env:
           NPM_CONFIG_RETRY: '3'
           NPM_CONFIG_RETRY_DELAY: '1000'
@@ -38,15 +62,29 @@ jobs:
           BAKALARI_PASSWORD: ${{ secrets.BAKALARI_PASSWORD }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           VERCEL: 'true'
+          # Be gentle with the school's Bakaláři server.
+          PREFETCH_CONCURRENCY: '3'
+          # GITHUB_EVENT_NAME (schedule / workflow_dispatch) is set by GitHub
+          # and recorded as the run's trigger in the `runs` collection.
         run: node scripts/run-prefetch.js
 
       - name: Process notifications after prefetch
         if: success()
+        env:
+          BASE_URL: ${{ secrets.VERCEL_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        # The data is already stored, but a CRON_SECRET that differs from the
+        # one on Vercel (401) or is missing there (503) means no notifications
+        # at all - that must turn the run red, not pass as "non-critical".
+        # --fail-with-body: exit 22 on HTTP >= 400, the JSON still in the log.
+        # --retry: timeouts, refused connections and 408/429/5xx are retried
+        # (a 503 too, so a missing secret fails after the retries); 401 is not.
+        # A repeated call is safe: each change is claimed in a transaction.
         run: |
-          curl -X GET "${{ secrets.VERCEL_URL }}/api/cron/process-notifications" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
-            -H "Content-Type: application/json" \
+          curl --fail-with-body -sS \
+            --connect-timeout 10 --max-time 30 \
+            --retry 3 --retry-delay 10 --retry-connrefused \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            -H "Accept: application/json" \
             -w "\nHTTP Status: %{http_code}\n" \
-            --connect-timeout 10 \
-            --max-time 30 \
-            -s -S || echo "Notification processing failed (non-critical)"
+            "${BASE_URL}/api/cron/process-notifications"

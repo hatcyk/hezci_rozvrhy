@@ -1,0 +1,82 @@
+rules_version = '2';
+
+// Firestore Security Rules for Lepší Rozvrh. NOT deployed yet: until
+// `firebase deploy --only firestore:rules` runs, whatever the Firebase console
+// is set to applies (DEPLOYMENT.md 1.4).
+//
+// The browser only READS single documents (client 2.x and 1.x alike):
+// definitions/current, timetables/{type}_{id}_{schedule}, metadata/lastPrefetch,
+// aggregates/{id} (get, and onSnapshot of that one document in the kiosk).
+// Hence `get` and never `read`: `read` includes `list`, and one query over
+// timetables costs hundreds of document reads. Everything is written by the
+// server (Admin SDK, which bypasses these rules).
+//
+// Tested against the emulator: test/rules/firestore-rules.emulator.test.mjs
+// (`npm run test:rules`, CI .github/workflows/rules.yml). test/firestore-rules.test.js
+// (npm test) checks that every collection the server uses is listed below.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // The app signs every visitor in (anonymous anon-<uuid> custom token,
+    // /api/auth), so "signed in" = "opened the app", not "a known person".
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Public timetable data the app renders, written by prefetch.
+    // `aggregates` = changes board and free rooms (S3).
+    match /definitions/{docId} {
+      allow get: if signedIn();
+      allow write: if false;
+    }
+    match /timetables/{docId} {
+      allow get: if signedIn();
+      allow write: if false;
+    }
+    match /metadata/{docId} {
+      allow get: if signedIn();
+      allow write: if false;
+    }
+    match /aggregates/{docId} {
+      allow get: if signedIn();
+      allow write: if false;
+    }
+
+    // Server-only. The browser never reads these; listed explicitly (not just
+    // left to the catch-all) so the intent is visible:
+    //   users          - settings, FCM device tokens; served by /api/* without tokens
+    //   userMigrations - which anon-<uuid> a legacy anonymous-<ms> became (/api/auth)
+    //   changes        - detected changes waiting to be sent (prefetch, notifications)
+    //   lesson_notifications_sent - lesson reminder claims
+    //   runs           - one document per job run (S4), read by /api/admin/*
+    //   system         - health, migration flags, admin dispatch slot (S4, S5)
+    //   audit          - admin access log with hashed IPs (S5)
+    match /users/{docId} {
+      allow read, write: if false;
+    }
+    match /userMigrations/{docId} {
+      allow read, write: if false;
+    }
+    match /changes/{docId} {
+      allow read, write: if false;
+    }
+    match /lesson_notifications_sent/{docId} {
+      allow read, write: if false;
+    }
+    match /runs/{docId} {
+      allow read, write: if false;
+    }
+    match /system/{docId} {
+      allow read, write: if false;
+    }
+    match /audit/{docId} {
+      allow read, write: if false;
+    }
+
+    // Everything else. Overlapping matches are OR-ed, so this rule cannot take
+    // away anything granted above - it only closes what is not listed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,62 @@
+/* Vzorník návrhu G (jen /design.html, není v balíku aplikace). */
+@layer views {
+  .dz-bar {
+    position: sticky; top: 12px; z-index: var(--z-sticky); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px;
+    width: min(1100px, calc(100% - 24px)); margin: 12px auto 0; padding: 8px 8px 8px 18px; border-radius: var(--r-pill);
+  }
+  .dz-bar strong { font-size: var(--fs-em); margin-right: auto; }
+  .dz-main { width: min(1100px, calc(100% - 32px)); margin: 0 auto; padding: 24px 0 80px; display: grid; gap: 36px; }
+  .dz-lead { font-size: var(--fs-em); color: var(--tx-2); max-width: 70ch; }
+  .dz-h { font-size: var(--fs-title); margin-bottom: 8px; }
+  section > .g-sub { margin-bottom: 14px; max-width: 70ch; }
+  code { font: 500 .92em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--chip); padding: 1px 6px; border-radius: 6px; }
+
+  .dz-mat { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; padding: 22px; }
+  .dz-stripes { position: absolute; inset: 0; display: flex; gap: 10px; padding: 0 12px; align-items: center; opacity: .9; }
+  .dz-stripes i { flex: 1; height: 70%; border-radius: 12px; background: var(--now); }
+  .dz-stripes i:nth-child(2n) { background: var(--sub); }
+  .dz-stripes i:nth-child(3n) { background: var(--cancel); }
+  .dz-matcard { position: relative; display: grid; gap: 6px; padding: 18px; border-radius: var(--r-mod); min-height: 170px; align-content: start; --is: 24px; }
+  .dz-matcard strong { font-size: var(--fs-title3); }
+  .dz-matcard span { color: var(--tx-2); }
+  .dz-solid { background: var(--solid); border: 1px solid var(--rim); }
+
+  .dz-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .dz-sw { display: grid; grid-template-rows: 64px auto; border-radius: var(--r-card); overflow: hidden; background: var(--veil); border: 1px solid var(--rim); }
+  .dz-sw > i { display: block; }
+  .dz-sw > div { padding: 8px 12px 10px; display: grid; gap: 2px; font-size: var(--fs-foot); color: var(--tx-2); }
+  .dz-sw b { color: var(--tx); font-size: 14px; }
+
+  .dz-type { display: grid; gap: 14px; }
+  .dz-type > div { display: grid; grid-template-columns: 220px 1fr; align-items: baseline; gap: 12px; }
+  .dz-type span { font-size: var(--fs-foot); color: var(--tx-2); }
+  @media (max-width: 640px) { .dz-type > div { grid-template-columns: 1fr; gap: 2px; } }
+
+  .dz-blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .dz-blk { display: grid; gap: 4px; align-content: start; min-height: 84px; padding: 10px 12px 10px 16px; border-radius: var(--r-block); background: var(--blk); font-size: var(--fs-foot); color: var(--tx-2); overflow: hidden; }
+  .dz-blk b { display: flex; justify-content: space-between; gap: 8px; color: var(--tx); font-size: var(--fs-body); font-weight: 600; }
+  .dz-blk small { font-size: var(--fs-body); font-weight: 600; }
+  .dz-blk--x { background: transparent; box-shadow: inset 0 0 0 1.5px rgb(255 163 148 / .75); }
+  .dz-blk--x s { text-decoration-thickness: 2px; }
+  .dz-split { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+
+  .dz-ctl { display: grid; gap: 14px; }
+  .dz-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .dz-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .dz-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; align-items: start; }
+  .dz-stack { display: grid; gap: 12px; justify-items: start; }
+  .dz-stack .g-empty { justify-self: stretch; }
+
+  .dz-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+  .dz-icons li { display: grid; justify-items: center; gap: 6px; padding: 12px 6px; border-radius: var(--r-card); background: var(--veil); font-size: var(--fs-caption); color: var(--tx-2); text-align: center; --is: 24px; word-break: break-word; }
+  .dz-icons li svg { color: var(--tx); }
+
+  .dz-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .dz-table th { text-align: left; font-size: var(--fs-foot); color: var(--tx-2); font-weight: 600; padding: 4px 8px 8px; }
+  .dz-table td { padding: 7px 8px; border-top: 1px solid var(--hair); }
+  .dz-table td:nth-child(3) { font-weight: 700; text-align: right; }
+  .dz-table .ok { color: var(--tx); }
+  .dz-table .bad { color: var(--now); }
+  .dz-pair { display: inline-flex; align-items: center; gap: 8px; }
+  .dz-pair i { width: 18px; height: 18px; border-radius: 5px; border: 1px solid var(--rim); }
+}

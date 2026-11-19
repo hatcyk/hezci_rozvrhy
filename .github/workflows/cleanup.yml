@@ -6,6 +6,9 @@ on:
     - cron: '0 1 * * *'
   workflow_dispatch: # Allow manual triggering
 
+# Only calls the app over HTTPS with CRON_SECRET; the repository token needs no rights.
+permissions: {}
+
 jobs:
   cleanup:
     name: Cleanup Old Notification Records

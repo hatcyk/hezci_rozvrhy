@@ -10,6 +10,9 @@ name: Send Lesson Reminders
 on:
   workflow_dispatch: # Manual trigger only; routine scheduling is external (cron-job.org)
 
+# Only calls the app over HTTPS with CRON_SECRET; the repository token needs no rights.
+permissions: {}
+
 # Avoid piling up overlapping long-running jobs if a run is slow.
 concurrency:
   group: lesson-reminders

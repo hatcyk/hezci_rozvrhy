@@ -8,6 +8,9 @@ on:
 
   workflow_dispatch: # Allow manual triggering
 
+# Only calls the app over HTTPS with CRON_SECRET; the repository token needs no rights.
+permissions: {}
+
 jobs:
   process-notifications:
     name: Process Change Notifications

@@ -1,0 +1,146 @@
+/* Správa (admin) v návrhu G „Obloha“ — stejné tokeny a základ jako aplikace,
+   ale plné plochy (--solid) bez skla a rozostření: je to pracovní nástroj,
+   tabulky musí být čitelné a rychlé. Graf běhů používá akcenty:
+   plán = --extra, zvenku = --now, chyba = --cancel, v pořádku = --sub.
+   Žádné inline styly ani skripty (vynucená CSP stránky). */
+@import url('/css/g/tokens.css');
+@import url('/css/g/base.css');
+
+@layer views {
+  body { padding-bottom: 48px; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .9em; }
+  a { color: var(--tx); }
+
+  /* hlavička: plný pruh */
+  .admin-header {
+    position: sticky; top: 0; z-index: var(--z-sticky);
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px clamp(16px, 3vw, 32px);
+    background: var(--solid-strong); border-bottom: 1px solid var(--rim);
+  }
+  .admin-header h1 { display: flex; align-items: center; gap: 10px; font-size: var(--fs-title3); font-weight: 700; }
+  .admin-header h1 img { height: 22px; width: auto; }
+  .header-actions { display: flex; gap: 8px; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 20px clamp(16px, 3vw, 32px) 0; }
+
+  /* karty: plný panel */
+  .card {
+    margin-block: 14px; padding: 16px 18px 18px; border-radius: var(--r-mod);
+    background: var(--solid); border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--hi);
+  }
+  .card h2 { margin: 0 0 12px; font-size: var(--fs-title3); font-weight: 600; }
+  .login { max-width: 30rem; margin: 10vh auto 0; }
+  .login form { display: grid; gap: 8px; }
+  .login h2 { font-size: var(--fs-title); font-weight: 700; }
+
+  /* formuláře a tlačítka (jako g-btn / g-input) */
+  label { font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2); }
+  input, select {
+    min-height: var(--tap); padding: 0 14px; border-radius: 12px;
+    background: var(--solid-strong); color: var(--tx); border: 1px solid var(--rim); font-size: var(--fs-body);
+  }
+  select option { color: #10243A; background: #fff; }
+  button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: var(--tap); padding: 0 18px; border-radius: var(--r-pill);
+    background: var(--chip); color: var(--tx); font-size: var(--fs-body); font-weight: 600;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .16);
+  }
+  button:hover { background: var(--chip-hover); }
+  button:active { background: var(--chip-press); }
+  button.primary { background: var(--now); color: var(--now-ink); box-shadow: none; }
+  button.primary:hover { background: #FFDC7A; }
+  button:disabled { opacity: .55; cursor: progress; }
+  .login button[type="submit"] { justify-self: start; margin-top: 6px; }
+
+  .hint { margin: 4px 0; font-size: 14px; color: var(--tx-2); }
+  .error { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .error::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--cancel); }
+  .warning {
+    padding: 12px 16px; border-radius: var(--r-card); background: var(--solid-strong);
+    border: 1px solid var(--rim); box-shadow: inset 4px 0 0 var(--now);
+  }
+  .status-line { min-height: 1.4em; color: var(--tx-2); font-size: 14px; }
+
+  /* stáří dat: semafor */
+  .overview { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .semaphore {
+    display: flex; align-items: center; gap: 16px; padding: 16px; border-radius: var(--r-card);
+    background: var(--solid-strong); border: 1px solid var(--rim); box-shadow: inset 4px 0 0 var(--semaphore-color, var(--cancel));
+  }
+  .semaphore[data-level="ok"] { --semaphore-color: var(--sub); }
+  .semaphore[data-level="warn"] { --semaphore-color: var(--now); }
+  .semaphore[data-level="bad"] { --semaphore-color: var(--cancel); }
+  .semaphore-light { font-size: 2.4rem; line-height: 1; color: var(--semaphore-color); }
+  .semaphore-label { margin: 0; font-size: var(--fs-em); font-weight: 700; }
+
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; font-size: 14px; }
+  .kv dt { color: var(--tx-2); }
+  .kv dd { margin: 0; overflow-wrap: anywhere; font-weight: 500; }
+
+  .filter { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .filter select { min-width: 14rem; }
+
+  /* tabulky */
+  .table-wrapper { max-inline-size: 100%; overflow: auto; border-radius: var(--r-card); border: 1px solid var(--rim); background: var(--solid-strong); }
+  .table-wrapper.tall { max-block-size: min(32rem, 70vh); }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; }
+  caption { padding: 10px 14px; text-align: start; font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2); }
+  th, td { padding: 8px 14px; text-align: start; vertical-align: top; white-space: nowrap; border-top: 1px solid var(--hair); }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--solid-strong); font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2);
+    border-bottom: 1px solid var(--rim);
+  }
+  tbody tr:hover > * { background: var(--chip); }
+  tbody th { font-weight: 600; }
+  td.wrap { min-width: 14rem; white-space: normal; overflow-wrap: anywhere; }
+
+  /* odznaky: slovo zůstává bílé, barvu nese rámeček */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: var(--r-pill);
+    border: 1.5px solid var(--badge, var(--rim)); font-weight: 600; font-size: var(--fs-foot);
+  }
+  .badge-ok { --badge: var(--sub); }
+  .badge-bad { --badge: var(--cancel); }
+  .badge-warn { --badge: var(--now); }
+  .badge-neutral { --badge: var(--rim); color: var(--tx-2); }
+
+  /* graf rozestupů mezi běhy */
+  .chart-figure { margin: 0; padding: 8px 6px 4px; border-radius: var(--r-card); background: var(--solid-strong); border: 1px solid var(--rim); }
+  .chart { width: 100%; }
+  .interval-chart { display: block; width: 100%; height: auto; }
+  .interval-chart text { fill: var(--tx-2); font-size: 11px; }
+  .chart-grid { stroke: var(--hair); stroke-width: 1; }
+  .chart-ref { stroke: var(--tx-2); stroke-width: 1; stroke-dasharray: 4 4; }
+  .pt-schedule { fill: var(--extra); }
+  .pt-other { fill: var(--now); }
+  .pt-capped { fill: var(--tx-2); }
+  .pt-failed { fill: none; stroke: var(--cancel); stroke-width: 2.25; }
+  path.pt-schedule, path.pt-other { stroke: none; }
+  figcaption.hint { padding: 0 8px 6px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 12px 0 0; padding: 0; list-style: none; font-size: 14px; }
+  .legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .legend-schedule { color: var(--extra); }
+  .legend-other { color: var(--now); }
+  .legend-failed { color: var(--cancel); }
+  .legend-capped { color: var(--tx-2); }
+
+  /* potvrzovací dialog */
+  dialog {
+    max-width: min(32rem, calc(100vw - 32px)); padding: 20px; border-radius: var(--r-panel);
+    background: var(--solid-strong); color: var(--tx); border: 1px solid var(--rim); box-shadow: var(--shadow-sheet);
+  }
+  dialog::backdrop { background: var(--backdrop); }
+  dialog:modal { overscroll-behavior: contain; }
+  dialog h2 { margin-top: 0; font-size: var(--fs-title3); }
+  dialog p { margin: 10px 0 16px; line-height: 1.45; }
+  .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  @media (max-width: 640px) {
+    .admin-header h1 { font-size: var(--fs-em); }
+    .card { padding: 14px; }
+    .filter { flex-wrap: wrap; }
+  }
+}

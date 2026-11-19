@@ -5,15 +5,36 @@
 
 const admin = require('firebase-admin');
 const { getFirestore, getMessaging } = require('./firebase-admin-init');
-const { createChangeSummary, createDetailedChangeSummary } = require('./change-detector');
+const { createChangeSummary, createDetailedChangeSummary, fitFcmDataPayload, isDescribableChange } = require('./change-detector');
 const { matchesGroupFilters } = require('./bakalari-parser');
 
 // FCM error codes that mean a token is permanently dead and should be pruned.
+// 'messaging/invalid-argument' is NOT here: FCM returns it for a malformed
+// *message* too ("signals an invalid registration only if the payload is
+// completely valid", firebase.google.com/docs/cloud-messaging/manage-tokens),
+// so one bad payload used to wipe the tokens of every recipient.
 const DEAD_TOKEN_ERRORS = new Set([
     'messaging/registration-token-not-registered',
-    'messaging/invalid-registration-token',
-    'messaging/invalid-argument'
+    'messaging/invalid-registration-token'
 ]);
+
+/**
+ * Tokens of a multicast that FCM reported as permanently invalid.
+ * @param {Array<String>} tokens - Tokens used for the multicast (same order as responses)
+ * @param {Object} sendResult - Result from sendNotificationToTokens (has .responses)
+ * @returns {Array<String>}
+ */
+function findDeadTokens(tokens, sendResult) {
+    const responses = sendResult && sendResult.responses;
+    if (!responses || responses.length === 0) return [];
+    const dead = [];
+    responses.forEach((resp, idx) => {
+        if (!resp.success && resp.error && DEAD_TOKEN_ERRORS.has(resp.error.code) && tokens[idx]) {
+            dead.push(tokens[idx]);
+        }
+    });
+    return dead;
+}
 
 /**
  * Remove FCM tokens that the API reported as permanently invalid from a user doc.
@@ -26,16 +47,7 @@ const DEAD_TOKEN_ERRORS = new Set([
  */
 async function pruneInvalidTokens(userId, tokens, sendResult) {
     try {
-        const responses = sendResult && sendResult.responses;
-        if (!responses || responses.length === 0) return 0;
-
-        const deadTokens = [];
-        responses.forEach((resp, idx) => {
-            if (!resp.success && resp.error && DEAD_TOKEN_ERRORS.has(resp.error.code)) {
-                if (tokens[idx]) deadTokens.push(tokens[idx]);
-            }
-        });
-
+        const deadTokens = findDeadTokens(tokens, sendResult);
         if (deadTokens.length === 0) return 0;
 
         const db = getFirestore();
@@ -52,12 +64,64 @@ async function pruneInvalidTokens(userId, tokens, sendResult) {
 }
 
 /**
+ * What a notification says, without the time it is sent: two user documents
+ * that would send exactly this to one device send it once.
+ * @param {Object} notification - { title, body, data }
+ * @returns {String}
+ */
+function notificationKey(notification) {
+    const { timestamp, ...data } = (notification && notification.data) || {};
+    return JSON.stringify([notification && notification.title, notification && notification.body, data]);
+}
+
+/**
+ * The tokens that have not been sent this message yet, each once, now marked
+ * in `sent`. A device whose token sits in two user documents (a 1.x document
+ * left behind by the migration, an ID replaced after the site data were
+ * cleared) gets the same message once. The key is token + message, never the
+ * token alone: a different message to the same device still goes, so it does
+ * not matter which document comes first (somebody who adds another person's
+ * token to their own account cannot replace that person's notifications).
+ * @param {Array<String>} tokens
+ * @param {Set<String>} sent - one per dispatch (a change document, a reminder hour)
+ * @param {String} messageKey - identity of the message (see notificationKey)
+ * @returns {Array<String>}
+ */
+function takeUnsentTokens(tokens, sent, messageKey) {
+    const fresh = [];
+    for (const token of tokens || []) {
+        const key = `${messageKey}\n${token}`;
+        if (sent.has(key)) continue;
+        sent.add(key);
+        fresh.push(token);
+    }
+    return fresh;
+}
+
+// A change found on Friday evening still matters on Monday morning; after
+// three days it is old news. (FCM's default is to keep an undelivered message
+// for four weeks.)
+const CHANGE_TTL_SECONDS = 3 * 24 * 3600;
+
+/**
+ * Web Push headers of a message: how long the push service keeps it for a
+ * device that is offline (TTL, seconds) and that it should be delivered
+ * right away even to a device saving battery (Urgency).
+ */
+function webpushOptions(ttlSeconds) {
+    if (!Number.isFinite(ttlSeconds)) return null;
+    return { headers: { TTL: String(Math.max(0, Math.round(ttlSeconds))), Urgency: 'high' } };
+}
+
+/**
  * Send notification to multiple FCM tokens
  * @param {Array<String>} tokens - Array of FCM device tokens
  * @param {Object} notification - Notification payload
+ * @param {{ ttlSeconds?: Number }} [options] - lifetime of an undelivered message;
+ *        without it the FCM defaults apply (4 weeks, normal urgency)
  * @returns {Promise<Object>} Result with success/failure counts
  */
-async function sendNotificationToTokens(tokens, notification) {
+async function sendNotificationToTokens(tokens, notification, { ttlSeconds } = {}) {
     if (!tokens || tokens.length === 0) {
         console.log('⚠️  No tokens to send notification to');
         return { successCount: 0, failureCount: 0 };
@@ -66,15 +130,21 @@ async function sendNotificationToTokens(tokens, notification) {
     try {
         const messaging = getMessaging();
 
+        // FCM refuses a message whose payload is over 4096 B (the whole multicast
+        // fails with messaging/invalid-argument). The detailed text is already
+        // capped, but title + body + ids are not, so the final data object is
+        // trimmed as a whole (detailedBody first, then body).
         const message = {
-            data: {
+            data: fitFcmDataPayload({
                 title: notification.title,
                 body: notification.body,
                 icon: notification.icon || '/icon-192.png',
                 ...(notification.data || {})
-            },
+            }),
             tokens: tokens
         };
+        const webpush = webpushOptions(ttlSeconds);
+        if (webpush) message.webpush = webpush;
 
         const response = await messaging.sendEachForMulticast(message);
 
@@ -105,20 +175,24 @@ async function sendNotificationToTokens(tokens, notification) {
  * Derive denormalized index fields from a watchedTimetables array.
  * - watchedKeys: ["Class_4A_Actual", ...] → query watchers with array-contains
  * - hasReminders: true if any watched timetable has a lesson reminder enabled
+ * - watchedTypes: ["Class", "Room"] → the admin statistics count users per
+ *   timetable type with count() (array-contains) instead of reading every user
  * @param {Array} watchedTimetables
- * @returns {{ watchedKeys: string[], hasReminders: boolean }}
+ * @returns {{ watchedKeys: string[], hasReminders: boolean, watchedTypes: string[] }}
  */
 function deriveWatchIndex(watchedTimetables) {
     const list = Array.isArray(watchedTimetables) ? watchedTimetables : [];
-    const watchedKeys = list
-        .filter(t => t && t.type && t.id && t.scheduleType)
-        .map(t => `${t.type}_${t.id}_${t.scheduleType}`);
+    const valid = list.filter(t => t && t.type && t.id && t.scheduleType);
+    const watchedKeys = valid.map(t => `${t.type}_${t.id}_${t.scheduleType}`);
+    const watchedTypes = [...new Set(valid.map(t => String(t.type)))].sort();
     const hasReminders = list.some(t => {
         const r = t && t.notificationTypes && t.notificationTypes.reminders;
         return !!(r && (r.next_lesson_room || r.next_lesson_teacher || r.next_lesson_subject));
     });
-    return { watchedKeys, hasReminders };
+    return { watchedKeys, hasReminders, watchedTypes };
 }
+
+const sameList = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
 
 let watchIndexMigrated = false;
 
@@ -133,9 +207,10 @@ async function ensureWatchIndexMigrated() {
 
     const db = getFirestore();
     try {
+        // V2 adds watchedTypes (admin statistics); V1 docs get it on this pass.
         const flagRef = db.collection('system').doc('migrations');
         const flag = await flagRef.get();
-        if (flag.exists && flag.data().watchIndexV1) {
+        if (flag.exists && flag.data().watchIndexV2) {
             watchIndexMigrated = true;
             return;
         }
@@ -147,18 +222,17 @@ async function ensureWatchIndexMigrated() {
 
         for (const doc of usersSnap.docs) {
             const data = doc.data();
-            const { watchedKeys, hasReminders } = deriveWatchIndex(data.preferences && data.preferences.watchedTimetables);
-            const cur = data.watchedKeys || [];
-            const sameKeys = cur.length === watchedKeys.length && cur.every((k, i) => k === watchedKeys[i]);
-            if (sameKeys && data.hasReminders === hasReminders) continue;
+            const { watchedKeys, hasReminders, watchedTypes } = deriveWatchIndex(data.preferences && data.preferences.watchedTimetables);
+            if (sameList(data.watchedKeys || [], watchedKeys) && data.hasReminders === hasReminders
+                && sameList(data.watchedTypes, watchedTypes)) continue;
 
-            batch.update(doc.ref, { watchedKeys, hasReminders });
+            batch.update(doc.ref, { watchedKeys, hasReminders, watchedTypes });
             ops++; updated++;
             if (ops >= 450) { await batch.commit(); batch = db.batch(); ops = 0; }
         }
         if (ops > 0) await batch.commit();
 
-        await flagRef.set({ watchIndexV1: true, watchIndexAt: new Date().toISOString() }, { merge: true });
+        await flagRef.set({ watchIndexV1: true, watchIndexV2: true, watchIndexAt: new Date().toISOString() }, { merge: true });
         watchIndexMigrated = true;
         console.log(`✅ [MIGRATION] Watch index backfilled (${updated} user docs updated)`);
     } catch (error) {
@@ -244,26 +318,49 @@ async function getUsersWatchingTimetable(timetable) {
 // lesson turning into cancelled/absent, which is what the "Odpadlé hodiny"
 // switch means to the user - without this mapping those (the most important
 // notifications there are) matched no preference and were silently dropped.
-const PREFERENCE_KEY_BY_CHANGE_TYPE = {
-    type_change: 'lesson_removed',
+// 'lesson_restored' (the cancellation was called off) goes to the same people
+// as the cancellation. 'lesson_replaced' (another subject AND another teacher
+// instead of the original lesson) is at once a cancelled lesson, a substitution
+// and a subject change, so any of those three switches lets it through; the
+// meaning of the stored switches for every other change stays as it was.
+const PREFERENCE_KEYS_BY_CHANGE_TYPE = {
+    type_change: ['lesson_removed'],
+    lesson_restored: ['lesson_removed'],
+    lesson_replaced: ['substitution', 'lesson_removed', 'subject_change'],
 };
 
+// What the app switches on for a newly watched timetable
+// (public/js/notifications-preferences.js). Used for a switch that was never
+// stored and for a watched timetable without any stored preferences.
 const DEFAULT_ENABLED_CHANGES = ['lesson_removed', 'substitution', 'room_change'];
 
+/**
+ * Switches that let a change through (any one of them is enough).
+ * @param {String} changeType
+ * @param {Object} [change] - the change itself; a cancelled lesson that takes
+ *        place with a substitute ('lesson_restored' + change.substitute) is
+ *        also a substitution
+ */
+function preferenceKeysForChange(changeType, change = null) {
+    const keys = PREFERENCE_KEYS_BY_CHANGE_TYPE[changeType] || [changeType];
+    if (changeType === 'lesson_restored' && change && change.change && change.change.substitute) {
+        return [...keys, 'substitution'];
+    }
+    return keys;
+}
+
+/** The main switch of a change type. */
 function preferenceKeyForChange(changeType) {
-    return PREFERENCE_KEY_BY_CHANGE_TYPE[changeType] || changeType;
+    return preferenceKeysForChange(changeType)[0];
 }
 
 function filterChangesByPreferences(changes, notificationTypes) {
-    if (!notificationTypes || !notificationTypes.changes) {
-        // No preferences set, send all change notifications (default behavior)
-        return changes;
-    }
+    // No preferences stored for this timetable (user doc from 1.x, or one that
+    // holds only the reminder switches): the app's defaults apply. Sending
+    // everything, as before, included the types the app keeps off by default.
+    const userPrefs = (notificationTypes && notificationTypes.changes) || {};
 
-    const userPrefs = notificationTypes.changes;
-
-    return changes.filter(change => {
-        const typeKey = preferenceKeyForChange(change.type);
+    return changes.filter(change => preferenceKeysForChange(change.type, change).some(typeKey => {
         const isEnabled = userPrefs[typeKey];
 
         // Preference never stored (older user doc): fall back to the important ones.
@@ -271,8 +368,30 @@ function filterChangesByPreferences(changes, notificationTypes) {
             return DEFAULT_ENABLED_CHANGES.includes(typeKey);
         }
 
-        return isEnabled;
-    });
+        return !!isEnabled;
+    }));
+}
+
+/**
+ * The changes of a stored document that this version can put into words.
+ * A newer prefetch may write a type this sender does not know yet (the prefetch
+ * runs from another branch than the web, see prefetch.yml); its text would be
+ * empty and the user would get a notification saying nothing. Those are dropped
+ * and logged; the rest of the document is sent as usual.
+ * @param {*} changes - `changes` of a changes/{id} document
+ * @param {String} docId - for the log
+ * @returns {Array}
+ */
+function describableChanges(changes, docId) {
+    const list = Array.isArray(changes) ? changes : [];
+    const known = list.filter(isDescribableChange);
+    if (known.length < list.length) {
+        const unknown = [...new Set(list.filter(change => !isDescribableChange(change))
+            .map(change => String((change && change.type) || 'no type')))];
+        console.warn(`⚠️  ${docId}: dropping ${list.length - known.length} change(s) of unknown type (${unknown.join(', ')}) - ` +
+            'written by a newer prefetch than this sender?');
+    }
+    return known;
 }
 
 /**
@@ -297,6 +416,42 @@ function filterChangesByGroup(changes, groupFilters) {
         console.log(`[FILTER CHANGE] ${passes ? '✅ PASS' : '❌ FAIL'}: ${change.lesson.subject || change.type}, group: "${change.lesson.group || ''}"`);
         return passes;
     });
+}
+
+const SCHEDULE_TYPE_LABELS = { Actual: 'AKTUÁLNÍ', Next: 'PŘÍŠTÍ', Permanent: 'STÁLÝ' };
+
+/**
+ * Push payload for the changes of one timetable.
+ * FCM data values must be strings. timetableType / timetableId / scheduleType
+ * are what the service worker builds the notification tag from
+ * ('change_' + type + '_' + id + '_' + scheduleType), so a newer change of one
+ * timetable replaces its older notification but never another timetable's.
+ * @param {{type: string, id: string, name: string, scheduleType: string}} timetable
+ * @param {Array} filteredChanges - changes this user should hear about
+ */
+function buildChangeNotification(timetable, filteredChanges) {
+    const summary = createChangeSummary(filteredChanges);
+    const detailedSummary = createDetailedChangeSummary(filteredChanges);
+    // Format schedule type in CAPSLOCK for title
+    const scheduleTypeLabel = SCHEDULE_TYPE_LABELS[timetable.scheduleType] || String(timetable.scheduleType || '');
+    const first = filteredChanges[0];
+
+    return {
+        title: `${timetable.name} ${scheduleTypeLabel}: Změny v rozvrhu`,
+        body: summary,
+        data: {
+            type: 'timetable_change',
+            timetableType: String(timetable.type),
+            timetableId: String(timetable.id),
+            scheduleType: String(timetable.scheduleType),
+            changeCount: String(filteredChanges.length),
+            // Day of the first change so the client can deep-link to it.
+            day: String(first && first.day != null ? first.day : ''),
+            timestamp: new Date().toISOString(),
+            detailedBody: detailedSummary
+        },
+        icon: '/icon-192.png'
+    };
 }
 
 /**
@@ -349,19 +504,24 @@ async function processPendingChanges() {
             }
 
             const timetable = changeData.timetable;
-            const changes = changeData.changes;
+            const changes = describableChanges(changeData.changes, changeDoc.id);
 
-            // Get users watching this timetable
-            const watchingUsers = await getUsersWatchingTimetable(timetable);
+            // Get users watching this timetable (nobody, when nothing in the
+            // document can be put into words)
+            const watchingUsers = changes.length > 0 ? await getUsersWatchingTimetable(timetable) : [];
 
             if (watchingUsers.length === 0) {
-                console.log(`⏭️  Skipping ${timetable.name} - no users watching`);
+                console.log(`⏭️  Skipping ${timetable && timetable.name} - ${changes.length > 0 ? 'no users watching' : 'no change to describe'}`);
+                // Recorded, so the admin shows "no watchers" instead of a
+                // delivery that never finishes.
+                await changeDoc.ref.update({ sentToUsers: 0, sentToDevices: 0 });
                 processedCount++;
                 continue;
             }
 
             // Send to each user with their filtered changes
             let totalSent = 0;
+            const sentMessages = new Set(); // token + message, for this change document
 
             for (const user of watchingUsers) {
                 try {
@@ -376,35 +536,24 @@ async function processPendingChanges() {
                         continue;
                     }
 
-                    // Create notification payload with filtered changes
-                    const summary = createChangeSummary(filteredChanges);
-                    const detailedSummary = createDetailedChangeSummary(filteredChanges);
+                    const notification = buildChangeNotification(timetable, filteredChanges);
+                    // Last line of defence: never a notification without a text.
+                    if (!notification.body) {
+                        console.warn(`⚠️  ${changeDoc.id}: empty notification text for user ${user.userId}, not sent`);
+                        continue;
+                    }
 
-                    // Format schedule type in CAPSLOCK for title
-                    const scheduleTypeLabel = timetable.scheduleType === 'Actual' ? 'AKTUÁLNÍ' : 'PŘÍŠTÍ';
+                    const tokens = takeUnsentTokens(user.tokens, sentMessages, notificationKey(notification));
+                    if (tokens.length === 0) {
+                        console.log(`⏭️  Devices of user ${user.userId} already got this notification`);
+                        continue;
+                    }
 
-                    const notification = {
-                        title: `${timetable.name} ${scheduleTypeLabel}: Změny v rozvrhu`,
-                        body: summary,
-                        data: {
-                            type: 'timetable_change',
-                            timetableType: timetable.type,
-                            timetableId: timetable.id,
-                            scheduleType: timetable.scheduleType,
-                            changeCount: filteredChanges.length.toString(),
-                            // Day of the first change so the client can deep-link to it.
-                            day: String(filteredChanges[0] && filteredChanges[0].day != null ? filteredChanges[0].day : ''),
-                            timestamp: new Date().toISOString(),
-                            detailedBody: detailedSummary
-                        },
-                        icon: '/icon-192.png'
-                    };
-
-                    const result = await sendNotificationToTokens(user.tokens, notification);
+                    const result = await sendNotificationToTokens(tokens, notification, { ttlSeconds: CHANGE_TTL_SECONDS });
                     totalSent += result.successCount;
 
                     // Drop any tokens FCM reported as permanently invalid.
-                    await pruneInvalidTokens(user.userId, user.tokens, result);
+                    await pruneInvalidTokens(user.userId, tokens, result);
                 } catch (error) {
                     console.error(`Failed to send to user ${user.userId}:`, error.message);
                 }
@@ -499,9 +648,17 @@ async function cleanupOldChanges(daysToKeep = 2) {
 }
 
 module.exports = {
+    DEAD_TOKEN_ERRORS,
+    CHANGE_TTL_SECONDS,
+    findDeadTokens,
+    buildChangeNotification,
     filterChangesByPreferences,
+    describableChanges,
     preferenceKeyForChange,
+    preferenceKeysForChange,
     sendNotificationToTokens,
+    notificationKey,
+    takeUnsentTokens,
     getUsersWatchingTimetable,
     processPendingChanges,
     cleanupOldChanges,

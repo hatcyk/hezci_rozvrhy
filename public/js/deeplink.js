@@ -12,9 +12,31 @@
 
 import { state, updateState } from './state.js';
 import { dom } from './dom.js';
+import { setPressed } from './utils.js';
 
 const VALID_TYPES = ['Class', 'Teacher', 'Room'];
 const VALID_SCHEDULES = ['actual', 'next', 'permanent'];
+// App views besides the timetable (view-route.js); /?view=changes and
+// /?view=rooms are also the manifest shortcuts.
+const KNOWN_VIEWS = ['changes', 'rooms', 'common'];
+
+/**
+ * Requested app view from ?view=… (manifest shortcuts), or null.
+ * Unknown values are ignored, so a stale or hand-typed link falls back to the
+ * default timetable instead of breaking the boot.
+ * @param {string} [search=window.location.search]
+ */
+export function parseViewParam(search = window.location.search) {
+    const view = new URLSearchParams(search).get('view');
+    return view && KNOWN_VIEWS.includes(view) ? view : null;
+}
+
+/**
+ * Selector of slots that carry a change, in every layout: renderers stamp
+ * data-changed="true" on the element that opens the lesson detail (the
+ * <button class="lesson"> of Den, Týden, Seznam and Karty).
+ */
+export const CHANGED_SELECTOR = '[data-changed="true"]';
 
 /**
  * Parse deep-link parameters from a URL search string.
@@ -42,40 +64,50 @@ export function parseDeepLinkParams(search = window.location.search) {
 }
 
 function setActiveButton(buttons, datasetKey, value) {
-    if (!buttons) return;
-    buttons.forEach(btn => {
-        btn.classList.toggle('active', btn.dataset[datasetKey] === value);
-    });
+    setPressed(buttons, btn => btn.dataset[datasetKey] === value);
 }
 
 /**
- * Briefly highlight changed lessons in the current view and scroll the first one
- * into view. Works across layouts because every renderer marks changed lessons
- * with the `.changed` class.
+ * Briefly highlight changed lessons in the current view and bring the first
+ * one into view. Used to match only `.lesson-card.changed`, i.e. the table
+ * layouts; on phones (agenda, list, cards) nothing was highlighted.
  */
-function pulseChangedLessons() {
-    requestAnimationFrame(() => {
-        const changed = document.querySelectorAll('.lesson-card.changed');
-        if (changed.length === 0) return;
+async function pulseChangedLessons() {
+    await new Promise(r => requestAnimationFrame(r));
+    const changed = [...document.querySelectorAll(`.timetable-container ${CHANGED_SELECTOR}`)];
+    if (changed.length === 0) return;
 
-        changed.forEach(el => el.classList.add('deep-highlight'));
-        changed[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    changed.forEach(el => el.classList.add('deep-highlight'));
 
-        setTimeout(() => {
-            changed.forEach(el => el.classList.remove('deep-highlight'));
-        }, 4500);
-    });
+    // The card view is a translated strip, scrolling does not reach a card there
+    const { showCardContaining } = await import('./layout-renderers.js');
+    if (!showCardContaining(changed[0])) {
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        changed[0].scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    }
+    // Keyboard / screen reader users land on the change as well
+    changed[0].focus({ preventScroll: true });
+
+    setTimeout(() => {
+        changed.forEach(el => el.classList.remove('deep-highlight'));
+    }, 4500);
 }
 
 /**
  * Apply a deep link: select the timetable + schedule + day and load it.
- * @param {{ type, id, schedule, day, highlight }} link
+ * @param {{ type, id, schedule, day, highlight, fromView? }} link
+ *   fromView: opened from another view of the app (view-router.js openTimetable)
  */
 export async function applyDeepLink(link) {
     if (!link || !link.type || !link.id) return;
 
     const { populateValueSelect, loadTimetable, selectDay } = await import('./timetable.js');
     const { setDropdownValue } = await import('./dropdown.js');
+
+    // A timetable link opened from another view (toast of a foreground
+    // notification, message from the service worker) shows the timetable view
+    const { getCurrentView, showView } = await import('./view-router.js');
+    if (getCurrentView() && getCurrentView() !== 'timetable') await showView('timetable', {}, { focus: false });
 
     // Entity type (Class/Teacher/Room)
     updateState('selectedType', link.type);
@@ -101,5 +133,11 @@ export async function applyDeepLink(link) {
         try { await selectDay(link.day); } catch (_) { /* layout may handle it */ }
     }
 
-    if (link.highlight) pulseChangedLessons();
+    // Phones: a link to a day (or to a change) opens that day, not the overview
+    if (link.day !== null && link.day !== undefined || link.highlight) {
+        const { showDayScreen } = await import('./shell.js');
+        showDayScreen({ fromView: !!link.fromView });
+    }
+
+    if (link.highlight) await pulseChangedLessons();
 }

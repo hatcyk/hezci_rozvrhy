@@ -7,6 +7,9 @@ import { state, updateState } from './state.js';
 import { debug } from './debug.js';
 import { showToast } from './toast.js';
 import { applyDeepLink } from './deeplink.js';
+import { apiFetch } from './api.js';
+import { apiError } from './api-error.js';
+import { isIOSDevice, isApplePushEndpoint } from './platform.js';
 
 let messaging = null;
 let fcmToken = null;
@@ -28,9 +31,31 @@ function hasLessonRemindersEnabled(watchedTimetables) {
  * FCM does NOT show a system notification in this case, so we surface it as an
  * in-app toast. For change notifications the toast deep-links to the timetable.
  */
-function handleForegroundMessage(payload) {
+/**
+ * True when this device's push subscription is Apple's (WebKit). The service
+ * worker then shows every push as a system notification even in the
+ * foreground (WebKit revokes subscriptions whose pushes show nothing), so an
+ * in-app toast would duplicate it.
+ */
+async function serviceWorkerShowsForegroundPushes() {
+    try {
+        if (!('serviceWorker' in navigator)) return false;
+        const reg = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+        const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
+        return isApplePushEndpoint(sub && sub.endpoint);
+    } catch {
+        return false;
+    }
+}
+
+async function handleForegroundMessage(payload) {
     const d = (payload && payload.data) || {};
     debug.log('📩 Foreground message:', d.type || 'unknown');
+
+    if (await serviceWorkerShowsForegroundPushes()) {
+        debug.log('System notification shown by the service worker (WebKit) — no toast');
+        return;
+    }
 
     const title = d.title || 'Nová notifikace';
     const body = d.body || '';
@@ -46,14 +71,14 @@ function handleForegroundMessage(payload) {
         showToast({
             title,
             body,
-            icon: '🔄',
+            icon: 'repeat-2',
             variant: 'change',
             onClick: () => applyDeepLink(link).catch(err => debug.error('Deep link failed:', err)),
         });
     } else if (d.type === 'lesson_reminder') {
-        showToast({ title, body, icon: '⏰', variant: 'reminder' });
+        showToast({ title, body, icon: 'clock', variant: 'reminder' });
     } else {
-        showToast({ title, body, icon: '🔔', variant: 'info' });
+        showToast({ title, body, icon: 'bell', variant: 'info' });
     }
 }
 
@@ -70,7 +95,8 @@ export function isNotificationSupported() {
  * Check if user is on iOS
  */
 export function isIOS() {
-    return /iPhone|iPad|iPod/.test(navigator.userAgent);
+    // iPadOS 13+ Safari pretends to be a Mac; isIOSDevice() catches that too
+    return isIOSDevice();
 }
 
 /**
@@ -86,7 +112,7 @@ export function isStandalone() {
  */
 export async function initializeMessaging() {
     try {
-        if (!firebase || !firebase.messaging) {
+        if (typeof firebase === 'undefined' || !firebase || !firebase.messaging) {
             debug.error('Firebase Messaging not available');
             return false;
         }
@@ -221,20 +247,14 @@ export async function requestNotificationPermission() {
  */
 async function saveTokenToServer(token) {
     try {
-        const userId = localStorage.getItem('userId');
-
-        if (!userId) {
-            throw new Error('User ID not found');
-        }
-
-        const response = await fetch('/api/fcm/subscribe', {
+        // Authenticated call (contract S1): the server checks the ID token
+        const response = await apiFetch((userId) => ['/api/fcm/subscribe', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, token })
-        });
+        }]);
 
         if (!response.ok) {
-            throw new Error('Failed to save token to server');
+            throw await apiError(response, 'Server zapnutí upozornění neuložil. Zkuste to prosím znovu.');
         }
 
         debug.log('✅ FCM token saved to server');
@@ -254,7 +274,7 @@ async function saveTokenToServer(token) {
  * reported notifications as ON again and they came back by themselves.
  */
 export async function disableNotifications() {
-    const userId = localStorage.getItem('userId');
+    const hasUser = !!localStorage.getItem('userId');
 
     // Stop this device from receiving pushes at all. Best effort: the token is
     // not always available and deleteToken can fail offline.
@@ -270,18 +290,17 @@ export async function disableNotifications() {
     fcmToken = null;
     updateState('notificationsEnabled', false);
 
-    if (!userId) return;
+    if (!hasUser) return;
 
     // No token in the body → the server clears every token of this user and
     // records that notifications are off.
-    const response = await fetch('/api/fcm/unsubscribe', {
+    const response = await apiFetch((userId) => ['/api/fcm/unsubscribe', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId })
-    });
+    }]);
 
     if (!response.ok) {
-        throw new Error(`Server refused to disable notifications (${response.status})`);
+        throw await apiError(response, `Server vypnutí upozornění neuložil (chyba ${response.status}). Zkuste to prosím znovu.`);
     }
 
     debug.log('✅ Notifications disabled');
@@ -292,14 +311,12 @@ export async function disableNotifications() {
  */
 export async function loadNotificationPreferences() {
     try {
-        const userId = localStorage.getItem('userId');
+        if (!localStorage.getItem('userId')) return null;
 
-        if (!userId) return null;
-
-        const response = await fetch(`/api/fcm/preferences/${userId}`);
+        const response = await apiFetch((userId) => [`/api/fcm/preferences/${encodeURIComponent(userId)}`]);
 
         if (!response.ok) {
-            throw new Error('Failed to load preferences');
+            throw await apiError(response, 'Nastavení upozornění se nepodařilo načíst.');
         }
 
         const data = await response.json();
@@ -392,8 +409,21 @@ export async function ensureTokenRegistered() {
     }
 }
 
+let startupPreferences = null;
+
 /**
- * Boot-time reconcile: lesson reminders can be enabled in preferences
+ * Preferences at app start: the token reconcile and the bell both need them,
+ * one request serves both. Later reads (opening the sheet) ask the server again.
+ */
+export function loadStartupNotificationPreferences() {
+    if (!startupPreferences) startupPreferences = loadNotificationPreferences();
+    return startupPreferences;
+}
+
+/**
+ * Boot-time reconcile. A user with notifications on but no token stored on the
+ * server gets the token registered again (see below). Beyond that, lesson
+ * reminders can be enabled in preferences
  * independently of having a valid FCM token, so a user can have reminders ON
  * with no deliverable token (registration never finished, token expired, or was
  * pruned). This re-syncs the token silently when possible and otherwise flags
@@ -404,7 +434,7 @@ export async function ensureTokenRegistered() {
  */
 export async function reconcileLessonReminderToken() {
     try {
-        const data = await loadNotificationPreferences();
+        const data = await loadStartupNotificationPreferences();
         if (!data) return;
 
         // The user switched notifications off; leave them off. Reminders staying
@@ -416,6 +446,12 @@ export async function reconcileLessonReminderToken() {
 
         const remindersOn = hasLessonRemindersEnabled(state.watchedTimetables);
         if (!remindersOn) {
+            // Notifications are on, but the server holds no token of any device:
+            // it was pruned as dead, or the settings were just moved from a 1.x
+            // ID (device tokens are not moved with them). Register this
+            // browser's token again - silently, only with permission already
+            // granted - so change notifications keep arriving.
+            if (data.hasTokens === false) await ensureTokenRegistered();
             updateState('remindersNeedAttention', false);
             return;
         }
@@ -443,20 +479,13 @@ export async function reconcileLessonReminderToken() {
  */
 export async function saveWatchedTimetables(timetables) {
     try {
-        const userId = localStorage.getItem('userId');
-
-        if (!userId) {
-            throw new Error('User ID not found');
-        }
-
-        const response = await fetch('/api/fcm/update-preferences', {
+        const response = await apiFetch((userId) => ['/api/fcm/update-preferences', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, watchedTimetables: timetables })
-        });
+        }]);
 
         if (!response.ok) {
-            throw new Error('Failed to save preferences');
+            throw await apiError(response, 'Server změnu neuložil. Zkuste to prosím znovu.');
         }
 
         updateState('watchedTimetables', timetables);
@@ -466,5 +495,20 @@ export async function saveWatchedTimetables(timetables) {
         debug.error('Failed to save watched timetables:', error);
         throw error;
     }
+}
+
+/**
+ * Toast for a change of the notification settings that did not reach the
+ * server (limit, outage, offline). The caller puts the switch back.
+ * @param {Error & { status?: number }} error
+ */
+export function reportUnsavedChange(error) {
+    showToast({
+        title: 'Změna nastavení upozornění se neuložila.',
+        // Our API errors carry a Czech message; a failed fetch says "Failed to fetch"
+        body: error && error.status ? error.message : 'Zkontrolujte připojení a zkuste to znovu.',
+        icon: 'triangle-alert',
+        timeout: 9000,
+    });
 }
 

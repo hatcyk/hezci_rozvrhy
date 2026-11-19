@@ -4,8 +4,8 @@
  */
 
 import { state } from './state.js';
-import { saveWatchedTimetables } from './notifications-core.js';
-import { standardizeGroupName } from './utils.js';
+import { saveWatchedTimetables, reportUnsavedChange } from './notifications-core.js';
+import { standardizeGroupName, esc, makeActivatable } from './utils.js';
 import { fetchTimetable } from './api.js';
 import { debug } from './debug.js';
 
@@ -13,11 +13,12 @@ import { debug } from './debug.js';
 export const NOTIFICATION_TYPES = {
     changes: {
         title: 'Změny v rozvrhu',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>',
+        icon: '<svg class="i" aria-hidden="true"><use href="icons.svg#repeat-2"></use></svg>',
         options: {
             lesson_removed: {
                 label: 'Odpadlé hodiny',
-                description: 'Když hodina odpadne nebo je zrušená',
+                // Also lets through lesson_restored and lesson_replaced (backend/fcm.js)
+                description: 'Když hodina odpadne, když se odpadlá hodina vrátí do rozvrhu a když ji nahradí jiná hodina',
                 default: true
             },
             substitution: {
@@ -43,8 +44,8 @@ export const NOTIFICATION_TYPES = {
         }
     },
     reminders: {
-        title: 'Upomínky',
-        icon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
+        title: 'Připomínky hodin',
+        icon: '<svg class="i" aria-hidden="true"><use href="icons.svg#clock"></use></svg>',
         options: {
             next_lesson_room: {
                 label: 'Kam jít na další hodinu',
@@ -94,7 +95,7 @@ export function renderTimetablePreferencesView(type, id, container) {
     const timetables = state.watchedTimetables.filter(t => t.type === type && t.id === id);
 
     if (timetables.length === 0) {
-        container.innerHTML = '<p style="color: var(--text-dim); padding: 20px 0; text-align: center;">Žádné nastavení k zobrazení.</p>';
+        container.innerHTML = '<p class="g-empty">Tento rozvrh nesledujete. Zapněte ho v seznamu a pak tu nastavíte, o čem chcete vědět.</p>';
         return;
     }
 
@@ -158,12 +159,10 @@ function createTimetablePreferenceItem(timetable, index) {
     header.className = 'timetable-preference-header';
     header.innerHTML = `
         <div class="timetable-preference-name">
-            <span>${timetable.name}</span>
-            <span class="timetable-preference-badge">${getScheduleTypeLabel(timetable.scheduleType)}</span>
+            <span>${esc(timetable.name)}</span>
+            <span class="timetable-preference-badge">${esc(getScheduleTypeLabel(timetable.scheduleType))}</span>
         </div>
-        <svg class="timetable-preference-arrow" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"></polyline>
-        </svg>
+        <svg class="i timetable-preference-arrow" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>
     `;
 
     // Body with notification options
@@ -179,13 +178,11 @@ function createTimetablePreferenceItem(timetable, index) {
         const groupFilterSection = document.createElement('div');
         groupFilterSection.className = 'group-filter-section';
         groupFilterSection.innerHTML = `
-            <label class="group-filter-label">Filtrovat podle skupiny:</label>
+            <span class="group-filter-label">Jen tyto skupiny</span>
             <div class="multiselect-dropdown" id="group-filter-${index}">
-                <div class="multiselect-trigger">
+                <div class="multiselect-trigger" aria-haspopup="true" aria-expanded="false">
                     <span class="multiselect-label">Načítám...</span>
-                    <svg class="multiselect-arrow" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
+                    <svg class="i multiselect-arrow" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>
                 </div>
                 <div class="multiselect-menu">
                     <div class="multiselect-options"></div>
@@ -218,7 +215,7 @@ function createTimetablePreferenceItem(timetable, index) {
         if (groupKey === 'reminders' && timetable.scheduleType === 'Actual') {
             const note = document.createElement('span');
             note.className = 'notification-type-group-note';
-            note.textContent = '(pouze pro aktuální týden)';
+            note.textContent = 'jen pro aktuální týden';
             groupTitle.appendChild(note);
         }
 
@@ -231,25 +228,29 @@ function createTimetablePreferenceItem(timetable, index) {
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
+            checkbox.setAttribute('role', 'switch');
+            checkbox.className = 'g-switch';
             checkbox.id = `pref-${index}-${groupKey}-${optionKey}`;
             checkbox.checked = timetable.notificationTypes[groupKey]?.[optionKey] ?? option.default;
             checkbox.addEventListener('change', () => {
-                updateTimetablePreference(index, groupKey, optionKey, checkbox.checked);
+                updateTimetablePreference(index, groupKey, optionKey, checkbox.checked, checkbox);
             });
 
             const label = document.createElement('label');
             label.htmlFor = checkbox.id;
             label.innerHTML = `
-                <div>${option.label}</div>
-                <div class="notification-type-option-description">${option.description}</div>
+                <span class="notification-type-option-label">${option.label}</span>
+                <span class="notification-type-option-description">${option.description}</span>
             `;
 
             optionDiv.appendChild(checkbox);
             optionDiv.appendChild(label);
 
-            // Click on the whole row to toggle
+            // Click on the whole row to toggle. Clicks inside the <label> are
+            // left alone: the label already toggles its checkbox, and toggling
+            // here as well flipped it twice (no change, two saves).
             optionDiv.addEventListener('click', (e) => {
-                if (e.target !== checkbox) {
+                if (e.target !== checkbox && !e.target.closest('label')) {
                     checkbox.checked = !checkbox.checked;
                     checkbox.dispatchEvent(new Event('change'));
                 }
@@ -263,10 +264,14 @@ function createTimetablePreferenceItem(timetable, index) {
 
     body.appendChild(bodyInner);
 
-    // Toggle expand/collapse
-    header.addEventListener('click', () => {
-        header.classList.toggle('expanded');
-        body.classList.toggle('expanded');
+    // Toggle expand/collapse (keyboard operable, state exposed to AT)
+    header.setAttribute('aria-expanded', 'false');
+    body.inert = true;
+    makeActivatable(header, () => {
+        const open = header.classList.toggle('expanded');
+        body.classList.toggle('expanded', open);
+        header.setAttribute('aria-expanded', String(open));
+        body.inert = !open;
     });
 
     item.appendChild(header);
@@ -276,9 +281,10 @@ function createTimetablePreferenceItem(timetable, index) {
 }
 
 /**
- * Update notification preference for a specific timetable
+ * Update notification preference for a specific timetable. When the server
+ * does not store it, the switch goes back and a toast says so.
  */
-async function updateTimetablePreference(index, groupKey, optionKey, value) {
+async function updateTimetablePreference(index, groupKey, optionKey, value, checkbox) {
     const timetable = state.watchedTimetables[index];
 
     if (!timetable.notificationTypes) {
@@ -289,7 +295,9 @@ async function updateTimetablePreference(index, groupKey, optionKey, value) {
         timetable.notificationTypes[groupKey] = {};
     }
 
-    timetable.notificationTypes[groupKey][optionKey] = value;
+    const types = timetable.notificationTypes[groupKey];
+    const previous = types[optionKey];
+    types[optionKey] = value;
 
     // Save to server
     try {
@@ -297,6 +305,12 @@ async function updateTimetablePreference(index, groupKey, optionKey, value) {
         debug.log(`✅ Updated preference: ${groupKey}.${optionKey} = ${value}`);
     } catch (error) {
         console.error('Failed to save preferences:', error);
+        // Back to the stored value, unless a newer change of the switch is under way
+        if (types[optionKey] === value) {
+            types[optionKey] = previous ?? !value;
+            if (checkbox) checkbox.checked = !value;
+        }
+        reportUnsavedChange(error);
     }
 }
 
@@ -470,6 +484,8 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
             checkbox.checked = allSelected;
 
             const span = document.createElement('span');
+            span.id = `${checkbox.id}-label`;
+            checkbox.setAttribute('aria-labelledby', span.id);
             // Show subgroups in tooltip
             if (subGroups.length > 1) {
                 span.textContent = `${displayName} (${subGroups.join(', ')})`;
@@ -507,8 +523,8 @@ async function populateGroupFilter(multiselectElement, watchedTimetable, index) 
     // Update label based on selection
     updateGroupFilterLabel(label, watchedTimetable.groupFilters);
 
-    // Toggle dropdown on trigger click
-    trigger.addEventListener('click', (e) => {
+    // Toggle dropdown on trigger click (keyboard operable as well)
+    makeActivatable(trigger, (e) => {
         e.stopPropagation();
         const isActive = menu.classList.contains('active');
 
@@ -593,16 +609,14 @@ function aggregateGroups(groups) {
  */
 async function handleAggregatedGroupChange(checkbox, watchedTimetable, subGroups) {
     const isChecked = checkbox.checked;
+    const previous = [...watchedTimetable.groupFilters];
 
     debug.log(`🔄 Aggregated group toggled: subGroups=${subGroups.join(',')} = ${isChecked}`);
 
     if (isChecked) {
-        // Add all subgroups
-        subGroups.forEach(subGroup => {
-            if (!watchedTimetable.groupFilters.includes(subGroup)) {
-                watchedTimetable.groupFilters.push(subGroup);
-            }
-        });
+        // Add all subgroups (a new array: a failed save below can tell whether a newer change followed)
+        watchedTimetable.groupFilters = [...watchedTimetable.groupFilters,
+            ...subGroups.filter(subGroup => !watchedTimetable.groupFilters.includes(subGroup))];
     } else {
         // Remove all subgroups
         watchedTimetable.groupFilters = watchedTimetable.groupFilters.filter(g =>
@@ -615,11 +629,19 @@ async function handleAggregatedGroupChange(checkbox, watchedTimetable, subGroups
     updateGroupFilterLabel(label, watchedTimetable.groupFilters);
 
     // Save to server
+    const saved = watchedTimetable.groupFilters;
     try {
         await saveWatchedTimetables(state.watchedTimetables);
         debug.log(`✅ Group filters saved successfully:`, watchedTimetable.groupFilters);
     } catch (error) {
         console.error('❌ Failed to save group filters:', error);
+        // Back to the stored groups, unless a newer change is under way
+        if (watchedTimetable.groupFilters === saved) {
+            watchedTimetable.groupFilters = previous;
+            checkbox.checked = !isChecked;
+            updateGroupFilterLabel(label, previous);
+        }
+        reportUnsavedChange(error);
     }
 }
 
@@ -715,6 +737,7 @@ function updateGroupFilterLabel(label, groupFilters) {
 function openGroupFilterDropdown(trigger, menu) {
     trigger.classList.add('active');
     menu.classList.add('active');
+    trigger.setAttribute('aria-expanded', 'true');
 
     // Clear any inline styles that might override CSS
     menu.style.width = '';
@@ -733,4 +756,5 @@ function openGroupFilterDropdown(trigger, menu) {
 function closeGroupFilterDropdown(trigger, menu) {
     trigger.classList.remove('active');
     menu.classList.remove('active');
+    trigger.setAttribute('aria-expanded', 'false');
 }

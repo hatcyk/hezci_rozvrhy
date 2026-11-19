@@ -1,15 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { filterChangesByPreferences, preferenceKeyForChange } = require('../backend/fcm');
-const { createChangeSummary, createDetailedChangeSummary } = require('../backend/change-detector');
+const { filterChangesByPreferences, preferenceKeyForChange, preferenceKeysForChange } = require('../backend/fcm');
+const { createChangeSummary, createDetailedChangeSummary, isDescribableChange } = require('../backend/change-detector');
 
 const change = (type, extra = {}) => ({
     type,
     day: 0,
     dayName: 'Po',
     hour: 3,
-    lesson: { subject: 'Matematika', teacher: 'J. Tužilová', room: 'A102' },
+    lesson: { subject: 'Matematika', teacher: 'J. Ukázková', room: 'A102' },
     change: { newValue: 'removed' },
     ...extra,
 });
@@ -42,8 +42,73 @@ test('other change types keep their own switches', () => {
 
     assert.deepEqual(filterChangesByPreferences([sub, room, added], DEFAULTS), [sub, room]);
     assert.deepEqual(filterChangesByPreferences([sub, room, added], prefs({ ...DEFAULTS.changes, lesson_added: true })), [sub, room, added]);
-    // No preferences stored at all → send everything (unchanged behaviour)
-    assert.deepEqual(filterChangesByPreferences([added], null), [added]);
+    // No preferences stored at all → the app's defaults, like a switch that was never stored
+    assert.deepEqual(filterChangesByPreferences([sub, room, added, change('subject_change')], null), [sub, room]);
+    assert.deepEqual(filterChangesByPreferences([sub, added], undefined), [sub]);
+    assert.deepEqual(filterChangesByPreferences([change('type_change'), added], { reminders: { next_lesson_room: true } }), [change('type_change')]);
+});
+
+test('a substitution with another subject (lesson_replaced) reaches users with the default switches', () => {
+    const replaced = change('lesson_replaced', {
+        lesson: { subject: 'Fyzika', teacher: 'P. Novák', room: 'A102' },
+        change: { field: 'lesson', oldValue: 'Matematika', newValue: 'Fyzika' },
+    });
+    // It used to be a subject_change, which is off by default → nothing was delivered.
+    assert.deepEqual(filterChangesByPreferences([replaced], DEFAULTS), [replaced]);
+    // Any of the three switches that describe it is enough…
+    for (const key of ['lesson_removed', 'substitution', 'subject_change']) {
+        assert.deepEqual(filterChangesByPreferences([replaced], prefs({ ...ALL_OFF.changes, [key]: true })), [replaced], key);
+    }
+    // …and with all of them off it stays silent.
+    assert.deepEqual(filterChangesByPreferences([replaced], prefs({ ...ALL_OFF.changes, room_change: true, lesson_added: true })), []);
+    assert.deepEqual(filterChangesByPreferences([replaced], prefs({})), [replaced], 'older docs without stored switches');
+    // A plain subject change (same teacher) keeps its own switch, off by default.
+    assert.deepEqual(filterChangesByPreferences([change('subject_change')], DEFAULTS), []);
+
+    assert.equal(createChangeSummary([replaced]), 'Po 3.h: Matematika → Fyzika (P. Novák)');
+    assert.match(createDetailedChangeSummary([replaced]), /3\.h: Matematika → Fyzika \(P\. Novák\)/);
+});
+
+test('a cancellation that was called off (lesson_restored) goes to the people who got the cancellation', () => {
+    assert.equal(preferenceKeyForChange('lesson_restored'), 'lesson_removed');
+    const restored = change('lesson_restored', { change: { field: 'type', oldValue: 'removed', newValue: 'normal' } });
+    assert.deepEqual(filterChangesByPreferences([restored], DEFAULTS), [restored]);
+    assert.deepEqual(filterChangesByPreferences([restored], prefs({ ...DEFAULTS.changes, lesson_removed: false })), []);
+    assert.equal(createChangeSummary([restored]), 'Po 3.h: Matematika se koná (zrušení odvoláno)');
+    assert.match(createDetailedChangeSummary([restored]), /3\.h: Matematika se koná \(zrušení odvoláno\)/);
+});
+
+test('a lesson put where a cancelled one was: its own wording, old documents keep theirs', () => {
+    const lesson = { subject: 'Fyzika', teacher: 'P. Novák', room: 'A102' };
+    const afterCancel = change('lesson_replaced', { lesson, change: { field: 'lesson', oldValue: 'Matematika', newValue: 'Fyzika', cancelled: true } });
+    assert.equal(createChangeSummary([afterCancel]), 'Po 3.h: Fyzika (P. Novák) místo odpadlé hodiny Matematika');
+    assert.match(createDetailedChangeSummary([afterCancel]), /3\.h: Fyzika \(P\. Novák\) místo odpadlé hodiny Matematika/);
+    // teacher unknown → no empty brackets
+    assert.equal(createChangeSummary([{ ...afterCancel, lesson: { subject: 'Fyzika', teacher: '' } }]), 'Po 3.h: Fyzika místo odpadlé hodiny Matematika');
+    assert.equal(createChangeSummary([change('lesson_replaced', { lesson: { subject: 'Fyzika' }, change: { oldValue: 'Matematika', newValue: 'Fyzika' } })]),
+        'Po 3.h: Matematika → Fyzika');
+
+    const withSubstitute = change('lesson_restored', { change: { field: 'type', oldValue: 'removed', newValue: 'normal', substitute: 'K. Malá' } });
+    assert.equal(createChangeSummary([withSubstitute]), 'Po 3.h: Matematika se koná, supluje K. Malá (zrušení odvoláno)');
+    assert.match(createDetailedChangeSummary([withSubstitute]), /3\.h: Matematika se koná, supluje K\. Malá \(zrušení odvoláno\)/);
+    // ... and it is a substitution as well as a called-off cancellation
+    assert.deepEqual(preferenceKeysForChange('lesson_restored', withSubstitute), ['lesson_removed', 'substitution']);
+    assert.deepEqual(preferenceKeysForChange('lesson_restored', change('lesson_restored')), ['lesson_removed']);
+    assert.deepEqual(filterChangesByPreferences([withSubstitute], prefs({ ...ALL_OFF.changes, substitution: true })), [withSubstitute]);
+    assert.deepEqual(filterChangesByPreferences([withSubstitute], ALL_OFF), []);
+});
+
+test('texts do not break on a change without `lesson` or `change` (documents of an older prefetch)', () => {
+    const bare = (type) => ({ type, day: 0, dayName: 'Po', hour: 3 });
+    for (const type of ['substitution', 'room_change', 'lesson_removed', 'lesson_added', 'subject_change', 'type_change', 'lesson_replaced', 'lesson_restored']) {
+        assert.doesNotThrow(() => createChangeSummary([bare(type)]), type);
+        assert.doesNotThrow(() => createDetailedChangeSummary([bare(type)]), type);
+        assert.doesNotMatch(createChangeSummary([{ ...bare(type), lesson: { subject: 'Fyzika' } }]), /undefined|null|\(\)/, type);
+        assert.equal(isDescribableChange(bare(type)), true, type);
+    }
+    assert.equal(isDescribableChange({ type: 'lesson_moved', lesson: { subject: 'Fyzika' } }), false);
+    assert.equal(isDescribableChange({}), false);
+    assert.equal(isDescribableChange(null), false);
 });
 
 test('a cancelled lesson produces readable notification text', () => {
@@ -61,4 +126,46 @@ test('a cancelled lesson produces readable notification text', () => {
     const detailed = createDetailedChangeSummary([cancelled]);
     assert.match(detailed, /Matematika/);
     assert.match(detailed, /odpadla/);
+});
+
+const { findDeadTokens, buildChangeNotification, DEAD_TOKEN_ERRORS } = require('../backend/fcm');
+
+test('token se maže jen u „neregistrován“, ne při messaging/invalid-argument (chyba zprávy)', () => {
+    const tokens = ['ok', 'gone', 'bad-payload', 'malformed'];
+    const result = {
+        responses: [
+            { success: true },
+            { success: false, error: { code: 'messaging/registration-token-not-registered' } },
+            { success: false, error: { code: 'messaging/invalid-argument' } },
+            { success: false, error: { code: 'messaging/invalid-registration-token' } },
+        ],
+    };
+    assert.deepEqual(findDeadTokens(tokens, result), ['gone', 'malformed']);
+    assert.equal(DEAD_TOKEN_ERRORS.has('messaging/invalid-argument'), false);
+    // A payload error for everyone must not wipe anyone's token.
+    const allInvalid = { responses: tokens.map(() => ({ success: false, error: { code: 'messaging/invalid-argument' } })) };
+    assert.deepEqual(findDeadTokens(tokens, allInvalid), []);
+    assert.deepEqual(findDeadTokens(tokens, null), []);
+});
+
+test('notifikace o změně nese typ, id a druh rozvrhu (SW z nich skládá tag) jako řetězce', () => {
+    const n = buildChangeNotification(
+        { type: 'Class', id: 'ZL', name: 'ZL', scheduleType: 'Next' },
+        [change('substitution', { day: 3 })]
+    );
+    assert.equal(n.title, 'ZL PŘÍŠTÍ: Změny v rozvrhu');
+    assert.equal(n.data.type, 'timetable_change');
+    assert.equal(n.data.timetableType, 'Class');
+    assert.equal(n.data.timetableId, 'ZL');
+    assert.equal(n.data.scheduleType, 'Next');
+    assert.equal(n.data.day, '3');
+    assert.equal(n.data.changeCount, '1');
+    // FCM rejects non-string data values (that would be messaging/invalid-argument).
+    for (const [k, v] of Object.entries(n.data)) assert.equal(typeof v, 'string', k);
+    const tag = 'change_' + n.data.timetableType + '_' + n.data.timetableId + '_' + n.data.scheduleType;
+    assert.equal(tag, 'change_Class_ZL_Next');
+
+    const numericId = buildChangeNotification({ type: 'Room', id: 17, name: '17', scheduleType: 'Permanent' }, [change('room_change')]);
+    assert.equal(numericId.data.timetableId, '17');
+    assert.equal(numericId.title, '17 STÁLÝ: Změny v rozvrhu');
 });

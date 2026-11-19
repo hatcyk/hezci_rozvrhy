@@ -4,13 +4,14 @@
  */
 
 import { state, updateState } from './state.js';
-import { saveWatchedTimetables } from './notifications-core.js';
+import { saveWatchedTimetables, reportUnsavedChange } from './notifications-core.js';
 import { renderSelectedTimetablesPreferences, getDefaultPreferences } from './notifications-preferences.js';
 import { debug } from './debug.js';
+import { esc } from './utils.js';
 
-const GEAR_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg>`;
+const GEAR_ICON = '<svg class="i" aria-hidden="true"><use href="icons.svg#settings"></use></svg>';
 
-const CHEVRON_ICON = `<svg class="flat-accordion-chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+const CHEVRON_ICON = '<svg class="i flat-accordion-chevron" aria-hidden="true"><use href="icons.svg#chevron-down"></use></svg>';
 
 /**
  * Populate flat list with accordion categories and toggle switches
@@ -31,7 +32,7 @@ export function populateFlatList() {
     }
 
     if (state.definitions.teachers && state.definitions.teachers.length > 0) {
-        html += renderAccordion('Teacher', 'Učitelé', state.definitions.teachers);
+        html += renderAccordion('Teacher', 'Vyučující', state.definitions.teachers);
     }
 
     container.innerHTML = html;
@@ -60,16 +61,28 @@ export function populateFlatList() {
     container.querySelectorAll('.flat-accordion-header').forEach(header => {
         header.addEventListener('click', () => {
             const accordion = header.closest('.flat-accordion');
-            accordion.classList.toggle('open');
+            setAccordionOpen(accordion, !accordion.classList.contains('open'));
         });
     });
 }
 
+/**
+ * Open/close one accordion. The collapsed body is only squeezed to 0 rows, so
+ * it is made inert as well - otherwise Tab walked through dozens of invisible
+ * toggles (WCAG 2.4.3).
+ */
+function setAccordionOpen(accordion, open) {
+    if (!accordion) return;
+    accordion.classList.toggle('open', open);
+    const header = accordion.querySelector('.flat-accordion-header');
+    const body = accordion.querySelector('.flat-accordion-body');
+    if (header) header.setAttribute('aria-expanded', String(open));
+    if (body) body.inert = !open;
+}
+
 function renderAccordion(type, label, items) {
     const watchedCount = items.filter(item => isItemWatched(type, item.id)).length;
-    const countBadge = watchedCount > 0
-        ? `<span class="flat-accordion-count">${watchedCount}</span>`
-        : `<span class="flat-accordion-count" style="display:none">0</span>`;
+    const countBadge = `<span class="flat-accordion-count g-count"${watchedCount > 0 ? '' : ' hidden'}>${watchedCount}</span>`;
 
     let itemsHtml = '';
     items.forEach(item => {
@@ -77,13 +90,13 @@ function renderAccordion(type, label, items) {
     });
 
     return `
-        <div class="flat-accordion" data-category="${type}">
-            <div class="flat-accordion-header">
-                <span class="flat-accordion-label">${label}</span>
+        <div class="flat-accordion" data-category="${esc(type)}">
+            <button type="button" class="flat-accordion-header" aria-expanded="false" aria-controls="flatAccordion-${esc(type)}">
+                <span class="flat-accordion-label">${esc(label)}</span>
                 ${countBadge}
                 ${CHEVRON_ICON}
-            </div>
-            <div class="flat-accordion-body">
+            </button>
+            <div class="flat-accordion-body" id="flatAccordion-${esc(type)}" inert>
                 <div class="flat-accordion-body-inner">
                     ${itemsHtml}
                 </div>
@@ -94,17 +107,15 @@ function renderAccordion(type, label, items) {
 
 function renderToggleItem(type, id, name, isWatched) {
     return `
-        <div class="flat-list-item" data-type="${type}" data-id="${id}" data-name="${name}">
-            <span class="flat-item-name">${name}</span>
-            <button class="flat-item-settings${isWatched ? '' : ' hidden'}" aria-label="Nastavení notifikací" title="Nastavení notifikací">
+        <div class="flat-list-item" data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}">
+            <span class="flat-item-name">${esc(name)}</span>
+            <button type="button" class="flat-item-settings${isWatched ? '' : ' hidden'}" aria-label="Nastavení upozornění: ${esc(name)}" title="Nastavení upozornění">
                 ${GEAR_ICON}
             </button>
-            <label class="flat-toggle">
-                <input type="checkbox" class="flat-toggle-input"
-                       data-type="${type}" data-id="${id}" data-name="${name}"
-                       ${isWatched ? 'checked' : ''}>
-                <span class="flat-toggle-track"></span>
-            </label>
+            <input type="checkbox" role="switch" class="flat-toggle-input g-switch"
+                   data-type="${esc(type)}" data-id="${esc(id)}" data-name="${esc(name)}"
+                   aria-label="Sledovat ${esc(name)}"
+                   ${isWatched ? 'checked' : ''}>
         </div>
     `;
 }
@@ -121,7 +132,8 @@ async function handleToggleChange(event) {
     const id = input.dataset.id;
     const name = input.dataset.name;
 
-    let watchedTimetables = [...state.watchedTimetables];
+    const previous = state.watchedTimetables;
+    let watchedTimetables = [...previous];
 
     if (input.checked) {
         ['Actual', 'Next'].forEach(scheduleType => {
@@ -159,6 +171,9 @@ async function handleToggleChange(event) {
         debug.log('Watched timetables updated:', watchedTimetables);
     } catch (error) {
         debug.error('Failed to save watched timetables:', error);
+        reportUnsavedChange(error);
+        // Back to what the server has, unless a newer change is under way
+        if (state.watchedTimetables !== watchedTimetables) return;
         input.checked = !input.checked;
         if (item) {
             const settingsBtn = item.querySelector('.flat-item-settings');
@@ -166,8 +181,9 @@ async function handleToggleChange(event) {
                 settingsBtn.classList.toggle('hidden', !input.checked);
             }
         }
-        updateState('watchedTimetables', state.watchedTimetables);
+        updateState('watchedTimetables', previous);
         renderSelectedTimetablesPreferences();
+        window.dispatchEvent(new CustomEvent('watchedTimetablesChanged'));
         updateAccordionCounts();
     }
 }
@@ -182,7 +198,7 @@ function updateAccordionCounts() {
 
         if (countBadge) {
             countBadge.textContent = watchedCount;
-            countBadge.style.display = watchedCount > 0 ? '' : 'none';
+            countBadge.hidden = watchedCount === 0;
         }
     });
 }
@@ -234,7 +250,7 @@ export function filterFlatList(searchTerm) {
 
         // Auto-open accordion when search has results
         if (term !== '' && hasVisible) {
-            accordion.classList.add('open');
+            setAccordionOpen(accordion, true);
         }
     });
 }

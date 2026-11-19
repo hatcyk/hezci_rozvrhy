@@ -59,7 +59,7 @@ Pokud je aktuálně vybraný rozvrh oblíbený, zobrazí se malé vyplněné srd
 
 - Nové tlačítko s ikonou srdíčka (`#favoritesBtn`) v `.dropdown-row`, před existujícím dropdownem
 - Otevře bottom sheet `#favoritesModal`
-- Flat list oblíbených bez kategorií: `3.A`, `3.C`, `Kozakovičová`, `04`
+- Flat list oblíbených bez kategorií: `3.A`, `3.C`, `Ukázková`, `04`
 - Klik na položku: nastaví type + id, zavře sheet, načte rozvrh
 - Pokud seznam prázdný: zobrazí "Zatím žádné oblíbené"
 

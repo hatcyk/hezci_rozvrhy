@@ -7,7 +7,6 @@ export const dom = {
     valueDropdownLabel: null,
     valueDropdownMenu: null,
     timetableGrid: null,
-    loading: null,
     errorDiv: null,
     offlineBanner: null,
     outageBanner: null,
@@ -34,12 +33,12 @@ export const dom = {
 export function initDOM() {
     dom.typeButtons = document.querySelectorAll('.type-btn');
     dom.scheduleTypeButtons = document.querySelectorAll('.schedule-type-btn');
-    dom.valueDropdown = document.getElementById('valueDropdown');
+    // Hledání (dropdown.js): pole a výsledky v postranním panelu / v panelu na mobilu
+    dom.valueDropdown = document.getElementById('searchBox');
     dom.valueDropdownTrigger = document.getElementById('valueDropdownTrigger');
     dom.valueDropdownLabel = document.getElementById('valueDropdownLabel');
-    dom.valueDropdownMenu = document.getElementById('valueDropdownMenu');
+    dom.valueDropdownMenu = document.getElementById('searchResults');
     dom.timetableGrid = document.getElementById('timetable');
-    dom.loading = document.getElementById('loading');
     dom.errorDiv = document.getElementById('error');
     dom.offlineBanner = document.getElementById('offlineBanner');
     dom.outageBanner = document.getElementById('outageBanner');

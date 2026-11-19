@@ -1,5 +1,94 @@
 import { subjectAbbreviations, lessonTimes } from './constants.js';
 
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+/**
+ * Escape a value for HTML text or a quoted attribute.
+ * Everything that comes from Bakaláři (subjects, names, rooms, change notes)
+ * ends up in innerHTML templates; the timetable page is scraped, so one odd
+ * string must never become markup or script (stored XSS). The single quote is
+ * escaped too because a few templates use single-quoted attributes.
+ */
+export function esc(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
+}
+
+/**
+ * Make a non-button element behave like a button for keyboard and AT users
+ * (WCAG 2.1.1, 4.1.2). Lesson cards contain block layout that a <button>
+ * cannot hold, so they get role="button" + tabindex + Enter/Space instead.
+ * @param {Element} el
+ * @param {Function} onActivate
+ * @param {Object} [opts]
+ * @param {AbortSignal} [opts.signal] - removes the listeners with the layout
+ */
+export function makeActivatable(el, onActivate, { signal } = {}) {
+    if (!el) return;
+    el.setAttribute('role', 'button');
+    el.tabIndex = 0;
+    el.addEventListener('click', onActivate, { signal });
+    el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+            e.preventDefault(); // Space would scroll the page
+            onActivate(e);
+        }
+    }, { signal });
+}
+
+/**
+ * Mark the active button of a segmented control both visually (.active) and
+ * for assistive tech (aria-pressed), so the state is not conveyed by colour only.
+ * @param {Iterable<Element>} buttons
+ * @param {(btn: Element) => boolean} isActive
+ */
+export function setPressed(buttons, isActive) {
+    if (!buttons) return;
+    for (const btn of buttons) {
+        const on = !!isActive(btn);
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+}
+
+const STATUS_ICON_CHANGED = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>';
+const STATUS_ICON_REMOVED = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>';
+
+/**
+ * Small shape icon for a changed / cancelled lesson. The colour of the card
+ * alone used to carry that information (WCAG 1.4.1); the icon adds a shape
+ * cue, the accessible name adds the word.
+ */
+export function lessonStatusIcon(lesson) {
+    if (!lesson) return '';
+    if (lesson.type === 'removed' || lesson.type === 'absent') {
+        return `<span class="lesson-status-icon is-removed" aria-hidden="true">${STATUS_ICON_REMOVED}</span>`;
+    }
+    if (lesson.changed) {
+        return `<span class="lesson-status-icon is-changed" aria-hidden="true">${STATUS_ICON_CHANGED}</span>`;
+    }
+    return '';
+}
+
+/**
+ * Give a lesson button its name for screen readers: one sentence that says
+ * the same as the screen (rozvrh-core.js lessonSentence / slotSentence). The
+ * visible parts (abbreviation, room, status word) are hidden from assistive
+ * tech, otherwise the subject, teacher and room would be read twice. The
+ * sentence itself carries every visible text in the form it is shown in
+ * ("Matematika (MAT)", "vyučující M. Cvičná"), so the name still contains
+ * what the user sees (WCAG 2.5.3 Label in Name; test/e2e/label-in-name.spec.js).
+ * @param {Element} el
+ * @param {string} sentence
+ */
+export function addLessonDescription(el, sentence) {
+    if (!el || !sentence || typeof document === 'undefined') return;
+    for (const child of el.children) child.setAttribute('aria-hidden', 'true');
+    const span = document.createElement('span');
+    span.className = 'sr-only';
+    span.textContent = sentence;
+    el.appendChild(span);
+}
+
 // Function to abbreviate subject names
 export function abbreviateSubject(subjectName) {
     if (!subjectName) return '';
@@ -68,7 +157,7 @@ function removeTeacherTitles(fullName) {
     if (!fullName) return '';
 
     // Remove titles from the beginning (handles multiple titles with spaces)
-    // Example: "Ing. Bc. Jan Tesař" → "Jan Tesař"
+    // Example: "Ing. Bc. Jan Vzorek" → "Jan Vzorek"
     let cleaned = fullName.replace(/^(?:Mgr\.|Ing\.|Bc\.|Dr\.|Ph\.D\.|RNDr\.|PaedDr\.|MBA)\s+/gi, '');
 
     // Keep removing titles until no more are found at the start
@@ -123,7 +212,7 @@ export function buildTeacherAbbreviationMap(teachers) {
 
         let firstName, lastName;
 
-        // Detect reversed format: "Rollová Jitka" vs "Jitka Rollová"
+        // Detect reversed format: "Vzorová Věra" vs "Věra Vzorová"
         if (isReversedName(parts[0], parts[parts.length - 1])) {
             // Reversed: "Surname FirstName" → swap them
             lastName = parts[0];
@@ -134,7 +223,7 @@ export function buildTeacherAbbreviationMap(teachers) {
             lastName = parts[parts.length - 1];
         }
 
-        // Format: "J. Melena", "J. Melzoch"
+        // Format: "J. Vzorek", "V. Vzorová"
         abbreviationMap.set(teacher.name, createTeacherAbbreviation(firstName, lastName));
     }
 
@@ -369,7 +458,7 @@ export function getChangeTypeInfo(changeType, changeInfoRaw) {
 
 // Parse change info to make it more understandable
 // Examples:
-// - "Suplování: CJL, Lichtágová Denisa (ZP, VT)"
+// - "Suplování: CJL, Ukázková Jana (ZP, VT)"
 // - "Zrušeno - Nemoc učitele"
 // - "Vyjmuto"
 export function parseChangeInfo(changeInfoRaw) {
@@ -381,7 +470,7 @@ export function parseChangeInfo(changeInfoRaw) {
         newTeacher: null,
         originalInfo: null,
         reason: null,
-        formatted: changeInfoRaw
+        formatted: ''
     };
 
     // Check for removed/vyjmuto patterns with subject and teacher: "Vyjmuto z rozvrhu (PŘEDMĚT, UČITEL)"
@@ -392,8 +481,8 @@ export function parseChangeInfo(changeInfoRaw) {
         const teacher = removedMatch[3].trim();
 
         const lines = [];
-        lines.push(`<div class="change-detail"><span class="change-label">Předmět:</span> <span class="change-value">${subject}</span></div>`);
-        lines.push(`<div class="change-detail"><span class="change-label">Učitel:</span> <span class="change-value">${teacher}</span></div>`);
+        lines.push(`<div class="change-detail"><span class="change-label">Předmět:</span> <span class="change-value">${esc(subject)}</span></div>`);
+        lines.push(`<div class="change-detail"><span class="change-label">Učitel:</span> <span class="change-value">${esc(teacher)}</span></div>`);
 
         result.formatted = lines.join('');
         return result;
@@ -409,9 +498,9 @@ export function parseChangeInfo(changeInfoRaw) {
         if (reason.toLowerCase().includes('přednáška') || reason.toLowerCase().includes('absence') ||
             code.match(/^[A-Z]{2,5}$/)) {  // Code like "PŘED", "ABS", etc.
             const lines = [];
-            lines.push(`<div class="change-detail"><span class="change-value">${reason}</span></div>`);
+            lines.push(`<div class="change-detail"><span class="change-value">${esc(reason)}</span></div>`);
             if (code && code !== reason) {
-                lines.push(`<div class="change-detail"><span class="change-label">Kód:</span> <span class="change-value">${code}</span></div>`);
+                lines.push(`<div class="change-detail"><span class="change-label">Kód:</span> <span class="change-value">${esc(code)}</span></div>`);
             }
 
             result.formatted = lines.join('');
@@ -428,7 +517,7 @@ export function parseChangeInfo(changeInfoRaw) {
         const lines = [];
 
         if (result.reason) {
-            lines.push(`<div class="change-detail"><span class="change-label">Důvod:</span> <span class="change-value">${result.reason}</span></div>`);
+            lines.push(`<div class="change-detail"><span class="change-label">Důvod:</span> <span class="change-value">${esc(result.reason)}</span></div>`);
         }
 
         result.formatted = lines.join('');
@@ -441,26 +530,26 @@ export function parseChangeInfo(changeInfoRaw) {
     if (match) {
         result.type = match[1].trim(); // "Suplování"
         result.newSubject = match[2].trim(); // "CJL"
-        result.newTeacher = match[3].trim(); // "Lichtágová Denisa"
+        result.newTeacher = match[3].trim(); // "Ukázková Jana"
         result.originalInfo = match[4].trim(); // "ZP, VT"
 
         // Format nicely
         const lines = [];
 
         if (result.type === 'Suplování') {
-            lines.push(`<div class="change-detail"><span class="change-label">Nahrazující předmět:</span> <span class="change-value">${result.newSubject}</span></div>`);
-            lines.push(`<div class="change-detail"><span class="change-label">Suplující učitel:</span> <span class="change-value">${result.newTeacher}</span></div>`);
+            lines.push(`<div class="change-detail"><span class="change-label">Nahrazující předmět:</span> <span class="change-value">${esc(result.newSubject)}</span></div>`);
+            lines.push(`<div class="change-detail"><span class="change-label">Suplující učitel:</span> <span class="change-value">${esc(result.newTeacher)}</span></div>`);
 
             // Original info could be "subject, teacher" or just "subject"
             const origParts = result.originalInfo.split(',').map(p => p.trim());
             if (origParts.length === 2) {
-                lines.push(`<div class="change-detail"><span class="change-label">Původně:</span> <span class="change-value">${origParts[0]} (${origParts[1]})</span></div>`);
+                lines.push(`<div class="change-detail"><span class="change-label">Původně:</span> <span class="change-value">${esc(origParts[0])} (${esc(origParts[1])})</span></div>`);
             } else {
-                lines.push(`<div class="change-detail"><span class="change-label">Původně:</span> <span class="change-value">${result.originalInfo}</span></div>`);
+                lines.push(`<div class="change-detail"><span class="change-label">Původně:</span> <span class="change-value">${esc(result.originalInfo)}</span></div>`);
             }
         } else {
-            lines.push(`<div class="change-detail"><span class="change-label">Nové:</span> <span class="change-value">${result.newSubject} - ${result.newTeacher}</span></div>`);
-            lines.push(`<div class="change-detail"><span class="change-label">Původně:</span> <span class="change-value">${result.originalInfo}</span></div>`);
+            lines.push(`<div class="change-detail"><span class="change-label">Nové:</span> <span class="change-value">${esc(result.newSubject)} - ${esc(result.newTeacher)}</span></div>`);
+            lines.push(`<div class="change-detail"><span class="change-label">Původně:</span> <span class="change-value">${esc(result.originalInfo)}</span></div>`);
         }
 
         result.formatted = lines.join('');
@@ -469,10 +558,10 @@ export function parseChangeInfo(changeInfoRaw) {
         const dateMatch = changeInfoRaw.match(/^\d{1,2}\.\d{1,2}\.\d{4}$/);
         if (dateMatch) {
             // Don't show just a date, show it as "Změněno"
-            result.formatted = `<div class="change-detail"><span class="change-value">Změněno (${changeInfoRaw})</span></div>`;
+            result.formatted = `<div class="change-detail"><span class="change-value">Změněno (${esc(changeInfoRaw)})</span></div>`;
         } else {
             // Fallback for other formats
-            result.formatted = `<div class="change-detail"><span class="change-value">${changeInfoRaw}</span></div>`;
+            result.formatted = `<div class="change-detail"><span class="change-value">${esc(changeInfoRaw)}</span></div>`;
         }
     }
 

@@ -1,0 +1,9 @@
+# Workflows pin actions to a commit SHA (with the version as a comment);
+# Dependabot proposes the new SHA and comment when an action releases.
+# npm dependencies are not covered here on purpose.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
