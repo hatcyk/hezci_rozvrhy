@@ -1,0 +1,445 @@
+// Lesson reminders: Prague time / DST, notification windows, env config,
+// the crontab schedule and the atomic claim (no double send).
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+// Job logs go to stdout, which the test runner shares with its own binary
+// messages; keep them out (see test/auth.test.js).
+console.log = () => {};
+const { createFakeFirestore, stubFirebase } = require('./helpers/fake-firestore');
+
+const USER = 'anon-0b7f6c1e-8a1d-4c3b-9f2e-1a2b3c4d5e6f';
+const db = createFakeFirestore({
+    'system/migrations': { watchIndexV1: true },
+    [`users/${USER}`]: {
+        tokens: ['fcm-1'],
+        hasReminders: true,
+        watchedKeys: ['Class_ZL_Actual'],
+        preferences: {
+            watchedTimetables: [{
+                type: 'Class', id: 'ZL', scheduleType: 'Actual', groupFilters: [],
+                notificationTypes: { reminders: { next_lesson_room: true } },
+            }],
+        },
+    },
+    // Wednesday (day 2), hour 1 (8:00)
+    'timetables/Class_ZL_Actual': {
+        data: [
+            { day: 2, hour: 1, subject: 'Matematika', teacher: 'J. Novák', room: 'A102', group: '' },
+            { day: 2, hour: 2, subject: 'Fyzika', teacher: 'K. Malá', room: 'B1', group: '', type: 'removed' },
+            // Snapshot of the previous week still stored as Actual (S2 date)
+            { day: 2, hour: 3, subject: 'Chemie', teacher: 'L. Nová', room: 'C3', group: '', date: '2026-10-28' },
+            { day: 2, hour: 4, subject: 'Dějepis', teacher: 'M. Dlouhá', room: 'D4', group: '', date: '2026-11-04' },
+        ],
+    },
+});
+const { sent } = stubFirebase(db);
+
+const { calculateNotificationWindows, findLessonsToNotify, getNotificationConfig, intFromEnv } = require('../backend/schedule-calculator');
+const { getPragueTimeInfo, isWeekend } = require('../backend/timezone-manager');
+const { lessonTimes, sendLessonReminders, mapWithConcurrency } = require('../backend/lesson-reminder');
+const { claimReminder, isAlreadyExists } = require('../backend/notification-tracker');
+
+const CFG = { minutesBefore: 5, windowStartMinutes: 6, windowEndMinutes: 1 };
+const at = (h, m) => h * 60 + m;
+const toNotify = (h, m) => findLessonsToNotify(calculateNotificationWindows(at(h, m), lessonTimes, CFG)).map(w => w.hour);
+const quiet = () => { const l = console.log, e = console.error; console.log = console.error = () => {}; return () => { console.log = l; console.error = e; }; };
+
+function withEnv(vars, fn) {
+    const saved = Object.fromEntries(Object.keys(vars).map(k => [k, process.env[k]]));
+    for (const [k, v] of Object.entries(vars)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    try { return fn(); } finally {
+        for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+}
+
+test('okno 1. hodiny (8:00) je 7:54–7:59 včetně krajů', () => {
+    assert.deepEqual(toNotify(7, 53), []);
+    assert.deepEqual(toNotify(7, 54), [1]);
+    assert.deepEqual(toNotify(7, 59), [1]);
+    assert.deepEqual(toNotify(8, 0), []);
+});
+
+test('okna se nepřekrývají: každá minuta dne spustí nejvýš jednu hodinu', () => {
+    for (let m = 0; m < 24 * 60; m++) {
+        assert.ok(findLessonsToNotify(calculateNotificationWindows(m, lessonTimes, CFG)).length <= 1, `minuta ${m}`);
+    }
+});
+
+test('isDST a utcOffset podle Europe/Prague, ne podle zóny serveru', () => {
+    const original = process.env.TZ;
+    try {
+        for (const tz of ['UTC', 'Europe/Prague', 'America/New_York', 'Asia/Tokyo']) {
+            process.env.TZ = tz;
+            const summer = getPragueTimeInfo(new Date('2026-07-01T10:00:00Z'));
+            assert.equal(summer.isDST, true, tz);
+            assert.equal(summer.utcOffset, 2, tz);
+            assert.equal(summer.hour, 12, tz);
+            const winter = getPragueTimeInfo(new Date('2026-01-15T10:00:00Z'));
+            assert.equal(winter.isDST, false, tz);
+            assert.equal(winter.utcOffset, 1, tz);
+            assert.equal(winter.hour, 11, tz);
+        }
+    } finally {
+        if (original === undefined) delete process.env.TZ; else process.env.TZ = original;
+    }
+});
+
+test('přechody času 2026: hodina po přepnutí má už nový posun', () => {
+    const info = (iso) => getPragueTimeInfo(new Date(iso));
+    assert.deepEqual([info('2026-03-29T00:30:00Z').formattedTime, info('2026-03-29T00:30:00Z').utcOffset], ['01:30:00', 1]);
+    // 2:00–3:00 does not exist; date-fns-tz getTimezoneOffset() still said +1 here
+    assert.deepEqual([info('2026-03-29T01:30:00Z').formattedTime, info('2026-03-29T01:30:00Z').utcOffset], ['03:30:00', 2]);
+    assert.deepEqual([info('2026-10-25T00:30:00Z').formattedTime, info('2026-10-25T00:30:00Z').utcOffset], ['02:30:00', 2]);
+    // 2:00–3:00 happens twice; the second time is CET
+    assert.deepEqual([info('2026-10-25T01:30:00Z').formattedTime, info('2026-10-25T01:30:00Z').utcOffset], ['02:30:00', 1]);
+    assert.equal(info('2026-11-04T06:57:00Z').formattedTime, '07:57:00');
+    assert.equal(info('2026-07-01T05:57:00Z').formattedTime, '07:57:00');
+});
+
+test('víkend a půlnoc se počítají v pražském čase, ne v UTC', () => {
+    assert.equal(isWeekend(new Date('2026-11-07T10:00:00Z')), true);               // sobota
+    assert.equal(getPragueTimeInfo(new Date('2026-11-08T23:30:00Z')).dayIndex, 0);  // v UTC neděle, v Praze pondělí 0:30
+});
+
+test('konfigurace z prostředí: 0 je platná hodnota, nesmysl dá výchozí', () => {
+    withEnv({ LESSON_REMINDER_WINDOW_END: '0', LESSON_REMINDER_MINUTES_BEFORE: '0', LESSON_REMINDER_WINDOW_START: 'abc' }, () => {
+        const cfg = getNotificationConfig();
+        assert.equal(cfg.windowEndMinutes, 0, 'dřív parseInt("0") || 1 = 1');
+        assert.equal(cfg.minutesBefore, 0);
+        assert.equal(cfg.windowStartMinutes, 6);
+    });
+    withEnv({ X_TEST_INT: '-3' }, () => assert.equal(intFromEnv('X_TEST_INT', 7), 7));
+    withEnv({ X_TEST_INT: ' ' }, () => assert.equal(intFromEnv('X_TEST_INT', 7), 7));
+    withEnv({ LESSON_REMINDER_ENABLED: undefined }, () => assert.equal(getNotificationConfig().enabled, true));
+    for (const off of ['false', 'FALSE', '0', 'off', 'no']) {
+        withEnv({ LESSON_REMINDER_ENABLED: off }, () => assert.equal(getNotificationConfig().enabled, false, off));
+    }
+});
+
+test('LESSON_REMINDER_ENABLED=false opravdu vypne upomínky (dřív se příznak jen načetl)', async () => {
+    const reads = db._log.length;
+    const result = await withEnv({ LESSON_REMINDER_ENABLED: 'false' }, () =>
+        sendLessonReminders({ mockTime: new Date('2026-11-04T06:56:00Z') }));
+    assert.deepEqual(result, { sent: 0, reason: 'disabled' });
+    assert.equal(db._log.length, reads, 'Firestore se vůbec nečetl');
+    assert.equal(sent.length, 0);
+});
+
+test('crontab upomínek pokryje okna všech hodin (dřív „7-15“, 11. a 12. hodina bez upomínky)', () => {
+    const line = fs.readFileSync(path.join(__dirname, '../deploy/crontab.example'), 'utf8')
+        .split('\n').find(l => l.includes('send-lesson-reminders') && !l.trim().startsWith('#'));
+    const [from, to] = line.trim().split(/\s+/)[1].split('-').map(Number);
+    for (const w of calculateNotificationWindows(0, lessonTimes, CFG)) {
+        const hStart = Math.floor(w.windowStart / 60), hEnd = Math.floor(w.windowEnd / 60);
+        assert.ok(hStart >= from && hEnd <= to, `hodina ${w.hour}: okno ${w.windowStartFormatted}–${w.windowEndFormatted} mimo ${from}–${to}`);
+    }
+});
+
+test('crontab: sběr i odesílání změn běží pod zámkem flock -n (běhy se nepřekryjí)', () => {
+    const lines = fs.readFileSync(path.join(__dirname, '../deploy/crontab.example'), 'utf8')
+        .split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+    const locks = [];
+    for (const script of ['run-prefetch.js', 'process-notifications.js']) {
+        const line = lines.find(l => l.includes(script));
+        const m = line.match(/flock -n (\S+\.lock) /);
+        assert.ok(m, `${script}: ${line}`);
+        assert.ok(line.indexOf('flock') < line.indexOf('node'), 'the lock wraps the job');
+        locks.push(m[1]);
+    }
+    assert.notEqual(locks[0], locks[1], 'separate locks: sending must not wait for a long prefetch');
+});
+
+test('zábor upomínky přes create(): ze souběžných pokusů vyhraje právě jeden', async () => {
+    const results = await Promise.all(Array.from({ length: 5 }, () => claimReminder('u-claim', '2026-11-04', 3)));
+    assert.equal(results.filter(Boolean).length, 1);
+    const doc = db._get('lesson_notifications_sent/u-claim_2026-11-04_3');
+    assert.equal(doc.status, 'sending');
+    assert.ok(doc.sentAt, 'sentAt nutné pro noční úklid');
+
+    assert.equal(isAlreadyExists({ code: 6 }), true);
+    assert.equal(isAlreadyExists(new Error('6 ALREADY_EXISTS: Document already exists')), true);
+    assert.equal(isAlreadyExists(new Error('14 UNAVAILABLE')), false);
+});
+
+test('dva souběžné běhy upomínek pošlou upomínku jen jednou', async () => {
+    const restore = quiet();
+    try {
+        // Wednesday 2026-11-04 07:56 Prague (CET) → hour 1 (8:00) is in its window
+        const mockTime = new Date('2026-11-04T06:56:00Z');
+        const [a, b] = await Promise.all([sendLessonReminders({ mockTime }), sendLessonReminders({ mockTime })]);
+        assert.equal(sent.length, 1, 'FCM zavoláno jednou');
+        assert.equal(a.sent + b.sent, 1);
+        assert.equal(a.skipped + b.skipped, 1);
+        assert.match(sent[0].data.title, /Za 4 minuty: MAT/);
+        // undelivered after the lesson has started → dropped by the push service
+        assert.deepEqual(sent[0].webpush, { headers: { TTL: '360', Urgency: 'high' } });
+
+        const record = db._get(`lesson_notifications_sent/${USER}_2026-11-04_1`);
+        assert.equal(record.status, 'sent');
+        assert.equal(record.timetableId, 'Class_ZL_Actual');
+
+        // A minute later, still in the window: nothing new.
+        const later = await sendLessonReminders({ mockTime: new Date('2026-11-04T06:57:00Z') });
+        assert.equal(later.sent, 0);
+        assert.equal(later.skipped, 1);
+        assert.equal(sent.length, 1);
+
+        // Hour 2 is cancelled → no reminder, no claim.
+        const cancelled = await sendLessonReminders({ mockTime: new Date('2026-11-04T07:46:00Z') });
+        assert.equal(cancelled.sent, 0);
+        assert.equal(db._get(`lesson_notifications_sent/${USER}_2026-11-04_2`), undefined);
+
+        // Hour 3 (9:45) belongs to last week's snapshot → no reminder.
+        const staleWeek = await sendLessonReminders({ mockTime: new Date('2026-11-04T08:40:00Z') });
+        assert.equal(staleWeek.sent, 0);
+        // Hour 4 (10:50) is dated today → reminder.
+        const today = await sendLessonReminders({ mockTime: new Date('2026-11-04T09:45:00Z') });
+        assert.equal(today.sent, 1);
+        assert.match(sent[1].data.title, /DEJ/);
+    } finally {
+        restore();
+    }
+});
+
+test('jedno zařízení pod dvěma ID dostane upomínku jednou, i v dalších bězích téhož okna', async () => {
+    const restore = quiet();
+    const NO_LESSON = 'anon-3e0a9f4b-1d4a-4f6e-8c5b-4d5e6f708192';   // first in the query, no lesson in hour 1
+    const LEGACY = 'anonymous-1733211111111';
+    const NEW = 'anon-4f1b0a5c-2e5b-4a7f-9d6c-5e6f708192a3';
+    const reminders = { reminders: { next_lesson_room: true } };
+    const watching = (id, tokens) => ({
+        tokens, hasReminders: true, watchedKeys: [`Class_${id}_Actual`],
+        preferences: { watchedTimetables: [{ type: 'Class', id, scheduleType: 'Actual', groupFilters: [], notificationTypes: reminders }] },
+    });
+    const D = '2026-11-18'; // Wednesday
+    try {
+        db._store.set('timetables/Class_DUP_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Matematika', teacher: 'J. Novák', room: 'A102', group: '', date: D },
+        ] });
+        db._store.set('timetables/Class_FREE_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 2, subject: 'Fyzika', teacher: 'K. Malá', room: 'B1', group: '', date: D },
+        ] });
+        db._store.set(`users/${NO_LESSON}`, watching('FREE', ['fcm-dup']));
+        db._store.set(`users/${LEGACY}`, watching('DUP', ['fcm-dup']));
+        db._store.set(`users/${NEW}`, watching('DUP', ['fcm-dup', 'fcm-new-own']));
+        const toDup = () => sent.filter(m => m.tokens.includes('fcm-dup'));
+        const before = toDup().length;
+
+        // Hour 1 (8:00), 7:56 and 7:57: three documents hold the device's token.
+        await sendLessonReminders({ mockTime: new Date('2026-11-18T06:56:00Z') });
+        await sendLessonReminders({ mockTime: new Date('2026-11-18T06:57:00Z') });
+        const msgs = toDup().slice(before);
+        assert.equal(msgs.length, 1, 'one reminder, not one per document or per run');
+        assert.deepEqual(msgs[0].tokens, ['fcm-dup'], 'from the first document that has the lesson');
+        assert.ok(db._get(`lesson_notifications_sent/${LEGACY}_${D}_1`), 'claimed by the legacy document');
+        assert.equal(db._get(`lesson_notifications_sent/${NO_LESSON}_${D}_1`), undefined, 'a document without a lesson reserves nothing');
+        const own = sent.filter(m => m.tokens.includes('fcm-new-own'));
+        assert.equal(own.length, 1, 'the other device of the new document still gets its reminder');
+        assert.deepEqual(own[0].tokens, ['fcm-new-own']);
+    } finally {
+        for (const id of [NO_LESSON, LEGACY, NEW]) db._store.delete(`users/${id}`);
+        restore();
+    }
+});
+
+test('týž token ve dvou dokumentech s jinými upomínkami: obě odejdou, nezávisle na pořadí dokumentů', async () => {
+    const restore = quiet();
+    const ATTACKER = 'anon-5a2c1b6d-3f6c-4b8a-ae7d-6f708192a3b4';   // added the victim's token to their own account
+    const VICTIM = 'anon-6b3d2c7e-4a7d-4c9b-bf8e-708192a3b4c5';
+    const reminders = { reminders: { next_lesson_room: true } };
+    const watching = (id) => ({
+        tokens: ['victim-phone'], hasReminders: true, watchedKeys: [`Class_${id}_Actual`],
+        preferences: { watchedTimetables: [{ type: 'Class', id, scheduleType: 'Actual', groupFilters: [], notificationTypes: reminders }] },
+    });
+    const D = '2026-11-18'; // Wednesday, hour 1 (8:00)
+    try {
+        db._store.set('timetables/Class_VIC_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Matematika', teacher: 'J. Novák', room: 'A102', group: '', date: D },
+        ] });
+        db._store.set('timetables/Class_ATT_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Tělesná výchova', teacher: 'P. Rychlý', room: 'TV1', group: '', date: D },
+        ] });
+        for (const order of [[ATTACKER, VICTIM], [VICTIM, ATTACKER]]) {
+            for (const p of db._paths('lesson_notifications_sent')) db._store.delete(p);
+            for (const id of [ATTACKER, VICTIM]) db._store.delete(`users/${id}`);
+            for (const id of order) db._store.set(`users/${id}`, watching(id === VICTIM ? 'VIC' : 'ATT'));
+            const before = sent.length;
+            await sendLessonReminders({ mockTime: new Date('2026-11-18T06:56:00Z') });
+            await sendLessonReminders({ mockTime: new Date('2026-11-18T06:57:00Z') });
+            const subjects = sent.slice(before).filter(m => m.tokens.includes('victim-phone')).map(m => m.data.subject).sort();
+            assert.deepEqual(subjects, ['Matematika', 'Tělesná výchova'], order[0] === VICTIM ? 'victim first' : 'attacker first');
+        }
+    } finally {
+        for (const id of [ATTACKER, VICTIM]) db._store.delete(`users/${id}`);
+        restore();
+    }
+});
+
+test('uživatel s upomínkami bez tokenu nestojí nic: rozvrh se nečte, nic se nezapisuje', async () => {
+    const restore = quiet();
+    const TOKENLESS = 'anon-7c4e3d8f-5b8e-4dac-80f9-8192a3b4c5d6';
+    const D = '2026-11-18'; // Wednesday, hour 1 (8:00)
+    try {
+        db._store.set('timetables/Class_TL_Actual', { weekStart: '2026-11-16', data: [
+            { day: 2, hour: 1, subject: 'Matematika', teacher: 'J. Novák', room: 'A102', group: '', date: D },
+        ] });
+        db._store.set(`users/${TOKENLESS}`, {
+            tokens: [], hasReminders: true, watchedKeys: ['Class_TL_Actual'],
+            preferences: { watchedTimetables: [{ type: 'Class', id: 'TL', scheduleType: 'Actual', groupFilters: [],
+                notificationTypes: { reminders: { next_lesson_room: true } } }] },
+        });
+        const logFrom = db._log.length;
+        await sendLessonReminders({ mockTime: new Date('2026-11-18T06:56:00Z') });
+        const touched = db._log.slice(logFrom).filter(e => e.path.includes('Class_TL') || e.path.includes(TOKENLESS));
+        assert.deepEqual(touched, [], 'no timetable read, no claim, no write for a user without a device');
+    } finally {
+        db._store.delete(`users/${TOKENLESS}`);
+        restore();
+    }
+});
+
+test('mapWithConcurrency drží limit souběhu a pořadí výsledků', async () => {
+    let inFlight = 0, peak = 0;
+    const out = await mapWithConcurrency([5, 1, 3, 2, 4], 2, async (x) => {
+        inFlight++; peak = Math.max(peak, inFlight);
+        await new Promise(r => setTimeout(r, x));
+        inFlight--;
+        return x * 10;
+    });
+    assert.deepEqual(out, [50, 10, 30, 20, 40]);
+    assert.equal(peak, 2);
+    assert.deepEqual(await mapWithConcurrency([], 3, async () => 1), []);
+});
+
+const { isDayOff, reminderTtlSeconds } = require('../backend/lesson-reminder');
+
+test('TTL upomínky: do dvou minut po začátku hodiny, nejméně minutu', () => {
+    assert.equal(reminderTtlSeconds(5), 420);
+    assert.equal(reminderTtlSeconds(1), 180);
+    assert.equal(reminderTtlSeconds(-3), 60);
+    assert.equal(reminderTtlSeconds(undefined), 120);
+});
+
+test('isDayOff: den volna platí jen ve svém datu', () => {
+    const off = [{ day: 3, date: '2026-11-05', name: 'ředitelské volno' }];
+    assert.equal(isDayOff(off, 3, '2026-11-05'), true);
+    assert.equal(isDayOff(off, 3, '2026-11-12'), false, "last week's holiday in a stale snapshot");
+    assert.equal(isDayOff(off, 2, '2026-11-04'), false);
+    assert.equal(isDayOff([{ day: 3, date: null }], 3, '2026-11-12'), true);
+    assert.equal(isDayOff(undefined, 3, '2026-11-05'), false);
+});
+
+test('upomínky přeskočí den volna, i kdyby snímek ten den nějakou hodinu měl', async () => {
+    const restore = quiet();
+    try {
+        db._store.set('timetables/Class_ZL_Actual', {
+            weekStart: '2026-11-02',
+            daysOff: [{ day: 3, date: '2026-11-05', name: 'ředitelské volno' }],
+            data: [
+                { day: 3, hour: 1, subject: 'Matematika', teacher: 'J. Ukázková', room: 'A102', group: '', date: '2026-11-05' },
+                { day: 4, hour: 1, subject: 'Fyzika', teacher: 'K. Vzorová', room: 'B1', group: '', date: '2026-11-06' },
+            ],
+        });
+        const before = sent.length;
+        // Thursday 5. 11. 07:56 Prague → hour 1 is in its window, but the day is off.
+        const thursday = await sendLessonReminders({ mockTime: new Date('2026-11-05T06:56:00Z') });
+        assert.equal(thursday.sent, 0);
+        assert.equal(db._get(`lesson_notifications_sent/${USER}_2026-11-05_1`), undefined, 'no claim written');
+        // Friday is a normal day.
+        const friday = await sendLessonReminders({ mockTime: new Date('2026-11-06T06:56:00Z') });
+        assert.equal(friday.sent, 1);
+        assert.equal(sent.length, before + 1);
+    } finally {
+        restore();
+    }
+});
+
+test('upomínky jen z rozvrhů, které je mají zapnuté; skupiny se filtrují', async () => {
+    const restore = quiet();
+    const OTHER = 'anon-1c8e7d2f-9b2e-4d4c-8a3f-2b3c4d5e6f70';
+    try {
+        // Watches a room for changes only (listed first) and the own class with reminders.
+        db._store.set(`users/${OTHER}`, {
+            tokens: ['fcm-2'],
+            hasReminders: true,
+            watchedKeys: ['Room_A104_Actual', 'Class_ZZ_Actual'],
+            preferences: {
+                watchedTimetables: [
+                    { type: 'Room', id: 'A104', scheduleType: 'Actual', groupFilters: [],
+                        notificationTypes: { changes: { room_change: true }, reminders: { next_lesson_room: false } } },
+                    { type: 'Class', id: 'ZZ', scheduleType: 'Actual', groupFilters: ['2.sk'],
+                        notificationTypes: { reminders: { next_lesson_room: true } } },
+                ],
+            },
+        });
+        const D = '2026-11-13'; // Friday
+        db._store.set('timetables/Room_A104_Actual', { weekStart: '2026-11-09', data: [
+            { day: 4, hour: 2, subject: 'Chemie', teacher: 'L. Nová', room: 'A104', group: '', date: D },
+            { day: 4, hour: 3, subject: 'Chemie', teacher: 'L. Nová', room: 'A104', group: '', date: D },
+        ] });
+        db._store.set('timetables/Class_ZZ_Actual', { weekStart: '2026-11-09', data: [
+            { day: 4, hour: 3, subject: 'Dějepis', teacher: 'M. Dlouhá', room: 'D4', group: '', date: D },
+            { day: 4, hour: 4, subject: 'Angličtina', teacher: 'A. První', room: 'E1', group: '1.sk', date: D },
+            { day: 4, hour: 4, subject: 'Němčina', teacher: 'B. Druhá', room: 'E2', group: '2.sk', date: D },
+        ] });
+        const mine = () => sent.filter(m => m.tokens.includes('fcm-2'));
+
+        // 2nd hour (8:50): the class is free, another class has Chemie in the watched room.
+        await sendLessonReminders({ mockTime: new Date('2026-11-13T07:46:00Z') });
+        assert.deepEqual(mine(), [], 'used to send "Za 4 minuty: CHE" from the room timetable');
+        assert.equal(db._get(`lesson_notifications_sent/${OTHER}_${D}_2`), undefined);
+
+        // 3rd hour (9:45): both have a lesson → the reminder is about the class.
+        await sendLessonReminders({ mockTime: new Date('2026-11-13T08:40:00Z') });
+        assert.equal(mine().length, 1);
+        assert.equal(mine()[0].data.subject, 'Dějepis');
+        assert.equal(db._get(`lesson_notifications_sent/${OTHER}_${D}_3`).timetableId, 'Class_ZZ_Actual');
+
+        // 4th hour (10:50): divided lesson → only the user's group.
+        await sendLessonReminders({ mockTime: new Date('2026-11-13T09:45:00Z') });
+        assert.equal(mine().length, 2);
+        assert.equal(mine()[1].data.subject, 'Němčina');
+    } finally {
+        db._store.delete(`users/${OTHER}`);
+        restore();
+    }
+});
+
+test('třída má u upomínky přednost před učebnou i učitelem, i když je v seznamu až za nimi', async () => {
+    const restore = quiet();
+    const THIRD = 'anon-2d9f8e3a-0c3f-4e5d-9b4a-3c4d5e6f7081';
+    const reminders = { reminders: { next_lesson_room: true } };
+    const watch = (type, id) => ({ type, id, scheduleType: 'Actual', groupFilters: [], notificationTypes: reminders });
+    try {
+        // All three with reminders on; the room and the teacher are listed BEFORE the class.
+        db._store.set(`users/${THIRD}`, {
+            tokens: ['fcm-3'],
+            hasReminders: true,
+            watchedKeys: ['Room_B7_Actual', 'Teacher_T9_Actual', 'Class_ZY_Actual'],
+            preferences: { watchedTimetables: [watch('Room', 'B7'), watch('Teacher', 'T9'), watch('Class', 'ZY')] },
+        });
+        const D = '2026-11-12'; // Thursday
+        const lesson = (hour, subject, room) => ({ day: 3, hour, subject, teacher: 'X. Někdo', room, group: '', date: D });
+        db._store.set('timetables/Room_B7_Actual', { weekStart: '2026-11-09', data: [lesson(1, 'Chemie', 'B7'), lesson(2, 'Chemie', 'B7')] });
+        db._store.set('timetables/Teacher_T9_Actual', { weekStart: '2026-11-09', data: [lesson(1, 'Zeměpis', 'C1')] });
+        db._store.set('timetables/Class_ZY_Actual', { weekStart: '2026-11-09', data: [lesson(1, 'Dějepis', 'D4')] });
+        const mine = () => sent.filter(m => m.tokens.includes('fcm-3'));
+
+        // 1st hour: all three have a lesson → one reminder, about the class
+        await sendLessonReminders({ mockTime: new Date('2026-11-12T06:56:00Z') });
+        assert.equal(mine().length, 1);
+        assert.equal(mine()[0].data.subject, 'Dějepis');
+        assert.equal(mine()[0].data.room, 'D4');
+        assert.equal(db._get(`lesson_notifications_sent/${THIRD}_${D}_1`).timetableId, 'Class_ZY_Actual');
+
+        // 2nd hour: the class is free → the room's lesson (reminders are on for it)
+        await sendLessonReminders({ mockTime: new Date('2026-11-12T07:46:00Z') });
+        assert.equal(mine().length, 2);
+        assert.equal(mine()[1].data.subject, 'Chemie');
+    } finally {
+        db._store.delete(`users/${THIRD}`);
+        restore();
+    }
+});

@@ -16,21 +16,17 @@ const crypto = require('crypto');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 
-// Same order as the original <link> tags in index.html (main.css first,
-// which itself @imports variables/base/header/... in order).
+// Design G stylesheets in cascade order (public/css/g/).
 const CSS_ORDER = [
-    'main.css',
-    'theme-warning.css',
-    'notifications.css',
-    'toast.css',
-    'timetable-extras.css',
-    'settings.css',
-    'layout-modal.css',
-    'layout-card-view.css',
-    'layout-compact-list.css',
-    'outage.css',
-    'footer.css',
-    'favorites.css',
+    // Návrh G „Obloha“: vrstvy deklaruje tokens.css (@layer reset, tokens, base, materials, components, shell, views, motion, print)
+    'g/tokens.css',
+    'g/base.css',
+    'g/shell.css',    // rám: horní lišta, plovoucí spodní lišta, postranní panel, hledání, hlášky
+    'g/rozvrh.css',   // přehled, den, týden, seznam, karta, detail hodiny
+    'g/views.css',    // změny, volné učebny, společné volno
+    'g/sheets.css',   // nastavení, upozornění, oblíbené, dialogy, toasty
+    'g/kiosk.css',
+    'g/print.css',
 ];
 
 function hashFile(file) {
@@ -93,6 +89,14 @@ async function main() {
     const kb = (f) => (fs.statSync(f).size / 1024).toFixed(1) + ' KB';
     console.log(`✅ css/app.css  ${kb(cssOut)}  (v=${cssHash})`);
     console.log(`✅ js/app.js    ${kb(jsOut)}  (v=${jsHash})`);
+
+    // The CSP of vercel.json allows the inline <script>s of index.html by their
+    // sha256 hash; any edit of them would block them in production until the
+    // hashes are recomputed - so every build keeps them in sync.
+    const cspTool = path.join(__dirname, 'csp-hashes.js');
+    if (fs.existsSync(cspTool)) {
+        require('child_process').execFileSync(process.execPath, [cspTool, '--write'], { stdio: 'inherit' });
+    }
 }
 
 main().catch((err) => {

@@ -1,138 +1,220 @@
+/**
+ * Detail hodiny (návrh G): na mobilu spodní panel, na počítači dialog vedle
+ * bloku hodiny (jako bublina v Kalendáři). Obsah: předmět, stav (ikona +
+ * slovo), den a čas, vyučující, učebna, skupina, téma, „Proti stálému
+ * rozvrhu: původně → nyní“ a popis změny od Bakalářů.
+ */
 import { dom } from './dom.js';
-import { days, lessonTimes } from './constants.js';
-import { state, updateState } from './state.js';
-import { loadTimetable, populateValueSelect } from './timetable.js';
-import { parseChangeInfo, getChangeIcon, getChangeTypeInfo } from './utils.js';
-import { setDropdownValue } from './dropdown.js';
+import { lessonTimes } from './constants.js';
+import { state } from './state.js';
+import { parseChangeInfo, getChangeTypeInfo, esc, getMondayOfWeek, getTodayIndex, getCurrentHour } from './utils.js';
+import { showToast } from './toast.js';
+import { getDropdownValue, selectTimetable } from './dropdown.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+import { fetchTimetable } from './api.js';
+import { describeLessonChange } from './changes-core.js';
+import { briefHtml, afterHtml } from './changes-render.js';
+import { slotLessons, lessonKind, statusHtml, icon, KINDS, DAY_NAMES, czDate, addDays, weekMonday, hourRange, groupText } from './rozvrh-core.js';
 
-// Modal functions
-export function showLessonModal(lesson) {
+let diffSeq = 0;
+let anchorEl = null;
+
+const isMobile = () => !!window.matchMedia && window.matchMedia('(max-width: 1079px)').matches;
+
+/**
+ * "Co je dnes jinak": for a changed / cancelled lesson show what the permanent
+ * timetable has in the same slot (day, hour, group) next to what happens now.
+ * The change note from Bakaláři alone often says only "Suplování" or
+ * "Hodina odpadla" without the original lesson.
+ */
+async function showLessonDiff(lesson, data) {
+    const box = document.getElementById('modalDiff');
+    if (!box) return;
+    const seq = ++diffSeq;
+    box.classList.add('hidden');
+    const flagged = lesson && (lesson.changed || lesson.type === 'removed' || lesson.type === 'absent');
+    if (!flagged || state.selectedScheduleType === 'permanent' && data === state.currentTimetableData) return;
+
+    let permanent = [];
+    try {
+        const monday = getMondayOfWeek(0).toISOString().split('T')[0];
+        permanent = await fetchTimetable(state.selectedType, getDropdownValue(), 'permanent', monday);
+    } catch {
+        // offline without a cached permanent timetable: the change note may still tell the original
+    }
+    if (seq !== diffSeq) return; // another lesson was opened meanwhile
+
+    const entry = describeLessonChange(lesson, data || state.currentTimetableData || [], permanent);
+    if (!entry) return;
+    document.getElementById('modalDiffBefore').innerHTML = entry.before
+        ? briefHtml(entry.before, { strike: entry.kind === 'removed' || entry.kind === 'absent' })
+        : '<span class="chg-none">Podle stálého rozvrhu tu hodina nebyla</span>';
+    document.getElementById('modalDiffAfter').innerHTML = afterHtml(entry);
+    box.classList.remove('hidden');
+    positionNearAnchor();
+}
+
+/** Stav hodiny v kontextu jejího slotu (originál suplování ve stejné skupině). */
+function kindIn(lesson, data) {
+    const rows = (data || []).filter(l => l.day === lesson.day && l.hour === lesson.hour);
+    const item = slotLessons(rows).find(it => it.lesson === lesson);
+    return item ? item.kind : lessonKind(lesson);
+}
+
+function setRow(rowId, show) {
+    const row = document.getElementById(rowId);
+    if (row) row.hidden = !show;
+}
+
+/**
+ * Open the detail of a lesson.
+ * @param {Object} lesson
+ * @param {{ data?: Array, anchor?: Element|null }} [opts] - data: the week the lesson belongs to
+ *   (the overview always shows the current week); anchor: the clicked block (desktop placement)
+ */
+export function showLessonModal(lesson, { data = null, anchor = null } = {}) {
     if (!dom.lessonModal) {
         console.error('Modal not initialized!');
         return;
     }
+    const week = data || state.currentTimetableData || [];
+    anchorEl = anchor;
 
-    // Set subject name (full name, not abbreviated)
+    // Subject (full name)
     document.getElementById('modalSubject').textContent = lesson.subject || 'Neznámá hodina';
 
-    // Set teacher (full name) with clickable link
+    // Status: icon + word (colour only on the icon)
+    const status = document.getElementById('modalStatus');
+    const kind = kindIn(lesson, week);
+    // The overview passes the current week; the layouts pass the shown one
+    const currentWeek = week === state.currentTimetableData ? state.selectedScheduleType === 'actual' : true;
+    const cancelled = lesson.type === 'removed' || lesson.type === 'absent';
+    const isNow = currentWeek && !cancelled && lesson.day === getTodayIndex() && lesson.hour === getCurrentHour();
+    const statusParts = [];
+    if (kind && KINDS[kind]) statusParts.push(statusHtml(kind));
+    if (isNow) statusParts.push(statusHtml('', { now: true }));
+    if (status) {
+        status.innerHTML = statusParts.join('');
+        status.hidden = !statusParts.length;
+    }
+
+    // Day, hour and time
+    const monday = state.selectedScheduleType === 'permanent' && week === state.currentTimetableData
+        ? null : weekMonday(week, getMondayOfWeek(state.selectedScheduleType === 'next' && week === state.currentTimetableData ? 1 : 0));
+    const date = monday ? addDays(monday, lesson.day) : null;
+    const dayEl = document.getElementById('modalDay');
+    if (dayEl) dayEl.textContent = DAY_NAMES[lesson.day] ? `${DAY_NAMES[lesson.day]}${date ? ` ${czDate(date)}` : ''}` : '';
+    setRow('modalDayRow', !!DAY_NAMES[lesson.day]);
+    const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
+    document.getElementById('modalHour').textContent = `${lesson.hour}.\u00a0hodina${timeInfo ? `, ${hourRange(lesson.hour)}` : ''}`;
+
+    // Teacher (link to their timetable); hidden in a teacher's own timetable
     const teacherEl = document.getElementById('modalTeacher');
-    const teacherContainer = teacherEl.parentElement;
-
-    // Hide teacher row completely when viewing a teacher's timetable
     if (state.selectedType === 'Teacher') {
-        teacherContainer.style.display = 'none';
+        setRow('modalTeacherRow', false);
     } else {
-        teacherContainer.style.display = 'flex';
+        setRow('modalTeacherRow', true);
+        teacherEl.innerHTML = lesson.teacher
+            ? `<a href="#" class="modal-link" data-type="Teacher" data-name="${esc(lesson.teacher)}">${esc(lesson.teacher)}${icon('chevron-right', 'ld-go')}</a>`
+            : '<span class="ld-none">Není zadáno</span>';
+    }
 
-        if (lesson.teacher) {
-            teacherEl.innerHTML = `<a href="#" class="modal-link" data-type="Teacher" data-name="${lesson.teacher}">${lesson.teacher}</a>`;
+    // Room (link) - in a room's own timetable just the text
+    const roomEl = document.getElementById('modalRoom');
+    if (lesson.type === 'absent' && !lesson.room) {
+        setRow('modalRoomRow', false);
+    } else {
+        setRow('modalRoomRow', true);
+        if (lesson.room && state.selectedType !== 'Room') {
+            roomEl.innerHTML = `<a href="#" class="modal-link" data-type="Room" data-name="${esc(lesson.room)}">${esc(lesson.room)}${icon('chevron-right', 'ld-go')}</a>`;
         } else {
-            teacherEl.textContent = 'Není zadáno';
+            roomEl.textContent = lesson.room || 'Není zadáno';
         }
     }
 
-
-    // Set room (with clickable link if room exists)
-    const roomEl = document.getElementById('modalRoom');
-    if (lesson.room && state.selectedType !== 'Room') {
-        roomEl.innerHTML = `<a href="#" class="modal-link" data-type="Room" data-name="${lesson.room}">${lesson.room}</a>`;
-    } else {
-        roomEl.textContent = lesson.room || 'Není zadáno';
-    }
-
-    // Set hour with time range
-    const timeInfo = lessonTimes.find(t => t.hour === lesson.hour);
-    const hourText = timeInfo ? `${lesson.hour}. hodina (${timeInfo.label})` : `${lesson.hour}. hodina`;
-    document.getElementById('modalHour').textContent = hourText;
-
-    // Set group (if exists) and extract class name for link
-    const modalGroupContainer = document.getElementById('modalGroupContainer');
+    // Group; in a teacher's / room's timetable the class is a link
+    const groupEl = document.getElementById('modalGroup');
     if (lesson.group) {
-        // Parse group to get class name
         const groupMatch = lesson.group.match(/^([^\s]+)\s+/);
         const className = groupMatch ? groupMatch[1] : null;
-
-        if (className && state.selectedType === 'Class') {
-            // If viewing a class, just show group name
-            document.getElementById('modalGroup').textContent = lesson.group;
-        } else if (className) {
-            // If viewing teacher/room, make class name clickable
-            const groupEl = document.getElementById('modalGroup');
-            groupEl.innerHTML = `<a href="#" class="modal-link" data-type="Class" data-name="${className}">${lesson.group}</a>`;
+        const pretty = groupText(lesson.group);
+        if (className && state.selectedType !== 'Class') {
+            groupEl.innerHTML = `<a href="#" class="modal-link" data-type="Class" data-name="${esc(className)}">${esc(className)}${pretty ? `, ${esc(pretty)}` : ''}${icon('chevron-right', 'ld-go')}</a>`;
         } else {
-            document.getElementById('modalGroup').textContent = lesson.group;
+            groupEl.textContent = pretty || lesson.group;
         }
-        modalGroupContainer.style.display = 'flex';
+        setRow('modalGroupContainer', true);
     } else {
-        modalGroupContainer.style.display = 'none';
+        setRow('modalGroupContainer', false);
     }
 
-    // Set theme (if exists)
-    const modalThemeContainer = document.getElementById('modalThemeContainer');
+    // Theme
     if (lesson.theme) {
         document.getElementById('modalTheme').textContent = lesson.theme;
-        modalThemeContainer.style.display = 'flex';
+        setRow('modalThemeContainer', true);
     } else {
-        modalThemeContainer.style.display = 'none';
+        setRow('modalThemeContainer', false);
     }
 
-    // Set changes (if exists)
+    // Description of the change from Bakaláři
     const modalChanges = document.getElementById('modalChanges');
     const modalChangesContent = document.getElementById('modalChangesContent');
     const modalChangesIcon = document.getElementById('modalChangesIcon');
     const modalChangesHeader = document.getElementById('modalChangesHeader');
-
-    if (lesson.changed && lesson.changeInfo) {
+    const flagged = lesson.changed || lesson.type === 'removed' || lesson.type === 'absent';
+    if (flagged) {
         modalChanges.classList.remove('hidden');
-
-        // Parse change info for better understanding
-        const parsed = parseChangeInfo(lesson.changeInfo.description);
-
-        // Determine change type and get appropriate icon
-        const typeInfo = getChangeTypeInfo(parsed?.type, lesson.changeInfo.description);
-        const iconSvg = getChangeIcon(typeInfo.icon);
-
-        // Set icon
-        modalChangesIcon.innerHTML = iconSvg;
-
-        // Set header
-        modalChangesHeader.textContent = typeInfo.header;
-
-        // Remove all type-* classes first
-        modalChanges.className = 'modal-changes';
-
-        // Add appropriate type class
-        modalChanges.classList.add(`type-${typeInfo.type}`);
-
-        // Set content
-        if (parsed && parsed.formatted) {
-            modalChangesContent.innerHTML = parsed.formatted;
-        } else {
-            modalChangesContent.innerHTML = '<div class="change-detail"><span class="change-value">Tato hodina byla změněna oproti stálému rozvrhu.</span></div>';
-        }
-    } else if (lesson.changed) {
-        modalChanges.classList.remove('hidden');
-
-        // Default generic change
-        const typeInfo = getChangeTypeInfo(null, null);
-        const iconSvg = getChangeIcon(typeInfo.icon);
-
-        modalChangesIcon.innerHTML = iconSvg;
-        modalChangesHeader.textContent = typeInfo.header;
-        modalChanges.className = 'modal-changes';
-        modalChanges.classList.add(`type-${typeInfo.type}`);
-        modalChangesContent.innerHTML = '<div class="change-detail"><span class="change-value">Tato hodina byla změněna oproti stálému rozvrhu.</span></div>';
+        const raw = lesson.changeInfo && lesson.changeInfo.description;
+        const parsed = raw ? parseChangeInfo(raw) : null;
+        const typeInfo = getChangeTypeInfo(parsed?.type, raw);
+        modalChanges.className = `ld-mod ld-changes type-${typeInfo.type}`;
+        modalChangesIcon.innerHTML = icon(KINDS[kind] ? KINDS[kind].icon : 'info', KINDS[kind] ? `ico-${KINDS[kind].bar}` : '');
+        modalChangesHeader.textContent = 'Popis změny';
+        modalChangesContent.innerHTML = parsed && parsed.formatted
+            ? parsed.formatted
+            : '<div class="change-detail"><span class="change-value">Tato hodina byla změněna oproti stálému rozvrhu.</span></div>';
     } else {
         modalChanges.classList.add('hidden');
     }
 
-    // Open as bottom sheet
+    // Original vs. now from the permanent timetable (async, fills in when loaded)
+    showLessonDiff(lesson, week);
+
+    // Open as bottom sheet (phones) / dialog next to the block (desktop)
+    dom.lessonModal.classList.remove('is-anchored');
+    dom.lessonModal.style.left = '';
+    dom.lessonModal.style.top = '';
     openBottomSheet('lessonModal');
+    positionNearAnchor();
 
     // Add click listeners to modal links
     setupModalLinks();
+}
+
+/**
+ * Desktop: put the dialog next to the clicked block (right of it, or left
+ * when there is no room), clamped to the window. Phones keep the bottom sheet.
+ */
+function positionNearAnchor() {
+    const dlg = dom.lessonModal;
+    if (!dlg || !dlg.open) return;
+    if (isMobile() || !anchorEl || !anchorEl.isConnected) {
+        dlg.classList.remove('is-anchored');
+        return;
+    }
+    const a = anchorEl.getBoundingClientRect();
+    dlg.classList.add('is-anchored');
+    const w = dlg.offsetWidth;
+    const h = dlg.offsetHeight;
+    const gap = 12;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = a.right + gap;
+    if (left + w > vw - 16) left = a.left - gap - w;
+    if (left < 16) left = Math.max(16, Math.min(vw - w - 16, a.left + (a.width - w) / 2));
+    const top = Math.max(16, Math.min(vh - h - 16, a.top - 8));
+    dlg.style.left = `${Math.round(left)}px`;
+    dlg.style.top = `${Math.round(top)}px`;
 }
 
 export function closeLessonModal() {
@@ -144,13 +226,38 @@ function normalizeTeacherName(name) {
     if (!name) return '';
 
     // Remove titles
-    let normalized = name.replace(/^(Mgr\.|Ing\.|Bc\.|Dr\.|Ph\.D\.|RNDr\.|PaedDr\.)\s*/gi, '')
+    const normalized = name.replace(/^(Mgr\.|Ing\.|Bc\.|Dr\.|Ph\.D\.|RNDr\.|PaedDr\.)\s*/gi, '')
         .replace(/,?\s*(Ph\.D\.|CSc\.)$/gi, '')
         .trim();
 
     // Split into parts and sort alphabetically to handle different orders
     const parts = normalized.split(/\s+/).filter(p => p.length > 0);
     return parts.sort().join(' ').toLowerCase();
+}
+
+/** Teacher id for a name as written in the lesson (titles, order and initials may differ). */
+function findTeacherId(name) {
+    const teachers = state.definitions.teachers || [];
+    const normalizedSearchName = normalizeTeacherName(name);
+    let teacher = teachers.find(t => t.name === name)
+        || teachers.find(t => normalizeTeacherName(t.name) === normalizedSearchName);
+    if (!teacher) {
+        const searchParts = normalizedSearchName.split(/\s+/);
+        teacher = teachers.find(t => {
+            const defParts = normalizeTeacherName(t.name).split(/\s+/);
+            if (searchParts.length !== defParts.length) return false;
+            return searchParts.every((searchPart, i) => {
+                const cleanSearch = searchPart.replace(/\./g, '');
+                const cleanDef = defParts[i].replace(/\./g, '');
+                if (cleanSearch.length < cleanDef.length) return cleanDef.startsWith(cleanSearch);
+                if (cleanDef.length < cleanSearch.length) return cleanSearch.startsWith(cleanDef);
+                return cleanSearch === cleanDef;
+            });
+        });
+    }
+    if (!teacher) teacher = teachers.find(t => t.id === name);
+    if (!teacher) teacher = teachers.find(t => t.name.includes(name) || name.includes(t.name) || t.id.includes(name));
+    return teacher ? teacher.id : null;
 }
 
 // Setup click listeners for modal links (teacher, room, class)
@@ -162,118 +269,27 @@ function setupModalLinks() {
             const type = link.dataset.type;
             const name = link.dataset.name;
 
-            // Close modal
             closeLessonModal();
 
-            // Find the ID for this teacher/room/class
             const definitions = state.definitions;
             let targetId = null;
-
-            if (type === 'Teacher') {
-                // Normalize the search name
-                const normalizedSearchName = normalizeTeacherName(name);
-
-                // Try exact match first
-                let teacher = definitions.teachers?.find(t => t.name === name);
-
-                // If no exact match, try normalized name matching
-                if (!teacher) {
-                    teacher = definitions.teachers?.find(t => {
-                        const normalizedDefName = normalizeTeacherName(t.name);
-                        return normalizedDefName === normalizedSearchName;
-                    });
-                }
-
-                // If still no match, try matching with initials
-                if (!teacher) {
-                    const searchParts = normalizedSearchName.split(/\s+/);
-                    teacher = definitions.teachers?.find(t => {
-                        const defParts = normalizeTeacherName(t.name).split(/\s+/);
-
-                        // Check if parts match (handling initials like "r." matching "radek")
-                        if (searchParts.length !== defParts.length) return false;
-
-                        return searchParts.every((searchPart, i) => {
-                            const defPart = defParts[i];
-                            // Remove dots for comparison
-                            const cleanSearch = searchPart.replace(/\./g, '');
-                            const cleanDef = defPart.replace(/\./g, '');
-
-                            // If search is shorter (likely initial), check if def starts with it
-                            if (cleanSearch.length < cleanDef.length) {
-                                return cleanDef.startsWith(cleanSearch);
-                            }
-                            // If def is shorter (likely initial), check if search starts with it
-                            if (cleanDef.length < cleanSearch.length) {
-                                return cleanSearch.startsWith(cleanDef);
-                            }
-                            // Otherwise must be exact match
-                            return cleanSearch === cleanDef;
-                        });
-                    });
-                }
-
-                // If still no match, try to find by ID
-                if (!teacher) {
-                    teacher = definitions.teachers?.find(t => t.id === name);
-                }
-
-                // Last resort: partial matching
-                if (!teacher) {
-                    teacher = definitions.teachers?.find(t =>
-                        t.name.includes(name) || name.includes(t.name) || t.id.includes(name)
-                    );
-                }
-
-                targetId = teacher?.id;
-                console.log('Teacher lookup:', {
-                    name,
-                    normalizedSearchName,
-                    teacher,
-                    targetId,
-                    sampleTeachers: definitions.teachers?.slice(0, 3).map(t => ({
-                        ...t,
-                        normalized: normalizeTeacherName(t.name)
-                    }))
-                });
-            } else if (type === 'Room') {
-                const room = definitions.rooms?.find(r => r.name === name);
-                targetId = room?.id;
-            } else if (type === 'Class') {
-                const cls = definitions.classes?.find(c => c.name === name);
-                targetId = cls?.id;
-            }
-
+            if (type === 'Teacher') targetId = findTeacherId(name);
+            else if (type === 'Room') targetId = definitions.rooms?.find(r => r.name === name)?.id;
+            else if (type === 'Class') targetId = definitions.classes?.find(c => c.name === name)?.id;
 
             if (targetId) {
-                // Update state
-                updateState('selectedType', type);
-
-                // Update UI buttons
-                const typeButtons = document.querySelectorAll('.type-btn');
-                typeButtons.forEach(btn => {
-                    if (btn.dataset.type === type) {
-                        btn.classList.add('active');
-                    } else {
-                        btn.classList.remove('active');
-                    }
-                });
-
-                // Populate and select
-                populateValueSelect();
-                setDropdownValue(targetId);
-
-                // Load timetable
-                await loadTimetable();
+                selectTimetable(type, targetId);
             } else {
                 console.error(`Failed to find ${type} with name: "${name}"`);
-                console.error('Available options:', type === 'Teacher' ? definitions.teachers :
-                    type === 'Room' ? definitions.rooms : definitions.classes);
-
-                // Show user-friendly error
-                alert(`Nepodařilo se najít rozvrh pro ${type === 'Teacher' ? 'učitele' : type === 'Room' ? 'učebnu' : 'třídu'}: "${name}"\n\nKlikněte na tlačítko Console (F12) pro více informací.`);
+                // Non-blocking message instead of alert()
+                showToast({
+                    title: `Rozvrh pro ${type === 'Teacher' ? 'vyučujícího' : type === 'Room' ? 'učebnu' : 'třídu'} „${name}“ se nepodařilo najít.`,
+                    body: 'Vyhledejte ho prosím ručně.',
+                    icon: '⚠️',
+                    variant: 'info',
+                });
             }
-        });
+        }, { once: true });
     });
 }
 
@@ -290,7 +306,7 @@ export function initModalListeners() {
         closeLessonModal();
     });
 
-    // Overlay click + Escape key are handled by bottom-sheet.js
+    window.addEventListener('resize', () => positionNearAnchor(), { passive: true });
 
-    console.log('Modal listeners initialized successfully');
+    // Overlay click + Escape key are handled by bottom-sheet.js
 }

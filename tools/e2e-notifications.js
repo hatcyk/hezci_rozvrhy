@@ -5,8 +5,20 @@
  *
  * It seeds a throwaway user that already has a token (as if notifications had
  * been enabled in an earlier session), then clicks through the actual UI and
- * asserts what reached the server. Deletes nothing: remove the e2e-notif-*
- * user documents afterwards if you care about tidiness.
+ * asserts what reached the server. Deletes nothing: the user ID (anon-<uuid>)
+ * is printed at the end, remove users/<that id> afterwards if you care.
+ *
+ * Since contract S1 the user API needs a Firebase ID token, so the harness
+ * signs in exactly like the app does:
+ *   1. POST /api/auth {}                     → { token (custom token), userId }
+ *   2. Identity Toolkit REST accounts:signInWithCustomToken?key=<web API key>
+ *      { token, returnSecureToken: true }    → { idToken } (valid 1 h)
+ *      (firebase.google.com/docs/reference/rest/auth, "Exchange custom token
+ *      for an ID and refresh token")
+ *   3. Authorization: Bearer <idToken> on every /api/fcm/* call.
+ * The web API key is the public one from public/index.html (override with
+ * FIREBASE_WEB_API_KEY). The key is restricted to the app's site, so the
+ * request carries its Referer (override with E2E_REFERER).
  *
  * Needs Google Chrome and a running server with Firebase credentials:
  *   FIREBASE_SERVICE_ACCOUNT_PATH=./firebase-service-account.json PORT=3456 npm start
@@ -19,14 +31,47 @@ const path = require('path');
 const CHROME = process.env.CHROME_PATH || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = Number(process.env.CDP_PORT || 9370);
 const BASE = (process.env.APP_URL || 'http://127.0.0.1:3456').replace(/\/$/, '');
+const REFERER = process.env.E2E_REFERER || 'https://spsd-rozvrhy.vercel.app/';
 const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'rozvrh-e2e-'));
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const USER = 'e2e-notif-' + Date.now();
 const TOKEN = 'FAKE_TOKEN_' + Date.now();
 
+function webApiKey() {
+  if (process.env.FIREBASE_WEB_API_KEY) return process.env.FIREBASE_WEB_API_KEY;
+  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+  const m = html.match(/apiKey:\s*["']([^"']+)["']/);
+  if (!m) throw new Error('web API key not found in public/index.html (set FIREBASE_WEB_API_KEY)');
+  return m[1];
+}
+
+/** Same identity flow as the app: server-issued anon-<uuid> + custom token → ID token. */
+async function signIn() {
+  const auth = await (await fetch(BASE + '/api/auth', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  })).json();
+  if (!auth.token || !auth.userId) throw new Error('/api/auth failed: ' + JSON.stringify(auth));
+  const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(webApiKey())}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', Referer: REFERER },
+    body: JSON.stringify({ token: auth.token, returnSecureToken: true }),
+  });
+  const body = await r.json();
+  if (!r.ok || !body.idToken) throw new Error(`signInWithCustomToken failed (${r.status}): ${body.error ? body.error.message : '?'}`);
+  return { userId: auth.userId, idToken: body.idToken };
+}
+
+let USER = null;
+let ID_TOKEN = null;
+
 const api = async (path, body) => {
-  const r = await fetch(BASE + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {});
-  return r.json();
+  const headers = { Authorization: `Bearer ${ID_TOKEN}` };
+  const init = body
+    ? { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) }
+    : { headers };
+  const r = await fetch(BASE + path, init);
+  const json = await r.json();
+  if (!r.ok) throw new Error(`${path} → ${r.status} ${JSON.stringify(json)}`);
+  return json;
 };
 const prefs = () => api(`/api/fcm/preferences/${USER}`);
 
@@ -34,6 +79,7 @@ let pass = 0, fail = 0;
 const check = (name, ok, detail = '') => { (ok ? pass++ : fail++); console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ' — ' + detail : ''}`); };
 
 (async () => {
+  ({ userId: USER, idToken: ID_TOKEN } = await signIn());
   // 1. seed: user with a token + one watched class incl. lesson reminders
   await api('/api/fcm/subscribe', { userId: USER, token: TOKEN });
   await api('/api/fcm/update-preferences', { userId: USER, watchedTimetables: [
@@ -132,6 +178,13 @@ const check = (name, ok, detail = '') => { (ok ? pass++ : fail++); console.log(`
     window.__order = [];
     window.__alerts = [];
     window.alert = (m) => window.__alerts.push(String(m));       // alert() would block CDP
+    // The app shows toasts instead of alert() now; record their text as well.
+    new MutationObserver(() => {
+      for (const t of document.querySelectorAll('.toast')) {
+        const text = t.textContent.trim();
+        if (text && !window.__alerts.includes(text)) window.__alerts.push(text);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
     Notification.requestPermission = () => { window.__order.push('permission'); return Promise.resolve('default'); };
     const sw = navigator.serviceWorker;
     const reg = sw.register.bind(sw), get = sw.getRegistration.bind(sw);
@@ -175,7 +228,7 @@ const check = (name, ok, detail = '') => { (ok ? pass++ : fail++); console.log(`
         `toggled=${toggled} before=[${beforeIds}] after=[${after.watchedTimetables.map(t => t.id).join(',')}]`);
   check('switching the class did not turn notifications off', after.notificationsEnabled === true, `notificationsEnabled=${after.notificationsEnabled}`);
 
-  console.log(`\n${pass} passed, ${fail} failed  (user ${USER})`);
+  console.log(`\n${pass} passed, ${fail} failed  (user ${USER} - delete users/${USER} if you want to tidy up)`);
   ws.close(); chrome.kill();
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error('harness failed:', e.message); process.exit(2); });

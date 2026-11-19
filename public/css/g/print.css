@@ -1,0 +1,95 @@
+/* ==========================================================================
+   Návrh G — tisk. Bílý papír, černý text, bez oblohy a skla.
+   Rozvrh: jen týdenní mřížka z print.js (A4 na šířku), ať je na obrazovce
+   jakékoli rozvržení. Změny se poznají slovem, ikonou a typem čáry (čárkovaný /
+   tečkovaný rámeček, přeškrtnutí), takže přežijí černobílou tiskárnu.
+   Ostatní pohledy tisknou svůj obsah bez rámu aplikace.
+   Vrstva print je v pořadí poslední, proto tu stačí běžná pravidla.
+   ========================================================================== */
+@layer print {
+  .print-sheet { display: none; }
+
+  @media print {
+    @page { size: A4 landscape; margin: 8mm; }
+
+    html, body { height: auto; min-height: 0; overflow: visible; background: #fff; color: #000; }
+    body::before { display: none; }
+    *, *::before, *::after {
+      box-shadow: none; text-shadow: none; animation: none; transition: none;
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+    }
+    body, body * { color: #000; }
+    .g-glass, .g-veil, .g-veil-strong, .g-sheet, .g-btn, .g-chip, .g-seg, .g-circle { background: none; }
+
+    /* rám aplikace pryč: lišty, panel, hlášky, dialogy, toasty, ovládání pohledů */
+    dialog, .toast-container, .skip-link,
+    .view-actions, .view-controls, .rooms-hidden, .room-hide, .chip-remove, .chg-open, .common-pick .common-add,
+    .kiosk-foot { display: none; }
+    .app-container > :not(main) { display: none; }
+    .app-container, .app-container > main { display: block; height: auto; margin: 0; padding: 0; overflow: visible; max-width: none; }
+    .app-container > main[hidden] { display: none; }
+    .app-view { display: block; max-width: none; }
+    .app-view > * + * { margin-top: 3mm; }
+    .view-title { font-size: 16pt; }
+    .view-meta, .view-intro { font-size: 9pt; }
+    .view-lead, .view-status, .rooms-lead { font-size: 11pt; }
+    .view-lead > svg { display: none; }
+    a { text-decoration: none; }
+
+    /* změny */
+    .chg-class { break-inside: avoid; padding: 0; margin-top: 3mm; border: 0.75pt solid #000; border-radius: 2mm; }
+    .chg-class-head { padding: 1.5mm 3mm; }
+    .chg-class-title { font-size: 12pt; }
+    .chg-table { font-size: 9pt; }
+    .chg-table thead th { font-size: 8pt; border-bottom: 0.75pt solid #000; }
+    .chg-table tbody tr + tr > * { border-top: 0.5pt solid #000; }
+    .chg-table tbody th, .chg-table td { padding: 1.5mm 3mm; }
+    .chg-h.g-bar::before { display: none; }
+    .chg-table tr { break-inside: avoid; }
+    .chg-kind { font-weight: 700; }
+    .chg-group { border: 0.5pt solid #000; background: none; }
+
+    /* volné učebny */
+    .rooms-grid { display: block; }
+    .rooms-slot { break-inside: avoid; margin-top: 3mm; padding: 2mm 3mm; border: 0.75pt solid #000; border-radius: 2mm; }
+    .rooms-tiles { grid-template-columns: repeat(auto-fill, minmax(22mm, 1fr)); gap: 2mm; }
+    .room-item { background: none; border: 0.75pt solid #000; }
+    .room-link { min-height: 0; padding: 2mm; font-size: 14pt; font-weight: 400; }
+    .view-note { border: 0.5pt solid #000; }
+
+    /* společné volno */
+    .common-mod { break-inside: avoid; margin-top: 3mm; padding: 2mm 3mm; border: 0.75pt solid #000; border-radius: 2mm; }
+    .chip { border: 0.75pt solid #000; background: none; min-height: 0; padding: 1mm 3mm; }
+    .cg-cell, .cg-sample { height: auto; padding: 1.5mm 1mm; }
+    .cg-cell.is-ideal, .cg-sample.is-ideal { background: none; border: 1.5pt solid #000; font-weight: 700; }
+    .cg-cell.is-free, .cg-sample.is-free { outline: 0; border: 1pt dashed #000; }
+    .cg-cell.is-busy, .cg-sample.is-busy { border: 0.5pt solid #000; font-size: 7.5pt; }
+    .table-scroll { overflow: visible; }
+
+    /* rozvrh: jen vygenerovaný list */
+    html.print-timetable body > :not(.print-sheet) { display: none; }
+    html.print-timetable .print-sheet { display: block; }
+
+    .pg-title { margin: 0 0 1pt; font-size: 14pt; font-weight: 700; }
+    .pg-sub { margin: 0 0 4pt; font-size: 9pt; }
+    .print-grid { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5pt; line-height: 1.2; }
+    .print-grid th, .print-grid td { padding: 2pt 3pt; border: 0.75pt solid #000; vertical-align: top; text-align: left; }
+    .print-grid thead th { font-size: 8pt; text-align: center; }
+    .print-grid tbody th { width: 17mm; }
+    .pg-time, .pg-date { display: block; font-size: 7pt; font-weight: 400; }
+    .pl { padding: 1pt 2pt; }
+    .pl + .pl { margin-top: 2pt; border-top: 0.5pt dotted #000; }
+    .pl-subject { font-weight: 700; }
+    .pl-group { font-size: 7pt; }
+    .pl-meta { display: block; font-size: 7.5pt; }
+    .pl-meta > span + span { margin-left: 4pt; }
+    .pl-state { display: flex; align-items: center; gap: 2pt; margin-top: 1pt; font-size: 7.5pt; font-weight: 700; }
+    .pl-state svg.i { width: 8pt; height: 8pt; }
+    .pl--changed { outline: 1pt dashed #000; outline-offset: -1pt; }
+    .pl--removed { outline: 1pt dotted #000; outline-offset: -1pt; }
+    .pl--absent { outline: 1pt dotted #000; outline-offset: -1pt; }
+    .pg-legend { margin-top: 4pt; font-size: 8pt; display: flex; flex-wrap: wrap; gap: 4pt 12pt; }
+    .pg-legend-item { display: inline-flex; align-items: center; gap: 4pt; }
+    .pl-sample { display: inline-block; padding: 0 3pt; }
+  }
+}

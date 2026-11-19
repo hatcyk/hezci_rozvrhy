@@ -1,50 +1,17 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
+// Vercel deploys index.js as the Express app only if this file itself
+// requires 'express' (@vercel/express checks the source with a regex), even
+// though the app is built in routes/index.js. Without it the build fails with
+// "No entrypoint found which imports express".
+require('express');
 const os = require('os');
-
-// Import routes
-const groupsRoutes = require('./routes/groups');
-const authRoutes = require('./routes/auth');
-const fcmRoutes = require('./routes/fcm');
-const prefetchRoutes = require('./routes/prefetch');
-const debugRoutes = require('./routes/debug');
-const statusRoutes = require('./routes/status');
-const cronRoutes = require('./routes/cron');
-const favoritesRoutes = require('./routes/favorites');
+const { createApp, listenHost } = require('./routes');
 
 // Debug mode
 const DEBUG = process.env.DEBUG === 'true';
 
-const app = express();
-
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '50kb' }));
-
-// Serve static files (express.static sets the right Content-Type itself).
-// Long-lived caching only for the versioned bundles (?v=hash in the URL);
-// everything else stays revalidated so the SW / index.html pick up changes.
-app.use(express.static(path.join(__dirname, 'public'), {
-    setHeaders(res, filePath) {
-        if (/[\\/](?:app\.css|app\.js)$/.test(filePath)) {
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        } else if (filePath.endsWith('firebase-messaging-sw.js')) {
-            res.setHeader('Cache-Control', 'no-cache');
-        }
-    }
-}));
-
-// Mount API routes
-app.use('/api', groupsRoutes);
-app.use('/api', authRoutes);
-app.use('/api', statusRoutes);
-app.use('/api/fcm', fcmRoutes);
-app.use('/api/prefetch', prefetchRoutes);
-app.use('/api/debug', debugRoutes);
-app.use('/api/cron', cronRoutes);
-app.use('/api', favoritesRoutes);
+// Middleware, static files and API routes are set up in routes/index.js.
+const app = createApp();
 
 // Get local IP address
 function getLocalIP() {
@@ -61,14 +28,15 @@ function getLocalIP() {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-const HOST = '0.0.0.0';
+// 127.0.0.1 by default; HOST=0.0.0.0 for the LAN (e.g. trying it on a phone)
+const HOST = listenHost();
 
 app.listen(PORT, HOST, () => {
-    const localIP = getLocalIP();
-
     console.log('\n🚀 Server started:');
     console.log(`   http://localhost:${PORT}`);
-    console.log(`   http://${localIP}:${PORT}`);
+    if (HOST === '0.0.0.0' || HOST === '::') {
+        console.log(`   http://${getLocalIP()}:${PORT}`);
+    }
 
     if (DEBUG) {
         console.log('\n🔧 DEBUG MODE ENABLED');

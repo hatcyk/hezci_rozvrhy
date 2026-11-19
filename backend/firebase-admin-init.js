@@ -111,9 +111,21 @@ async function createCustomToken(uid, claims = {}) {
     }
 }
 
+/**
+ * Verify a Firebase ID token sent by the client (Authorization: Bearer ...).
+ * Used by requireUser so a request can only touch the user it signed in as.
+ * @param {string} idToken
+ * @returns {Promise<import('firebase-admin').auth.DecodedIdToken>}
+ */
+async function verifyIdToken(idToken) {
+    const app = getFirebaseApp();
+    return app.auth().verifyIdToken(idToken);
+}
+
 module.exports = {
     initializeFirebaseAdmin,
     getFirestore,
     getMessaging,
     createCustomToken,
+    verifyIdToken,
 };

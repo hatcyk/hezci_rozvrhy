@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="cs" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vzorník G „Obloha“ — Lepší Rozvrh</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="css/g/tokens.css">
+    <link rel="stylesheet" href="css/g/base.css">
+    <link rel="stylesheet" href="css/g/design.css">
+    <script src="js/design.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#obsah">Přeskočit na obsah</a>
+
+<header class="dz-bar g-glass">
+    <strong>Vzorník návrhu G „Obloha“</strong>
+    <div class="g-seg" role="group" aria-label="Denní doba">
+        <button type="button" data-theme-set="light" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="icons.svg#sun"></use></svg>Ráno</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="icons.svg#moon"></use></svg>Noc</button>
+    </div>
+    <button type="button" class="g-chip" id="dzTransparency" aria-pressed="false">Omezit průhlednost</button>
+</header>
+
+<main id="obsah" class="dz-main" tabindex="-1">
+    <p class="dz-lead">Společné prvky pro všechny obrazovky aplikace. Barvy a kontrast se počítají živě z tokenů v <code>css/g/tokens.css</code>, takže vzorník vždy odpovídá kódu.</p>
+
+    <section aria-labelledby="h-mat">
+        <h2 id="h-mat" class="dz-h">Tři vrstvy materiálu</h2>
+        <div class="dz-mat">
+            <div class="dz-stripes" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="dz-matcard g-glass">
+                <svg class="i" aria-hidden="true"><use href="icons.svg#layers"></use></svg>
+                <strong>Sklo</strong>
+                <span>Navigace a ovládání: spodní lišta, postranní panel, přepínače, spodní panely. Rozostření 26 px.</span>
+            </div>
+            <div class="dz-matcard g-veil">
+                <svg class="i" aria-hidden="true"><use href="icons.svg#calendar-days"></use></svg>
+                <strong>Závoj</strong>
+                <span>Obsah: moduly, seznamy, časová osa. Bez rozostření, rychlé i na slabém telefonu.</span>
+            </div>
+            <div class="dz-matcard dz-solid">
+                <svg class="i" aria-hidden="true"><use href="icons.svg#eye-off"></use></svg>
+                <strong>Plná plocha</strong>
+                <span>Při omezené průhlednosti a v prohlížečích bez rozostření nahradí sklo i závoj.</span>
+            </div>
+        </div>
+    </section>
+
+    <section aria-labelledby="h-col">
+        <h2 id="h-col" class="dz-h">Barvy</h2>
+        <p class="g-sub">Text je vždy bílý. Barevné jsou jen ikony, proužky a body: stav proto nikdy nenese jen barva.</p>
+        <div class="dz-swatches" id="dzSwatches"></div>
+    </section>
+
+    <section aria-labelledby="h-type">
+        <h2 id="h-type" class="dz-h">Písmo</h2>
+        <p class="g-sub">Systémové písmo: SF Pro na iPhonu a Macu, Roboto na Androidu, Segoe UI na Windows. Nic se nestahuje.</p>
+        <div class="dz-type g-veil g-mod">
+            <div><span>učebna v přehledu, 96 / 200</span><b style="font-size:var(--fs-hero);font-weight:200;line-height:1">A101</b></div>
+            <div><span>velký nadpis, 34 / 700</span><b style="font-size:var(--fs-large)">Týden 2.–6. listopadu</b></div>
+            <div><span>nadpis obrazovky, 28 / 700</span><b style="font-size:var(--fs-title)">Středa 4. listopadu</b></div>
+            <div><span>nadpis modulu, 20 / 600</span><b style="font-size:var(--fs-title3);font-weight:600">Matematika</b></div>
+            <div><span>zvýrazněný text, 17 / 600</span><b style="font-size:var(--fs-em);font-weight:600">Další v 8:50: Fyzika v U11</b></div>
+            <div><span>text, 15 / 400</span><b style="font-size:var(--fs-body);font-weight:400">Dnes 4 změny: 3. hodina suplování, 5. hodina odpadá.</b></div>
+            <div><span>poznámka, 13 / 500</span><b style="font-size:var(--fs-foot);font-weight:500">původně Programování, J. Ukázková</b></div>
+            <div><span>popisek, 12 / 600</span><b style="font-size:var(--fs-caption);font-weight:600">8:00</b></div>
+        </div>
+    </section>
+
+    <section aria-labelledby="h-st">
+        <h2 id="h-st" class="dz-h">Stavy hodiny</h2>
+        <p class="g-sub">Blok je plný, aby jím neprosvítaly čáry časové osy. Stav = proužek + ikona + slovo.</p>
+        <div class="dz-blocks">
+            <div class="dz-blk g-bar"><b>Fyzika <small>U11</small></b><span>L. Návrhový</span></div>
+            <div class="dz-blk g-bar g-bar--now"><b>Matematika <small>A101</small></b><span class="g-st g-st--now"><svg class="i" aria-hidden="true"><use href="icons.svg#clock"></use></svg>teď, zbývá 25 min</span></div>
+            <div class="dz-blk g-bar g-bar--sub"><b>Matematika <small>U15</small></b><span class="g-st g-st--sub"><svg class="i" aria-hidden="true"><use href="icons.svg#repeat-2"></use></svg>suplování</span><span>původně Programování</span></div>
+            <div class="dz-blk g-bar g-bar--room"><b>Český jazyk <small>LAB2</small></b><span class="g-st g-st--room"><svg class="i" aria-hidden="true"><use href="icons.svg#door-open"></use></svg>jiná učebna</span></div>
+            <div class="dz-blk dz-blk--x g-bar g-bar--cancel"><b><s>Anglický jazyk</s> <small><s>A102</s></small></b><span class="g-st g-st--cancel"><svg class="i" aria-hidden="true"><use href="icons.svg#ban"></use></svg>odpadá</span><span>nemoc vyučujícího</span></div>
+            <div class="dz-blk g-bar g-bar--extra"><b>Exkurze <small>—</small></b><span class="g-st g-st--extra"><svg class="i" aria-hidden="true"><use href="icons.svg#flag"></use></svg>akce</span></div>
+            <div class="dz-split">
+                <div class="dz-blk g-bar g-bar--sub"><b>DBS <small>U12</small></b><span>1. sk</span><span class="g-st g-st--sub"><svg class="i" aria-hidden="true"><use href="icons.svg#repeat-2"></use></svg>suplování</span></div>
+                <div class="dz-blk g-bar"><b>DBS <small>A102</small></b><span>2. sk</span><span>L. Návrhový</span></div>
+            </div>
+        </div>
+    </section>
+
+    <section aria-labelledby="h-ctl">
+        <h2 id="h-ctl" class="dz-h">Ovládání</h2>
+        <div class="dz-ctl g-veil g-mod">
+            <div class="dz-row">
+                <button type="button" class="g-btn g-btn--primary">Dnes</button>
+                <button type="button" class="g-btn"><svg class="i" aria-hidden="true"><use href="icons.svg#calendar-plus"></use></svg>Přidat do kalendáře</button>
+                <button type="button" class="g-btn g-btn--quiet">Zrušit</button>
+                <button type="button" class="g-btn g-btn--small"><svg class="i" aria-hidden="true"><use href="icons.svg#share-2"></use></svg>Sdílet</button>
+                <button type="button" class="g-btn" disabled>Nedostupné</button>
+            </div>
+            <div class="dz-row">
+                <button type="button" class="g-circle" aria-label="Předchozí týden"><svg class="i" aria-hidden="true"><use href="icons.svg#chevron-left"></use></svg></button>
+                <button type="button" class="g-circle" aria-label="Další týden"><svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg></button>
+                <button type="button" class="g-circle g-glass" aria-label="Hledat"><svg class="i" aria-hidden="true"><use href="icons.svg#search"></use></svg></button>
+                <div class="g-seg g-glass" role="group" aria-label="Rozvrh">
+                    <button type="button" aria-pressed="false">Stálý</button>
+                    <button type="button" aria-pressed="true">Aktuální</button>
+                    <button type="button" aria-pressed="false">Příští</button>
+                </div>
+            </div>
+            <div class="dz-row">
+                <button type="button" class="g-chip" aria-pressed="false"><svg class="i" aria-hidden="true"><use href="icons.svg#filter"></use></svg>Jen změny <span class="g-count">5</span></button>
+                <button type="button" class="g-chip" aria-pressed="true"><svg class="i" aria-hidden="true"><use href="icons.svg#star"></use></svg>Jen moje</button>
+            </div>
+            <div class="dz-fields">
+                <label class="g-field">Třída
+                    <select class="g-select"><option>Všechny třídy</option><option>2.A</option><option>3.C</option></select>
+                </label>
+                <label class="g-field">Hledat
+                    <input class="g-input" type="search" placeholder="Třída, vyučující, učebna">
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <section aria-labelledby="h-list">
+        <h2 id="h-list" class="dz-h">Seznam a moduly</h2>
+        <div class="dz-two">
+            <div class="g-veil g-mod">
+                <div class="g-mod-head"><svg class="i" aria-hidden="true"><use href="icons.svg#repeat-2"></use></svg>Změny dnes</div>
+                <p>Dnes 4 změny: 3. hodina suplování, 4. hodina v jiné učebně, 5. hodina odpadá a 6. hodina suplování pro 1. sk.</p>
+            </div>
+            <div class="g-list g-veil">
+                <button type="button" class="g-row"><svg class="i" aria-hidden="true"><use href="icons.svg#sun-moon"></use></svg>Vzhled<span class="g-row-end">Podle systému<svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg></span></button>
+                <button type="button" class="g-row"><svg class="i" aria-hidden="true"><use href="icons.svg#calendar"></use></svg>Rozvržení<span class="g-row-end">Den<svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg></span></button>
+                <button type="button" class="g-row"><svg class="i" aria-hidden="true"><use href="icons.svg#bell"></use></svg>Upozornění<span class="g-row-end">Zapnuto<svg class="i" aria-hidden="true"><use href="icons.svg#chevron-right"></use></svg></span></button>
+            </div>
+        </div>
+    </section>
+
+    <section aria-labelledby="h-msg">
+        <h2 id="h-msg" class="dz-h">Hlášky a prázdné stavy</h2>
+        <div class="dz-stack">
+            <div class="g-banner g-banner--warn g-glass" role="status"><svg class="i" aria-hidden="true"><use href="icons.svg#wifi-off"></use></svg>Jsi offline. Rozvrh je z poslední uložené kopie (dnes 8:11).</div>
+            <div class="g-banner g-banner--error g-glass" role="status"><svg class="i" aria-hidden="true"><use href="icons.svg#triangle-alert"></use></svg>Bakaláři teď neodpovídají. Data jsou 3 h stará.<button type="button" class="g-btn g-btn--small">Zkusit znovu</button></div>
+            <div class="g-toast g-glass" role="status"><svg class="i" aria-hidden="true"><use href="icons.svg#check"></use></svg>Přidáno do oblíbených</div>
+            <div class="g-veil g-mod g-empty"><svg class="i" aria-hidden="true"><use href="icons.svg#calendar-days"></use></svg><strong>Dnes žádné změny</strong>Zítřek uvidíš přepnutím na „Zítra“.</div>
+        </div>
+    </section>
+
+    <section aria-labelledby="h-sheet">
+        <h2 id="h-sheet" class="dz-h">Spodní panel</h2>
+        <p class="g-sub">Na mobilu vyjede zdola, na počítači je uprostřed. Je skoro neprůhledný, aby byl text čitelný nad čímkoli.</p>
+        <button type="button" class="g-btn" id="dzOpenSheet">Otevřít ukázkový panel</button>
+        <dialog class="g-sheet" id="dzSheet" aria-labelledby="dzSheetTitle">
+            <div class="g-sheet-handle" aria-hidden="true"></div>
+            <div class="g-sheet-head">
+                <h2 id="dzSheetTitle">Matematika</h2>
+                <button type="button" class="g-circle" data-close aria-label="Zavřít"><svg class="i" aria-hidden="true"><use href="icons.svg#x"></use></svg></button>
+            </div>
+            <div class="g-sheet-body">
+                <p class="g-st g-st--sub"><svg class="i" aria-hidden="true"><use href="icons.svg#repeat-2"></use></svg>suplování</p>
+                <div class="g-list g-veil" style="margin-top:12px">
+                    <div class="g-row">3. hodina<span class="g-row-end">9:45–10:30</span></div>
+                    <div class="g-row">Vyučující<span class="g-row-end">A. Šablonový</span></div>
+                    <div class="g-row">Učebna<span class="g-row-end">U15</span></div>
+                    <div class="g-row">Původně<span class="g-row-end">Programování, J. Ukázková</span></div>
+                </div>
+            </div>
+        </dialog>
+    </section>
+
+    <section aria-labelledby="h-ico">
+        <h2 id="h-ico" class="dz-h">Ikony</h2>
+        <p class="g-sub">Jedna sada (Lucide, licence ISC), stejná tloušťka čáry, sprite <code>icons.svg</code>.</p>
+        <ul class="dz-icons" id="dzIcons" role="list"></ul>
+    </section>
+
+    <section aria-labelledby="h-con">
+        <h2 id="h-con" class="dz-h">Kontrast (živě, WCAG 2.2)</h2>
+        <p class="g-sub">Průhledné vrstvy se skládají přes nejsvětlejší místo oblohy. Text ≥ 4,5 : 1, ikony a proužky ≥ 3 : 1. Stejné dvojice hlídá test <code>test/g-contrast.test.js</code>.</p>
+        <div class="g-veil g-mod"><table class="dz-table" id="dzContrast"><caption class="vh">Kontrast dvojic barev v aktuálním režimu</caption><thead><tr><th scope="col">Popředí</th><th scope="col">Plocha</th><th scope="col">Poměr</th><th scope="col">Výsledek</th></tr></thead><tbody></tbody></table></div>
+    </section>
+</main>
+</body>
+</html>

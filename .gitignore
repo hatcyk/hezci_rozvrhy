@@ -2,9 +2,20 @@
 node_modules/
 debug_output/
 .env
+# Local variants (.env.local, .env.production, ...); the template stays tracked
+.env.*
+!.env.example
 .DS_Store
-# Firebase credentials
+# Firebase credentials (also the default name of a key downloaded from the
+# console: <project>-firebase-adminsdk-<id>.json)
 firebase-service-account.json
 **/firebase-service-account.json
+*firebase-adminsdk*.json
 .firebase/
 dev_curls.md
+# Playwright (npm run test:e2e)
+playwright-report/
+test-results/
+# Coverage (npm run test:coverage, the lcov reporter in test.yml)
+lcov.info
+coverage/

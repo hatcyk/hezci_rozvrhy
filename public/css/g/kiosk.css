@@ -1,0 +1,132 @@
+/* ==========================================================================
+   Návrh G — kiosk (?kiosk=changes), televize ve vestibulu.
+   Vždy noční obloha bez ohledu na režim, ŽÁDNÉ sklo (blur stojí na levném
+   přehrávači hodně výkonu a obraz běží týdny): plné panely --solid.
+   Velikost písma podle výšky obrazovky: 720p ≈ 18 px, 1080p ≈ 27 px, 4K ≈ 54 px.
+   ========================================================================== */
+@layer views {
+  :root[data-kiosk] { color-scheme: dark; overflow: hidden; }
+  :root[data-kiosk] body { overflow: hidden; }
+  :root[data-kiosk] .app-container,
+  :root[data-kiosk] .toast-container { display: none; }
+
+  .kiosk {
+    --k: clamp(16px, min(2.5vh, 1.42vw), 80px);
+    position: fixed; inset: 0; z-index: 1;
+    display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .7em;
+    padding:
+      max(1.1em, env(safe-area-inset-top)) max(1.5em, env(safe-area-inset-right))
+      max(.9em, env(safe-area-inset-bottom)) max(1.5em, env(safe-area-inset-left));
+    font-size: var(--k); line-height: 1.3; color: var(--tx);
+  }
+
+  /* hlavička: název a den vlevo, velký čas vpravo */
+  .kiosk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5em; }
+  .kiosk-brand { display: flex; align-items: center; gap: 1em; min-width: 0; }
+  .kiosk-logo { height: 2.7em; width: auto; flex: none; }
+  .kiosk-title { font-size: 2.2em; font-weight: 700; letter-spacing: -.015em; line-height: 1.05; }
+  .kiosk-sub { display: flex; flex-wrap: wrap; align-items: center; gap: .3em .7em; margin-top: .35em; font-size: 1.1em; font-weight: 500; color: var(--tx-2); }
+  .kiosk-count:not(:empty) {
+    padding: .12em .65em; border-radius: var(--r-pill); background: var(--solid-strong); box-shadow: inset 0 0 0 1px var(--rim);
+    color: var(--tx); font-weight: 700;
+  }
+  .kiosk-clock { display: grid; justify-items: end; gap: .2em; text-align: right; flex: none; }
+  .kiosk-time { font-size: 4.2em; font-weight: 200; line-height: .92; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+  .kiosk-date { font-size: 1em; font-weight: 500; color: var(--tx-2); }
+  .kiosk-lesson {
+    display: inline-flex; align-items: center; gap: .5em; margin-top: .15em; padding: .25em .85em .25em .7em;
+    border-radius: var(--r-pill); background: var(--solid-strong); box-shadow: inset 0 0 0 1px var(--rim);
+    font-weight: 600;
+  }
+  .kiosk-lesson::before { content: ""; width: .55em; height: .55em; border-radius: 50%; background: var(--now); flex: none; }
+  .kiosk-lesson:empty { display: none; }
+
+  /* tabule: třídy jako plné panely, změny jako řádky (jako odjezdová tabule) */
+  .kiosk-board { min-height: 0; overflow-y: auto; scrollbar-width: none; border-radius: .8em; }
+  .kiosk-board::-webkit-scrollbar { display: none; }
+  .kiosk-board:focus-visible { outline-offset: -3px; }
+  /* další strana následuje: spodní řádek se rozplyne (jen alfa masky, ne barva) */
+  .kiosk-board.has-more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent); }
+  .k-list { display: grid; gap: .45em; }
+  .k-class {
+    display: grid; grid-template-columns: 4.4em minmax(0, 1fr);
+    border-radius: .8em; background: var(--solid); box-shadow: inset 0 0 0 1px var(--rim);
+  }
+  .k-class-name {
+    position: sticky; top: 0; align-self: start; padding: .42em .2em .4em .7em;
+    font-size: 1.5em; font-weight: 700; line-height: 1.15; letter-spacing: -.01em;
+  }
+  .k-rows { list-style: none; margin: 0; padding: 0; min-width: 0; }
+  .k-row {
+    position: relative; display: grid; align-items: baseline; gap: 0 .7em;
+    grid-template-columns: 5.4em minmax(0, 1fr) 1.2em minmax(0, 1.3fr);
+    padding: .55em 1em .55em .9em;
+  }
+  .k-row + .k-row { border-top: 1px solid var(--hair); }
+  .k-row::before {
+    content: ""; position: absolute; left: 0; top: .6em; bottom: .6em; width: .2em; border-radius: .1em;
+    background: var(--bar, var(--tx-2));
+  }
+  .k-tone--sub { --bar: var(--sub); }
+  .k-tone--room { --bar: var(--room); }
+  .k-tone--cancel { --bar: var(--cancel); }
+  .k-tone--extra { --bar: var(--extra); }
+
+  .k-hour { white-space: nowrap; }
+  .k-hour .chg-hour { font-size: 1.2em; font-weight: 700; }
+  .k-hour .chg-time { display: block; font-size: .72em; }
+  .k-hour .chg-group { margin-top: .2em; font-size: .62em; }
+  .k-before { color: var(--tx-2); }
+  .k-before .chg-subject { font-weight: 500; }
+  .k-arrow { color: var(--tx-2); text-align: center; }
+  .k-after { min-width: 0; }
+  .kiosk .chg-kind { font-size: .8em; gap: .35em; --is: 1.15em; vertical-align: .05em; margin-right: .4em; }
+  .kiosk .chg-subject { font-weight: 600; }
+  .kiosk .k-after .chg-subject { font-weight: 700; }
+  .kiosk .chg-meta { font-size: .78em; }
+  .kiosk .chg-meta > * + * { margin-left: .55em; }
+  .kiosk .chg-now { gap: 0 .5em; }
+  .kiosk .chg-note { font-size: .74em; margin-top: .1em; }
+  .kiosk .chg-struck { text-decoration-thickness: .08em; }
+
+  .kiosk-empty {
+    display: grid; place-content: center; justify-items: center; gap: .4em; height: 100%; text-align: center;
+    font-size: 1.6em; font-weight: 600;
+  }
+  .kiosk-empty span { font-size: .7em; font-weight: 500; color: var(--tx-2); }
+
+  /* patička: stáří dat, stav displeje, strana, pauza */
+  .kiosk-foot { display: flex; flex-wrap: wrap; align-items: center; gap: .4em 1.4em; font-size: .78em; font-weight: 500; color: var(--tx-2); }
+  .kiosk-fresh:empty, .kiosk-wake:empty, .kiosk-page:empty { display: none; }
+  .kiosk-page { margin-left: auto; color: var(--tx); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .kiosk-pause {
+    display: inline-flex; align-items: center; gap: .5em; min-height: max(44px, 2.2em); padding: .3em 1.1em .3em .9em;
+    border-radius: var(--r-pill); background: var(--solid-strong); box-shadow: inset 0 0 0 1px var(--rim);
+    color: var(--tx); font-weight: 600; --is: 1.15em;
+  }
+  .kiosk-page:empty + .kiosk-pause { margin-left: auto; }
+  .kiosk-pause:hover { background: var(--solid); }
+  .kiosk-pause[aria-pressed="true"] { background: var(--tx); color: var(--now-ink); }
+
+  /* úzká / svislá obrazovka: řádek ve dvou patrech */
+  @media (max-aspect-ratio: 4/3) {
+    .kiosk { --k: clamp(15px, min(2.2vh, 3.6vw), 64px); padding: 1em; }
+    .kiosk-head { flex-direction: column; gap: .6em; }
+    .kiosk-clock { justify-items: start; text-align: left; }
+    .kiosk-time { font-size: 3.2em; }
+    .k-class { grid-template-columns: 1fr; }
+    .k-class-name { position: static; padding-bottom: 0; }
+    .k-row { grid-template-columns: 4.6em minmax(0, 1fr); grid-template-areas: "h after" "h before"; }
+    .k-hour { grid-area: h; }
+    .k-after { grid-area: after; }
+    .k-before { grid-area: before; font-size: .85em; }
+    .k-arrow { display: none; }
+  }
+}
+
+@layer motion {
+  @media (forced-colors: active) {
+    .k-class, .kiosk-pause, .kiosk-lesson, .kiosk-count { border: 1px solid CanvasText; }
+    .k-row::before, .kiosk-lesson::before { background: CanvasText; }
+  }
+}

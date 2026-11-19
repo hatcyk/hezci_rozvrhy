@@ -5,11 +5,27 @@
 
 import { state, updateState } from './state.js';
 import { dom } from './dom.js';
-import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences } from './notifications-core.js';
+import { isIOS, isStandalone, requestNotificationPermission, disableNotifications, loadNotificationPreferences, loadStartupNotificationPreferences } from './notifications-core.js';
 import { populateMultiselectOptions, updateMultiselectLabel, updateMultiselectCheckboxes } from './notifications-multiselect.js';
 import { renderSelectedTimetablesPreferences, renderTimetablePreferencesView } from './notifications-preferences.js';
 import { debug } from './debug.js';
 import { openBottomSheet, closeBottomSheet } from './bottom-sheet.js';
+import { showToast } from './toast.js';
+import { esc } from './utils.js';
+
+/**
+ * Error/info messages used to be alert(): it blocks the page, steals focus and
+ * on iOS standalone apps looks like a system error. A toast is announced by
+ * screen readers (role="status") and does not interrupt.
+ */
+function notify(title, body = '', icon = 'triangle-alert') {
+    showToast({ title, body, icon, variant: 'info', timeout: 9000 });
+}
+
+/** Text of a button that also holds an icon (only the label changes). */
+function buttonLabel(button) {
+    return button.querySelector('.btn-label') || button;
+}
 
 // Track which view is currently shown in the notification sheet
 let currentNotifView = 'list';
@@ -20,12 +36,15 @@ let currentNotifView = 'list';
 export function updateNotificationBellUI() {
     if (!dom.notificationBell) return;
 
+    // The crossed bell is not the only cue: the name says it too (WCAG 1.4.1)
     if (state.notificationsEnabled) {
         dom.notificationBell.classList.remove('disabled');
-        dom.notificationBell.setAttribute('title', 'Notifikace zapnuty');
+        dom.notificationBell.setAttribute('title', 'Upozornění zapnuta');
+        dom.notificationBell.setAttribute('aria-label', 'Upozornění (zapnuta)');
     } else {
         dom.notificationBell.classList.add('disabled');
-        dom.notificationBell.setAttribute('title', 'Notifikace vypnuty');
+        dom.notificationBell.setAttribute('title', 'Upozornění vypnuta');
+        dom.notificationBell.setAttribute('aria-label', 'Upozornění (vypnuta)');
     }
 
 }
@@ -70,6 +89,13 @@ export function showNotifListView() {
     if (views) views.classList.remove('notif-prefs-open');
     if (titleList) titleList.style.display = '';
     if (titlePrefs) titlePrefs.style.display = 'none';
+    // The same header button closes the sheet here and goes back in the prefs view
+    if (dom.notificationModalClose) dom.notificationModalClose.setAttribute('aria-label', 'Zavřít');
+    // The hidden prefs view must not be reachable by Tab
+    const prefsView = document.getElementById('notifPreferencesView');
+    const listView = document.getElementById('notifListView');
+    if (prefsView) prefsView.inert = true;
+    if (listView) listView.inert = false;
 
     const sheet = document.getElementById('notificationModal');
     if (sheet) sheet.scrollTop = 0;
@@ -97,6 +123,12 @@ export function showNotifPreferencesView(type, id, name) {
         titlePrefs.style.display = '';
     }
 
+    if (dom.notificationModalClose) dom.notificationModalClose.setAttribute('aria-label', 'Zpět na seznam rozvrhů');
+    const prefsView = document.getElementById('notifPreferencesView');
+    const listView = document.getElementById('notifListView');
+    if (prefsView) prefsView.inert = false;
+    if (listView) listView.inert = true;
+
     // Slide to preferences view and scroll sheet to top
     if (views) views.classList.add('notif-prefs-open');
     const sheet = document.getElementById('notificationModal');
@@ -110,11 +142,14 @@ async function initializeModal() {
     // Show/hide iOS warning
     const isIosNotStandalone = isIOS() && !isStandalone();
     if (dom.iosWarning) {
-        dom.iosWarning.style.display = isIosNotStandalone ? 'block' : 'none';
+        dom.iosWarning.hidden = !isIosNotStandalone;
     }
 
     // Populate dropdown options
     populateMultiselectOptions();
+
+    // Check debug mode and show/hide debug section
+    updateDebugSectionVisibility();
 
     // Load preferences from server
     await loadNotificationPreferences();
@@ -147,7 +182,7 @@ export function updateReminderWarning() {
     const undeliverable = !state.notificationsEnabled || permission !== 'granted';
     const show = lessonRemindersEnabled() && undeliverable;
 
-    el.style.display = show ? 'block' : 'none';
+    el.hidden = !show;
     updateState('remindersNeedAttention', show);
 }
 
@@ -163,11 +198,11 @@ export function updateNotificationUIState() {
     if (flatList) flatList.classList.remove('disabled');
 
     if (state.notificationsEnabled) {
-        if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'none';
-        if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'block';
+        if (dom.notificationToggleEnable) dom.notificationToggleEnable.hidden = true;
+        if (dom.notificationToggleDisable) dom.notificationToggleDisable.hidden = false;
     } else {
-        if (dom.notificationToggleEnable) dom.notificationToggleEnable.style.display = 'block';
-        if (dom.notificationToggleDisable) dom.notificationToggleDisable.style.display = 'none';
+        if (dom.notificationToggleEnable) dom.notificationToggleEnable.hidden = false;
+        if (dom.notificationToggleDisable) dom.notificationToggleDisable.hidden = true;
 
         // Update enable button state based on selection
         updateEnableButtonState();
@@ -204,30 +239,31 @@ export async function enableNotifications() {
 
     // Check if at least one timetable is selected
     if (!state.watchedTimetables || state.watchedTimetables.length === 0) {
-        alert('Nejdřív vyberte alespoň jeden rozvrh ke sledování.');
+        notify('Nejdřív vyberte alespoň jeden rozvrh ke sledování.', '', 'info');
         return;
     }
 
     // Disable button during processing to prevent spam clicks
     button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = 'Zpracovávám...';
+    const label = buttonLabel(button);
+    const originalText = label.textContent;
+    label.textContent = 'Zpracovávám…';
 
     try {
         await requestNotificationPermission();
     } catch (error) {
         if (error.message === 'IOS_NOT_STANDALONE') {
-            alert('Na iOS musíte nejdřív přidat web na plochu (Home Screen). Klikněte na tlačítko "Sdílet" a pak "Přidat na plochu".');
+            notify('Nejdřív přidejte aplikaci na plochu.', 'Na iPhonu a iPadu fungují upozornění jen z plochy: Sdílet → Přidat na plochu.');
         } else if (error.message === 'PERMISSION_BLOCKED') {
-            alert('Prohlížeč má notifikace pro tuto stránku zablokované. Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
+            notify('Prohlížeč má upozornění pro tuto stránku zablokovaná.', 'Povolte je v nastavení stránky (ikona vlevo od adresy) a zkuste to znovu.');
         } else if (error.message === 'PERMISSION_DISMISSED') {
-            alert('Notifikace nebyly povoleny. Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
+            notify('Upozornění nebyla povolena.', 'Zkuste to prosím znovu a v dotazu prohlížeče zvolte Povolit.');
         } else {
-            alert('Nepodařilo se zapnout notifikace: ' + error.message);
+            notify('Nepodařilo se zapnout upozornění.', error.message);
         }
     } finally {
         button.disabled = false;
-        button.textContent = originalText;
+        label.textContent = originalText;
         updateNotificationUIState();
         updateReminderWarning();
     }
@@ -245,19 +281,20 @@ export async function disableNotificationsHandler() {
 
     // Disable button during processing to prevent spam clicks
     button.disabled = true;
-    const originalText = button.textContent;
-    button.textContent = 'Zpracovávám...';
+    const label = buttonLabel(button);
+    const originalText = label.textContent;
+    label.textContent = 'Zpracovávám…';
 
     try {
         await disableNotifications();
     } catch (error) {
         // The switch is only reported as off when the server confirmed it;
         // otherwise re-read the real state so the UI cannot lie.
-        alert('Nepodařilo se vypnout notifikace: ' + error.message);
+        notify('Nepodařilo se vypnout upozornění.', error.message);
         await loadNotificationPreferences();
     } finally {
         button.disabled = false;
-        button.textContent = originalText;
+        label.textContent = originalText;
         updateNotificationUIState();
         updateReminderWarning();
     }
@@ -288,7 +325,7 @@ function populateDebugTimetableSelect() {
                     name: item.name,
                     scheduleType: schedule.value
                 });
-                html += `<option value='${value}'>${item.name} - ${schedule.label}</option>`;
+                html += `<option value='${esc(value)}'>${esc(item.name)} - ${schedule.label}</option>`;
             });
         });
         html += '</optgroup>';
@@ -305,7 +342,7 @@ function populateDebugTimetableSelect() {
                     name: item.name,
                     scheduleType: schedule.value
                 });
-                html += `<option value='${value}'>${item.name} - ${schedule.label}</option>`;
+                html += `<option value='${esc(value)}'>${esc(item.name)} - ${schedule.label}</option>`;
             });
         });
         html += '</optgroup>';
@@ -322,7 +359,7 @@ function populateDebugTimetableSelect() {
                     name: item.name,
                     scheduleType: schedule.value
                 });
-                html += `<option value='${value}'>${item.name} - ${schedule.label}</option>`;
+                html += `<option value='${esc(value)}'>${esc(item.name)} - ${schedule.label}</option>`;
             });
         });
         html += '</optgroup>';
@@ -342,7 +379,7 @@ async function simulateTimetableChange() {
     // Get selected timetable from dropdown
     const selectedValue = select.value;
     if (!selectedValue) {
-        alert('Nejdřív vyber rozvrh z dropdownu!');
+        notify('Nejdřív vyberte rozvrh ze seznamu.', '', 'info');
         return;
     }
 
@@ -350,7 +387,7 @@ async function simulateTimetableChange() {
 
     button.disabled = true;
     const originalText = button.textContent;
-    button.textContent = '⏳ Vytvářím změnu...';
+    button.textContent = 'Vytvářím změnu…';
 
     try {
         const response = await fetch('/api/debug/simulate-change', {
@@ -372,41 +409,43 @@ async function simulateTimetableChange() {
 
         console.log('✅ Simulated change result:', result);
 
-        alert(`✅ Hotovo!\n\n` +
-            `Změna vytvořena pro: ${timetable.name}\n` +
-            `Notifikace poslány: ${result.notificationResult?.sentCount || 0}x\n` +
-            `Zpracováno změn: ${result.notificationResult?.processedCount || 0}`);
+        notify(`Hotovo: změna vytvořena pro ${timetable.name}`,
+            `Upozornění poslána: ${result.notificationResult?.sentCount || 0}×, zpracováno změn: ${result.notificationResult?.processedCount || 0}`, 'circle-check');
 
     } catch (error) {
         console.error('Failed to simulate change:', error);
-        alert('❌ Chyba při simulaci změny: ' + error.message);
+        notify('Chyba při simulaci změny.', error.message, 'circle-x');
     } finally {
         button.disabled = false;
         button.textContent = originalText;
     }
 }
 
+let debugStatusChecked = false;
+
 /**
- * Show/hide debug section based on DEBUG mode
+ * Show/hide debug section based on DEBUG mode. The section lives in this
+ * sheet, so the server is asked when the sheet opens for the first time,
+ * not at every app start.
  */
 function updateDebugSectionVisibility() {
     const debugSection = document.getElementById('debugSimulateSection');
-    if (!debugSection) return;
+    if (!debugSection || debugStatusChecked) return;
+    debugStatusChecked = true;
 
-    // Check if in debug mode by checking debug status endpoint
+    // Check if in debug mode by checking debug status endpoint. Any answer
+    // other than 200 + JSON (404 without DEBUG, e.g. in production) means
+    // debugging is off for this page load: not asked again.
     fetch('/api/debug/status')
-        .then(response => response.json())
-        .then(data => {
-            if (data.debugMode) {
-                debugSection.style.display = 'block';
-                populateDebugTimetableSelect();
-            } else {
-                debugSection.style.display = 'none';
-            }
+        .then(async (response) => {
+            const data = response.ok ? await response.json().catch(() => ({})) : {};
+            debugSection.hidden = !data.debugMode;
+            if (data.debugMode) populateDebugTimetableSelect();
         })
         .catch(() => {
-            // Network error or other issue - hide debug section
-            debugSection.style.display = 'none';
+            // Network error - hide debug section, ask again next time
+            debugSection.hidden = true;
+            debugStatusChecked = false;
         });
 }
 
@@ -435,10 +474,7 @@ export async function initNotificationButton() {
         debugButton.addEventListener('click', simulateTimetableChange);
     }
 
-    // Check debug mode and show/hide debug section
-    updateDebugSectionVisibility();
-
     // Load notification preferences and update bell UI on startup
-    await loadNotificationPreferences();
+    await loadStartupNotificationPreferences();
     updateNotificationBellUI();
 }

@@ -5,7 +5,6 @@ export const state = {
     selectedDayIndex: null,
     selectedType: 'Class',
     selectedScheduleType: 'actual',
-    weekOffset: 0,
     teacherAbbreviationMap: null,
     showWholeWeek: false, // DEPRECATED - use layoutMode instead
     notificationsEnabled: false,
@@ -14,9 +13,15 @@ export const state = {
     remindersNeedAttention: false,
     watchedTimetables: [],
     favoriteTimetables: [],
-    layoutMode: 'single-day',
+    layoutMode: 'day',
+    // Phones: the timetable tab opens on the overview ("Přehled"); a week row
+    // or the strip opens one day ("Den"). Desktop always shows a layout.
+    screen: 'overview',
+    // "Jen změny" toolbar toggle: list the week's changes instead of the layout
+    // (session only - a returning user should see the normal timetable)
+    onlyChanges: false,
     layoutPreferences: {
-        'single-day': {},
+        'day': {},
         'week-view': {},
         'card-view': { cardIndex: 0 },
         'compact-list': {}

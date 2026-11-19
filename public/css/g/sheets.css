@@ -1,0 +1,255 @@
+/* ==========================================================================
+   Návrh G — spodní panely (Nastavení, Upozornění, Oblíbené, Přidat do kalendáře)
+   a toasty. Panely jsou sklo (g-sheet), seznamy v nich plné řádky
+   jako seskupené seznamy v iOS. Přepínač .g-switch, poznámka .sheet-note.
+   ========================================================================== */
+@layer views {
+
+  /* ---------- panel ---------- */
+  dialog.sheet[open] { display: flex; flex-direction: column; overflow: hidden; }
+  .sheet { overscroll-behavior: contain; }
+  .sheet .g-sheet-head { flex: none; padding: 12px 12px 6px 20px; }
+  .sheet .g-sheet-head h2 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .sheet .modal-close { width: var(--tap); height: var(--tap); --is: 20px; }
+  .sheet .g-sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 24px; }
+  .sheet--tall, .sheet.bottom-sheet-full { height: min(86dvh, 820px); }
+  .sheet .g-sheet-handle { flex: none; }
+  @media (min-width: 1080px) {
+    .sheet { width: min(520px, calc(100vw - 32px)); }
+    .sheet .g-sheet-handle { display: none; }
+    .sheet .g-sheet-head { padding-top: 16px; }
+  }
+
+  .sheet-group-title {
+    margin: 18px 4px 7px; padding: 0;
+    font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2);
+  }
+  .g-sheet-body > .set-group:first-child > .sheet-group-title, .g-sheet-body > .sheet-group-title:first-child { margin-top: 6px; }
+  .sheet-intro + .notification-section > .sheet-group-title { margin-top: 16px; }
+  .notif-enable-hint { display: none; margin-top: 8px; text-align: center; }
+  .sheet-actions:has(#notificationToggleEnable:disabled:not([hidden])) + .notif-enable-hint { display: block; }
+  .sheet-intro { margin: 2px 4px 4px; font-size: var(--fs-body); color: var(--tx-2); line-height: 1.4; }
+  .sheet-hint { margin: 10px 4px 0; font-size: var(--fs-foot); color: var(--tx-2); line-height: 1.4; }
+  .sheet-actions { display: grid; gap: 10px; margin-top: 18px; }
+  .sheet-actions .g-btn { width: 100%; }
+  .sheet-actions .g-btn[hidden] { display: none; }
+
+  /* informační modul (iPhone: přidat na plochu; kalendář se obnovuje pomalu) */
+  .sheet-note {
+    display: flex; align-items: flex-start; gap: 12px; margin: 4px 0 12px; padding: 12px 14px;
+    border-radius: var(--r-card); background: var(--blk); box-shadow: inset 0 1px 0 var(--hi);
+    font-size: 14px; line-height: 1.45; --is: 20px;
+  }
+  .sheet-note[hidden] { display: none; }
+  .sheet-note > svg { color: var(--extra); margin-top: 1px; }
+  .sheet-note--warn > svg { color: var(--now); }
+  .sheet-note strong { font-weight: 600; }
+  .sheet-note .g-btn { display: flex; margin-top: 10px; }
+  .sheet-note-key { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; --is: 15px; vertical-align: -2px; }
+
+  /* ---------- seskupený seznam ---------- */
+  .set-list { border-radius: var(--r-card); background: var(--blk); box-shadow: inset 0 1px 0 var(--hi); overflow: hidden; }
+  .set-list > * + * { border-top: 1px solid var(--hair); }
+  .set-row {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 9px 14px;
+    color: var(--tx); text-align: left; text-decoration: none; font-size: var(--fs-body); --is: 18px;
+  }
+  button.set-row, a.set-row, label.set-row { cursor: pointer; }
+  /* zvýraznění řádku ztmavením (světlejší podklad by snížil kontrast bílého textu pod 4,5 : 1) */
+  button.set-row:hover, a.set-row:hover, label.set-row:hover { background: var(--solid-strong); }
+  .set-row-icon, .set-row > svg.i:first-child:not(.set-row-chev) {
+    flex: none; box-sizing: content-box; padding: 6px; border-radius: 9px; background: var(--chip); color: var(--tx);
+  }
+  .set-row-text { flex: 1; display: grid; gap: 1px; min-width: 0; }
+  .set-row-title { font-weight: 500; }
+  .set-row-desc { font-size: var(--fs-foot); color: var(--tx-2); line-height: 1.35; }
+  .set-row-value { flex: none; color: var(--tx-2); font-size: var(--fs-body); }
+  .set-row-chev { flex: none; color: var(--tx-2); --is: 17px; }
+  .set-row[aria-expanded="true"] .set-row-chev { transform: rotate(180deg); }
+  .set-check { flex: none; color: var(--tx); visibility: hidden; }
+  .set-row[aria-pressed="true"] .set-check { visibility: visible; }
+  .set-row[aria-pressed="true"] .set-row-title { font-weight: 700; }
+  .set-app-icon { flex: none; width: 40px; height: 40px; border-radius: 10px; }
+  .set-about { cursor: default; }
+
+  /* rozvržení: volby pod řádkem (zůstávají rozbalené) */
+  .settings-layout-panel { padding: 0; }
+  .settings-layout-panel[hidden] { display: none; }
+  .layout-options > * + * { border-top: 1px solid var(--hair); }
+  .layout-options .set-row { padding-left: 20px; }
+  .layout-option-card-icon { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 9px; background: var(--chip); }
+  .layout-option-card-icon > svg { width: 18px; height: 18px; }
+
+  /* vzhled: tři náhledy oblohy (ráno, noc, podle systému) */
+  .set-themes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 14px 14px 12px; }
+  .set-theme { display: grid; justify-items: center; gap: 8px; padding: 4px 0 2px; border-radius: var(--r-card); color: var(--tx); font-size: var(--fs-body); font-weight: 500; }
+  .set-theme-sky {
+    position: relative; width: 100%; max-width: 104px; aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden;
+    box-shadow: inset 0 0 0 1px var(--rim);
+  }
+  .set-theme-sky--light, .set-theme-sky--system::before { color-scheme: light; }
+  .set-theme-sky--dark, .set-theme-sky--system::after { color-scheme: dark; }
+  .set-theme-sky--light, .set-theme-sky--dark, .set-theme-sky--system::before, .set-theme-sky--system::after {
+    background:
+      radial-gradient(120% 60% at 85% -8%, var(--glow), transparent 60%),
+      linear-gradient(180deg, var(--sky-1) 0%, var(--sky-2) 48%, var(--sky-3) 100%);
+  }
+  .set-theme-sky--system::before, .set-theme-sky--system::after { content: ""; position: absolute; inset: 0; }
+  .set-theme-sky--system::after { clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+  /* malý „blok hodiny“ v náhledu, ať je vidět, jak bude vypadat obsah */
+  .set-theme-sky--light::after, .set-theme-sky--dark::after {
+    content: ""; position: absolute; left: 14%; right: 14%; top: 54%; height: 18%; border-radius: 6px; background: var(--blk);
+    box-shadow: inset 3px 0 0 var(--now);
+  }
+  .set-theme[aria-pressed="true"] .set-theme-sky { box-shadow: inset 0 0 0 1px var(--rim), 0 0 0 2px var(--sheet), 0 0 0 4px var(--tx); }
+  .set-theme[aria-pressed="true"] .set-theme-name { font-weight: 700; }
+  .set-theme-name { display: inline-flex; align-items: center; gap: 4px; }
+
+  /* ---------- přepínač (iOS), velký cíl 64 × 44 px ---------- */
+  .g-switch {
+    appearance: none; -webkit-appearance: none; flex: none; margin: 0; cursor: pointer;
+    width: 64px; height: 44px; border: 6.5px solid transparent; border-radius: 22px; background-clip: padding-box;
+    background-color: var(--chip-press);
+    /* bílý jezdec s tmavým lemem: kontrast ≥ 3 : 1 proti zlaté i šedé dráze */
+    background-image: radial-gradient(circle closest-side, var(--tx) 0 calc(100% - 3px), var(--now-ink) calc(100% - 2.5px) calc(100% - 1px), transparent 100%);
+    background-repeat: no-repeat; background-size: 27px 27px; background-position: 2px center; background-origin: padding-box;
+  }
+  .g-switch:checked { background-color: var(--now); background-position: calc(100% - 2px) center; }
+  .g-switch:disabled { opacity: .5; cursor: not-allowed; }
+  .g-switch:focus-visible { outline-offset: -2px; }
+
+  /* ---------- Upozornění ---------- */
+  .notif-ico-back { display: none; }
+  #notificationModal:has(.notif-prefs-open) .notif-ico-back { display: block; }
+  #notificationModal:has(.notif-prefs-open) .notif-ico-close { display: none; }
+  #notificationModal:has(.notif-prefs-open) #notificationModalClose { order: -1; margin-left: -6px; }
+  #notificationModal:has(.notif-prefs-open) .g-sheet-head { padding-left: 12px; }
+  #notifPreferencesView { display: none; }
+  #notifViews.notif-prefs-open #notifListView { display: none; }
+  #notifViews.notif-prefs-open #notifPreferencesView { display: block; }
+  #notifPreferencesContainer { display: grid; gap: 12px; padding-top: 4px; }
+
+  .flat-timetable-list { display: grid; gap: 10px; }
+  .flat-accordion { border-radius: var(--r-card); background: var(--blk); box-shadow: inset 0 1px 0 var(--hi); overflow: hidden; }
+  .flat-accordion-header { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 0 14px; font-size: var(--fs-em); font-weight: 600; text-align: left; --is: 18px; }
+  .flat-accordion-header:hover { background: var(--solid-strong); }
+  .flat-accordion-label { flex: 1; }
+  .flat-accordion-count[hidden] { display: none; }
+  .flat-accordion-chevron { color: var(--tx-2); }
+  .flat-accordion.open .flat-accordion-chevron { transform: rotate(180deg); }
+  .flat-accordion-body { display: none; }
+  .flat-accordion.open .flat-accordion-body { display: block; }
+  .flat-list-item { display: flex; align-items: center; gap: 4px; min-height: 52px; padding: 2px 4px 2px 16px; border-top: 1px solid var(--hair); }
+  .flat-item-name { flex: 1; min-width: 0; font-weight: 500; }
+  .flat-item-settings { display: grid; place-items: center; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--tx-2); --is: 19px; }
+  .flat-item-settings:hover { color: var(--tx); background: var(--solid-strong); }
+
+  .timetable-preference-item { border-radius: var(--r-card); background: var(--blk); box-shadow: inset 0 1px 0 var(--hi); overflow: hidden; }
+  .timetable-preference-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 54px; padding: 0 14px; cursor: pointer; --is: 18px; }
+  .timetable-preference-header:hover { background: var(--solid-strong); }
+  .timetable-preference-name { display: flex; align-items: center; gap: 10px; font-size: var(--fs-em); font-weight: 600; }
+  .timetable-preference-badge { padding: 1px 8px; border-radius: var(--r-small); box-shadow: inset 0 0 0 1px var(--rim); color: var(--tx); font-size: var(--fs-caption); font-weight: 600; }
+  .timetable-preference-arrow { color: var(--tx-2); }
+  .timetable-preference-header.expanded .timetable-preference-arrow { transform: rotate(180deg); }
+  .timetable-preference-body { display: none; }
+  .timetable-preference-body.expanded { display: block; }
+  .timetable-preference-body-inner { display: grid; gap: 14px; padding: 2px 14px 14px; }
+  .group-filter-section { display: grid; gap: 6px; }
+  .group-filter-label { font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2); }
+  .multiselect-dropdown { position: relative; }
+  .multiselect-trigger {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: var(--tap); padding: 0 12px 0 14px;
+    border-radius: 12px; background: var(--solid-strong); border: 1px solid var(--rim); cursor: pointer; font-weight: 500; --is: 16px;
+  }
+  .multiselect-trigger.active .multiselect-arrow { transform: rotate(180deg); }
+  .multiselect-menu {
+    display: none; position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 5; padding: 6px;
+    border-radius: 12px; background: var(--solid-strong); border: 1px solid var(--rim); box-shadow: var(--shadow-float);
+  }
+  .multiselect-menu.active { display: block; }
+  .multiselect-option { display: flex; align-items: center; gap: 10px; min-height: var(--tap); padding: 0 10px; border-radius: 8px; cursor: pointer; }
+  .multiselect-option:hover { background: var(--chip); }
+  .multiselect-option input { width: 20px; height: 20px; margin: 0; accent-color: var(--now); }
+  .notification-type-group-title { display: flex; align-items: center; gap: 8px; padding: 6px 0 4px; font-size: var(--fs-foot); font-weight: 600; color: var(--tx-2); --is: 15px; }
+  .notification-type-group-note { margin-left: auto; font-weight: 500; }
+  .notification-type-option { display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 6px 0; border-top: 1px solid var(--hair); cursor: pointer; }
+  .notification-type-option label { order: 1; flex: 1; display: grid; gap: 2px; cursor: pointer; }
+  .notification-type-option input { order: 2; }
+  .notification-type-option-label { font-weight: 500; }
+  .notification-type-option-description { font-size: var(--fs-foot); color: var(--tx-2); line-height: 1.35; }
+  .sheet-debug { display: grid; gap: 10px; margin-top: 22px; padding-top: 14px; border-top: 1px dashed var(--rim); }
+  .sheet-debug[hidden] { display: none; }
+
+  /* ---------- Oblíbené ---------- */
+  .favorites-sheet-list { padding-top: 4px; }
+  .favorites-sheet-empty { padding: 20px 12px 24px; }
+  .favorites-sheet-empty > svg { color: var(--tx-2); }
+  .favorites-sheet-type-badge { font-size: var(--fs-foot); }
+
+  /* ---------- Přidat do kalendáře ---------- */
+  .cal-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+  .cal-fieldset[hidden] { display: none; }
+  .cal-fieldset > legend { float: left; width: 100%; }
+  .cal-fieldset > legend + * { clear: both; }
+  .cal-hint { font-weight: 500; }
+  .cal-option input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--now); }
+  .cal-groups { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cal-chip {
+    display: inline-flex; align-items: center; gap: 8px; min-height: var(--tap); padding: 0 16px 0 12px;
+    border-radius: var(--r-pill); background: var(--chip); color: var(--tx); font-weight: 600; cursor: pointer;
+  }
+  .cal-chip:hover { background: var(--chip-hover); }
+  .cal-chip input { width: 18px; height: 18px; margin: 0; accent-color: var(--now); }
+  .cal-actions { margin-top: 18px; }
+  .cal-note { margin-top: 14px; }
+
+  /* ---------- toast ---------- */
+  .toast-container {
+    position: fixed; z-index: var(--z-toast);
+    left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right));
+    bottom: calc(var(--tabbar-h) + 30px + env(safe-area-inset-bottom));
+    display: grid; justify-items: center; gap: 8px; pointer-events: none;
+  }
+  dialog .toast-container { position: sticky; left: auto; right: auto; bottom: 0; padding: 8px 12px 12px; }
+  .toast {
+    pointer-events: auto; width: 100%; max-width: 440px; padding: 8px 4px 8px 16px; border-radius: 24px;
+    color: var(--tx); background: var(--glass-float); /* pluje nad obsahem jako spodní lišta */
+  }
+  .toast-icon { display: grid; place-items: center; flex: none; --is: 20px; }
+  .toast-change .toast-icon { color: var(--sub); }
+  .toast-reminder .toast-icon { color: var(--now); }
+  .toast-content { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .toast-clickable { cursor: pointer; border-radius: 8px; }
+  .toast-title { font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .toast-body { font-size: var(--fs-foot); font-weight: 500; color: var(--tx-2); line-height: 1.3; overflow-wrap: anywhere; }
+  .toast-close { display: grid; place-items: center; flex: none; width: var(--tap); height: var(--tap); border-radius: 50%; color: var(--tx-2); --is: 18px; }
+  .toast-close:hover { color: var(--tx); background: var(--chip); }
+  @media (min-width: 1080px) {
+    .toast-container { left: auto; right: max(24px, env(safe-area-inset-right)); bottom: calc(24px + env(safe-area-inset-bottom)); width: min(420px, calc(100vw - 48px)); justify-items: end; }
+  }
+}
+
+@layer motion {
+  @media (prefers-reduced-motion: no-preference) {
+    .g-switch { transition: background-color var(--t) ease, background-position var(--t) var(--ease); }
+    .set-row-chev, .flat-accordion-chevron, .timetable-preference-arrow, .multiselect-arrow { transition: transform var(--t) var(--ease); }
+    .set-row, .flat-accordion-header, .timetable-preference-header, .toast-close { transition: background-color var(--t-fast) ease; }
+    /* zavírání panelu: bottom-sheet.js čeká na transitionend */
+    dialog.g-sheet[data-closing] { opacity: 0; transform: translateY(20px); transition: opacity .2s ease, transform .2s ease; }
+    dialog.g-sheet[data-closing]::backdrop { opacity: 0; transition: opacity .2s ease; }
+    #notifViews.notif-prefs-open #notifPreferencesView { animation: g-sheet-step var(--t) var(--ease-out); }
+    .toast { animation: g-toast-in var(--t-slow) var(--ease-out); }
+    .toast.toast-leaving { animation: g-toast-out .2s ease forwards; }
+    @keyframes g-sheet-step { from { opacity: 0; transform: translateX(16px); } }
+    @keyframes g-toast-in { from { opacity: 0; transform: translateY(12px) scale(.98); } }
+    @keyframes g-toast-out { to { opacity: 0; transform: translateY(8px); } }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toast.toast-leaving { opacity: 0; }
+  }
+  @media (forced-colors: active) {
+    .g-switch { appearance: auto; -webkit-appearance: auto; width: 24px; height: 24px; border: 0; background: none; }
+    .set-list, .flat-accordion, .timetable-preference-item, .sheet-note, .cal-chip { border: 1px solid CanvasText; }
+    .set-theme[aria-pressed="true"] .set-theme-sky { outline: 3px solid Highlight; }
+  }
+}

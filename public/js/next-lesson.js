@@ -1,258 +1,178 @@
 /**
- * "Next lesson" widget
+ * „Teď / Další“ (návrh G): co právě probíhá a co bude dál.
  *
- * Shows the current and/or next lesson for today (current schedule only) with a
- * live countdown, so the user sees at a glance what's running and what's next
- * without scanning the grid. Reuses data already in state.currentTimetableData.
+ * Widget nad rozvrhem zmizel; stejná data teď vykresluje hrdina přehledu
+ * na mobilu a karta „teď“ v postranním panelu (overview.js). Tady zůstává
+ * čistá logika (testovaná v Node) a pravidelné obnovování.
  *
- * Split (group) hours are handled: when an hour is divided between groups
- * (e.g. 1.SK has a different subject/room than 2.SK), both groups are shown
- * side by side instead of silently picking only the first one.
+ * Dělené hodiny: když má hodina víc skupin, vrátí se všechny (hrdina ukáže
+ * obě učebny vedle sebe). Odpadlé skupiny se nepočítají jako výuka, ale
+ * zůstávají v `all`: přehled u nich napíše „1. sk odpadá“, aby student
+ * poznal, že zbylá hodina není jeho.
  */
 
-import { state } from './state.js';
 import { lessonTimes } from './constants.js';
-import { getTodayIndex, abbreviateSubject, standardizeGroupName } from './utils.js';
+import { getTodayIndex } from './utils.js';
+import { slotLessons, startMin, endMin, minutesOfDay, groupText } from './rozvrh-core.js';
 
 let intervalId = null;
 
-function nowMinutes() {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
+/**
+ * Hodiny dne jako [{ hour, start, end, items (bez odpadlých), all, cancelled,
+ * event }] seřazené. `event` je název akce, když se v hodině neučí a aspoň
+ * jedna položka je akce (type absent).
+ */
+export function dayTimeline(data, day) {
+    const byHour = new Map();
+    for (const l of data || []) {
+        if (!l || l.day !== day) continue;
+        if (!byHour.has(l.hour)) byHour.set(l.hour, []);
+        byHour.get(l.hour).push(l);
+    }
+    const out = [];
+    for (const [hour, rows] of byHour) {
+        const s = startMin(hour);
+        if (s == null) continue;
+        const all = slotLessons(rows);
+        const items = all.filter(it => it.kind !== 'cancel' && it.lesson.type !== 'absent' && it.lesson.subject && String(it.lesson.subject).trim());
+        const absent = items.length ? null : all.find(it => it.lesson.type === 'absent' && String(it.lesson.subject || '').trim());
+        out.push({ hour, start: s, end: endMin(hour), items, all, cancelled: items.length === 0, event: absent ? String(absent.lesson.subject).trim() : null });
+    }
+    return out.sort((a, b) => a.start - b.start);
 }
 
-function startMin(hour) {
-    const l = lessonTimes.find(x => x.hour === hour);
-    return l ? l.start[0] * 60 + l.start[1] : null;
-}
-function endMin(hour) {
-    const l = lessonTimes.find(x => x.hour === hour);
-    return l ? l.end[0] * 60 + l.end[1] : null;
+/**
+ * Skupiny jednoho slotu pro přehled.
+ * @param {{ items: Array, all?: Array }} slot - slot z dayTimeline / nowState
+ * @returns {{ split: boolean, live: Array<{lesson, group, kind}>, off: Array<{lesson, group, kind}> }}
+ *   split = hodina je rozdělená mezi víc skupin; live = skupiny, které hodinu
+ *   mají; off = skupiny, kterým odpadá nebo mají akci.
+ */
+export function slotGroups(slot) {
+    const items = (slot && slot.items) || [];
+    const all = (slot && slot.all) || items;
+    const row = (it) => ({ lesson: it.lesson, group: groupText(it.lesson.group), kind: it.kind });
+    const split = new Set(all.map(it => groupText(it.lesson.group)).filter(Boolean)).size > 1;
+    return { split, live: items.map(row), off: all.filter(it => !items.includes(it)).map(row) };
 }
 
-/** How far (0–100) we are through a lesson running from `start`..`end` (minutes). */
-function progressPct(start, end) {
-    const d = new Date();
-    const nowFrac = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+/** První akce mezi sloty a kam až souvisle sahá: { name, from, to } nebo null. */
+function eventBlock(slots) {
+    const first = slots.find(s => s.event);
+    if (!first) return null;
+    let to = first;
+    for (const s of slots) {
+        if (s.start > to.start && s.event === first.event && s.hour === to.hour + 1) to = s;
+    }
+    return { name: first.event, from: first.hour, to: to.hour };
+}
+
+function firstLive(data, day) {
+    return dayTimeline(data, day).find(s => !s.cancelled) || null;
+}
+
+/**
+ * Stav „teď“.
+ * @param {Array} data - lekce aktuálního týdne
+ * @param {{ now?: Date, nextWeek?: Array|null }} [opts] - nextWeek: lekce příštího týdne (víkend, pátek odpoledne)
+ * @returns {{
+ *   kind: 'lesson'|'break'|'before'|'after'|'noneToday'|'weekend'|'empty',
+ *   today: number,
+ *   current: null | { hour, start, end, items, all },
+ *   cancelledNow: null | { hour, all },
+ *   next: null | { hour, start, end, items, all, day, dayOffset, nextWeek: boolean },
+ *   lastToday: boolean,
+ *   event: null | { name, from, to },
+ *   dayOff: null | 'event'|'cancelled'|'free'
+ * }}
+ * `noneToday`: dnes se neučí vůbec (`dayOff`: celodenní akce, všechno odpadá,
+ * nebo den bez hodin); `after` je jen den, kdy výuka byla a skončila.
+ * `event`: akce, která běží nebo začne dřív než další hodina (hodiny from–to).
+ */
+export function nowState(data, { now = new Date(), nextWeek = null } = {}) {
+    const today = getTodayIndex(now);
+    const m = minutesOfDay(now);
+    const res = { kind: 'empty', today, current: null, cancelledNow: null, next: null, lastToday: false, event: null, dayOff: null };
+
+    const findNextFrom = (fromDay) => {
+        for (let d = fromDay; d <= 4; d++) {
+            const s = firstLive(data, d);
+            if (s) return { ...s, day: d, dayOffset: d - today, nextWeek: false };
+        }
+        if (nextWeek) {
+            for (let d = 0; d <= 4; d++) {
+                const s = firstLive(nextWeek, d);
+                if (s) return { ...s, day: d, dayOffset: null, nextWeek: true };
+            }
+        }
+        return null;
+    };
+
+    if (today < 0) {
+        res.kind = 'weekend';
+        res.next = findNextFrom(5);
+        return res;
+    }
+
+    const tl = dayTimeline(data, today);
+    const live = tl.filter(s => !s.cancelled);
+    const cur = tl.find(s => m >= s.start && m < s.end);
+    if (cur && !cur.cancelled) res.current = { hour: cur.hour, start: cur.start, end: cur.end, items: cur.items, all: cur.all };
+    else if (cur) res.cancelledNow = { hour: cur.hour, all: cur.all };
+
+    const laterToday = live.find(s => s.start > m);
+    if (laterToday) res.next = { ...laterToday, day: today, dayOffset: 0, nextWeek: false };
+    else res.next = findNextFrom(today + 1);
+
+    if (res.current) {
+        res.kind = 'lesson';
+        res.lastToday = !laterToday;
+    } else if (!live.length) {
+        // Dnes se neučí: akce, všechno odpadá, nebo den bez hodin – ne „výuka skončila“
+        res.event = eventBlock(tl);
+        res.dayOff = res.event ? 'event' : (tl.length ? 'cancelled' : 'free');
+        res.kind = tl.length || res.next ? 'noneToday' : 'empty';
+    } else if (m < live[0].start) {
+        res.kind = 'before';
+    } else if (laterToday) {
+        res.kind = 'break';
+    } else {
+        res.kind = res.next ? 'after' : 'empty';
+    }
+    // Akce místo výuky, která běží nebo začne dřív než další hodina dne
+    if ((res.kind === 'before' || res.kind === 'break') && laterToday) {
+        res.event = eventBlock(tl.filter(s => s.cancelled && s.end > m && s.start < laterToday.start));
+    }
+    return res;
+}
+
+/** Postup hodinou v % (0–100). */
+export function progressPct(start, end, now = new Date()) {
     const dur = end - start;
     if (dur <= 0) return 0;
-    const pct = ((nowFrac - start) / dur) * 100;
-    return Math.max(0, Math.min(100, pct)).toFixed(1);
+    return Math.max(0, Math.min(100, ((minutesOfDay(now) - start) / dur) * 100));
 }
 
-function pluralMin(n) {
-    if (n === 1) return 'minutu';
-    if (n >= 2 && n <= 4) return 'minuty';
-    return 'minut';
-}
-function inText(n) {
-    return n <= 0 ? 'teď' : `za ${n} ${pluralMin(n)}`;
+/** Celé minuty do / od (zaokrouhleno nahoru, jako „zbývá 25 min“). */
+export function minutesUntil(target, now = new Date()) {
+    return Math.max(0, Math.ceil(target - minutesOfDay(now)));
 }
 
-function esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, c =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-}
-
-/** Group number for sorting (whole-class first, then 1, 2, …). */
-function groupNum(l) {
-    const m = (l.group || '').match(/(\d+)\s*\.?\s*sk/i);
-    if (m) return parseInt(m[1], 10);
-    return l.group ? 998 : 0; // named special groups after numbers, whole-class first
-}
-
-/** Short uppercase group label like "1.SK" ('' for whole-class). */
-function groupLabel(l) {
-    const g = standardizeGroupName(l.group);
-    return g ? g.toUpperCase() : '';
-}
-
-/** Drop exact duplicates (same group + subject + room). */
-function dedupe(lessons) {
-    const seen = new Set();
-    const out = [];
-    for (const l of lessons) {
-        const key = `${l.group || ''}|${l.subject || ''}|${l.room || ''}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(l);
-    }
-    return out;
+/** Hodina (0–12) podle času, jen kvůli zpětné kompatibilitě. */
+export function hourAt(now = new Date()) {
+    const m = minutesOfDay(now);
+    const t = lessonTimes.find(x => m >= x.start[0] * 60 + x.start[1] && m < x.end[0] * 60 + x.end[1]);
+    return t ? t.hour : -1;
 }
 
 /**
- * Build a map hour -> descriptor for today's lessons.
- *
- * Each descriptor is { survivors, cancelled, isSplit }:
- *  - survivors: live lessons (not removed/absent, non-empty subject), sorted by
- *    group and deduped.
- *  - isSplit:   true if any RAW row in the hour carries a group label, i.e. the
- *    hour is divided between groups (so we must label every group on screen).
- *  - cancelled: { lesson, cancelled:true } entries for groups whose lesson was
- *    removed/absent while a sibling group still has a live lesson, so the student
- *    can tell the surviving block isn't theirs. Only kept when survivors exist.
- *
- * Fully-cancelled hours (no survivors) are omitted entirely, preserving the
- * existing hide/skip behaviour.
- */
-function todaysLessonsByHour() {
-    const today = getTodayIndex();
-    if (today < 0) return null; // weekend
-
-    // Bucket ALL rows for today by hour, without dropping removed/absent first.
-    const raw = new Map();
-    (state.currentTimetableData || []).forEach(l => {
-        if (l.day !== today) return;
-        if (!raw.has(l.hour)) raw.set(l.hour, []);
-        raw.get(l.hour).push(l);
-    });
-
-    const map = new Map();
-    for (const [hour, rows] of raw) {
-        const isCancelled = l => l.type === 'removed' || l.type === 'absent';
-
-        let survivors = rows.filter(l => !isCancelled(l) && l.subject && l.subject.trim());
-        survivors.sort((a, b) => groupNum(a) - groupNum(b));
-        survivors = dedupe(survivors);
-        if (survivors.length === 0) continue; // fully cancelled / empty hour → skip
-
-        // Split only when the hour holds more than one distinct group, i.e. it's
-        // genuinely divided. A lone stray group tag on an otherwise whole-class
-        // hour is NOT a split (avoids a single badged column for a whole-class lesson).
-        const isSplit = new Set(rows.map(groupLabel).filter(Boolean)).size > 1;
-
-        // Cancelled sibling groups: removed/absent rows with a group label not
-        // already covered by a survivor. Only meaningful when survivors exist.
-        // Dedupe by group label so a group with several removed rows shows once.
-        const survivorLabels = new Set(survivors.map(groupLabel));
-        const seenCancelled = new Set();
-        const cancelled = [];
-        for (const l of rows) {
-            const g = groupLabel(l);
-            if (!isCancelled(l) || g === '' || survivorLabels.has(g) || seenCancelled.has(g)) continue;
-            seenCancelled.add(g);
-            cancelled.push({ lesson: l, cancelled: true });
-        }
-
-        map.set(hour, { survivors, cancelled, isSplit });
-    }
-    return map;
-}
-
-/**
- * Short group badge for a lesson: its real label, else derive "N.SK" from the
- * group number when it's a plain numbered group (1–4). Never invents an ordinal
- * for unnamed/special groups — returns '' so the badge is simply omitted.
- */
-function groupBadge(l) {
-    const real = groupLabel(l);
-    if (real) return real;
-    const n = groupNum(l);
-    return n >= 1 && n <= 4 ? `${n}.SK` : '';
-}
-
-/** Render one group column (live or cancelled). */
-function groupHTML(l, cancelled) {
-    const subj = esc(abbreviateSubject(l.subject));
-    const badge = esc(groupBadge(l));
-    const badgeHtml = badge ? `<span class="nlw-gbadge">${badge}</span>` : '';
-    if (cancelled) {
-        const aria = badge ? `${badge}: odpadlo` : 'odpadlo';
-        return `<div class="nlw-group nlw-cancelled" aria-label="${aria}">
-            ${badgeHtml}
-            <span class="nlw-main">${subj}</span>
-            <span class="nlw-odpadlo">odpadlo</span>
-        </div>`;
-    }
-    const room = esc(l.room || '?');
-    return `<div class="nlw-group">
-        ${badgeHtml}
-        <span class="nlw-main">${subj}</span>
-        <span class="nlw-sub"><span class="nlw-room">${room}</span></span>
-    </div>`;
-}
-
-/** Render one block ("Teď" / "Další"), splitting into groups when needed. */
-function blockHTML(label, descriptor, countdownHtml, isNext, live) {
-    const { survivors, cancelled, isSplit } = descriptor;
-    const cls = `nlw-block${isNext ? ' nlw-next' : ''}`;
-    const dot = live ? '<span class="nlw-dot"></span>' : '';
-    const lbl = `<span class="nlw-lbl">${dot}${label}</span>`;
-
-    // Compact single-block only when the hour is NOT split and there's one lesson.
-    if (!isSplit && survivors.length <= 1) {
-        const l = survivors[0];
-        const subj = esc(abbreviateSubject(l.subject));
-        const room = esc(l.room || '?');
-        return `<div class="${cls}">
-            ${lbl}
-            <span class="nlw-main">${subj}</span>
-            <span class="nlw-sub"><span class="nlw-room">${room}</span> · ${countdownHtml}</span>
-        </div>`;
-    }
-
-    // Group layout: each group carries its own badge (derived from its real group).
-    const liveGroups = survivors.map(l => groupHTML(l, false)).join('');
-    const cancelledGroups = cancelled.map(c => groupHTML(c.lesson, true)).join('');
-
-    return `<div class="${cls} nlw-split">
-        <div class="nlw-head">
-            ${lbl}
-            <span class="nlw-sub">${countdownHtml}</span>
-        </div>
-        <div class="nlw-groups">${liveGroups}${cancelledGroups}</div>
-    </div>`;
-}
-
-/**
- * Recompute and render the widget. Hidden unless we're viewing the current
- * week's schedule on a weekday with at least one upcoming/ongoing lesson.
+ * Recompute and render "now": overview hero, "now" card, now lines.
+ * Called after every timetable load and periodically.
  */
 export function refreshNextLessonWidget() {
-    const el = document.getElementById('nextLessonWidget');
-    if (!el) return;
-
-    if (state.selectedScheduleType !== 'actual') { el.classList.add('hidden'); return; }
-
-    const map = todaysLessonsByHour();
-    if (!map || map.size === 0) { el.classList.add('hidden'); return; }
-
-    const now = nowMinutes();
-    const hours = [...map.keys()].sort((a, b) => a - b);
-
-    let current = null;
-    let next = null;
-    for (const h of hours) {
-        const s = startMin(h), e = endMin(h);
-        if (s == null) continue;
-        if (now >= s && now <= e) current = { descriptor: map.get(h), start: s, end: e };
-        if (now < s && !next) next = { descriptor: map.get(h), start: s };
-    }
-
-    // Nothing running and nothing left today → hide (school day over).
-    if (!current && !next) { el.classList.add('hidden'); return; }
-
-    let html = '';
-    if (current) {
-        const left = Math.max(0, current.end - now);
-        const cd = `končí <span class="nlw-cd">${inText(left)}</span>`;
-        html += blockHTML('Teď', current.descriptor, cd, false, true);
-    }
-    if (next) {
-        const until = Math.max(0, next.start - now);
-        const cd = `<span class="nlw-cd">${inText(until)}</span>`;
-        html += (current ? '<div class="nlw-sep"></div>' : '')
-            + blockHTML(current ? 'Další' : 'Začátek', next.descriptor, cd, true, false);
-    }
-
-    // Progress bar along the bottom: how much of the current lesson is already behind us.
-    if (current) {
-        const pct = progressPct(current.start, current.end);
-        html += `<div class="nlw-progress" aria-hidden="true"><div class="nlw-progress-fill" style="width:${pct}%"></div></div>`;
-    }
-
-    el.innerHTML = html;
-    el.classList.remove('hidden');
+    import('./overview.js')
+        .then(m => m.tickOverview())
+        .catch(err => console.error('Overview refresh failed:', err));
 }
 
 /** Start the periodic refresh (every 15s). Safe to call once. */

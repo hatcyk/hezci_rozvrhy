@@ -1,0 +1,454 @@
+// Skutečný service worker v Chromiu (ostatní e2e testy ho blokují):
+// instalace a precache, nasazení nové verze, selhaná instalace, navigace při
+// výpadku serveru (spadlé spojení, 503, server neodpovídá) a hláška o nové verzi.
+//
+// Každý test má vlastní malý server nad public/ (port přidělí systém), aby šlo
+// „nasadit“ verzi B a řídit výpadky. Skripty Firebase z gstatic nahrazuje
+// atrapa ze stejného serveru; prohlížeč má navíc zakázané všechny cizí adresy.
+// Atrapa má vlastní otisk (integrity v index.html se přepíše na její sha384),
+// takže kontrola SRI běží i v testech. Testy SRI a otravy mezipaměti nechávají
+// skutečné adresy gstatic a odpovídají na ně atrapou přes page.route.
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const express = require('express');
+const { test: base, expect } = require('@playwright/test');
+const { buildSchool } = require('./support/school');
+const { installFakeFirebase } = require('./support/fake-firebase');
+const { buildAppCsp, inlineScriptHashes } = require('../../backend/security-headers');
+
+const PUBLIC = path.join(__dirname, '..', '..', 'public');
+const GSTATIC = 'https://www.gstatic.com/firebasejs/9.22.0/';
+const USER_ID = 'anon-00000000-0000-4000-8000-000000000000';
+const school = buildSchool();
+
+// Atrapa SDK pro worker (importScripts) i pro stránku (tam už window.firebase
+// nastavila atrapa z addInitScript a tenhle skript nic nepřepíše).
+// self.__sdkRuns počítá, kolik ze čtyř skriptů stránka opravdu spustila.
+// Test přechodu atrapu Firebase stránky schová do __fakeFirebase: tu pak vrátí až spuštěný skript SDK.
+const SDK_STUB = 'self.__sdkRuns = (self.__sdkRuns || 0) + 1; if (!self.firebase) self.firebase = self.__fakeFirebase || { initializeApp() {}, messaging: () => ({ onBackgroundMessage() {} }) };';
+const STUB_SRI = `sha384-${crypto.createHash('sha384').update(SDK_STUB).digest('base64')}`;
+/** index.html s otiskem atrapy místo otisků skutečného SDK. */
+const withStubIntegrity = (html, sri = STUB_SRI) => html.replace(/integrity="sha384-[^"]+"/g, `integrity="${sri}"`);
+/** index.html verzí před SRI: skripty Firebase bez integrity a crossorigin. */
+const withoutIntegrity = (html) => html.replace(/ integrity="sha384-[^"]+" crossorigin="anonymous"/g, '');
+// Worker verzí před SRI (1.x, design-g do f47c31b), jen jeho obsluha gstatic: SDK přednačte
+// a podává cache-first jako neprůhledné kopie (no-cors). Navigace nechává síti.
+const LEGACY_SW = `
+const CACHE = 'bakalari-shell-0000000000-0000000000';
+const SDK = ${JSON.stringify(['app', 'auth', 'firestore', 'messaging'].map((n) => `${GSTATIC}firebase-${n}-compat.js`))};
+self.addEventListener('install', (event) => event.waitUntil((async () => {
+  const cache = await caches.open(CACHE);
+  await Promise.all(SDK.map(async (url) => cache.put(url, await fetch(url, { mode: 'no-cors' }))));
+  await self.skipWaiting();
+})()));
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.hostname === 'www.gstatic.com' && url.pathname.includes('/firebasejs/')) {
+    event.respondWith(caches.open(CACHE).then(async (cache) => (await cache.match(event.request)) || fetch(event.request, { mode: 'no-cors' })));
+  }
+});`;
+// Skripty Vercel Analytics / Speed Insights jako na Vercelu se zapnutou analytikou
+const VERCEL_SCRIPTS = ['/_vercel/insights/script.js', '/_vercel/speed-insights/script.js'];
+
+const swSource = () => fs.readFileSync(path.join(PUBLIC, 'firebase-messaging-sw.js'), 'utf8');
+const SHELL_A = /const SHELL_CACHE = '([^']+)';/.exec(swSource())[1];
+const SHELL_B = 'bakalari-shell-bbbbbbbbbb-bbbbbbbbbb';
+const PRECACHE_COUNT = 9 + 4; // soubory kostry + čtyři skripty Firebase
+
+/** „Verze B“: jiné hashe balíků a jiný název mezipaměti, jinak stejná aplikace. */
+const asVersionB = (text) => text.replace(/\?v=[a-f0-9]{10}/g, '?v=bbbbbbbbbb').replace(SHELL_A, SHELL_B);
+
+function startServer() {
+  // gstatic: 'local' = atrapa ze stejného serveru, 'cdn' = skutečné adresy gstatic (odpovídá page.route)
+  // csp: hlavička Content-Security-Policy (vynucená) pro stránku i worker, null = žádná
+  // legacy: worker a index.html verze před SRI; holdPath/hold: odpověď na tu cestu počká na slib (zdržená instalace);
+  // badIntegrity: index.html s otisky, které soubory nemají
+  const state = { version: 'A', failPath: null, navigation: 'ok', hits: {}, gstatic: 'local', csp: null, legacy: false, holdPath: null, hold: null, badIntegrity: false };
+  const rewriteGstatic = (text) => (state.gstatic === 'local' ? text.split(GSTATIC).join('/__e2e/gstatic/') : text);
+  const app = express();
+  app.disable('x-powered-by');
+  app.use((req, res, next) => { state.hits[req.path] = (state.hits[req.path] || 0) + 1; next(); });
+  app.get('/__e2e/gstatic/:file', (req, res) => res.type('js').send(SDK_STUB));
+  app.get(VERCEL_SCRIPTS, (req, res) => res.set('Cache-Control', 'no-cache').type('js').send('self.__vercel = (self.__vercel || 0) + 1;'));
+  app.use('/api', (req, res) => {
+    if (req.method === 'POST' && req.path === '/auth') return res.json({ token: 'e2e-custom-token', userId: USER_ID });
+    if (req.method === 'GET' && req.path === '/status') return res.json({ isHealthy: true, lastSuccessAt: new Date().toISOString(), dataAgeMin: 5 });
+    if (req.path === `/favorites/${USER_ID}`) return res.json({ favoriteTimetables: [] });
+    return res.status(404).json({ error: 'v e2e testu není' });
+  });
+  app.get('/firebase-messaging-sw.js', (req, res) => {
+    if (state.legacy) return res.set('Cache-Control', 'no-cache').type('js').send(LEGACY_SW);
+    const sw = rewriteGstatic(swSource());
+    if (state.csp) res.set('Content-Security-Policy', state.csp);
+    res.set('Cache-Control', 'no-cache').type('js').send(state.version === 'B' ? asVersionB(sw) : sw);
+  });
+  app.get(['/', '/index.html'], (req, res) => {
+    if (req.get('sec-fetch-mode') === 'navigate') state.navigations = (state.navigations || 0) + 1;
+    if (state.navigation === 'hang') return; // server mlčí
+    if (state.navigation === 'down') return req.socket.destroy(); // spadlé spojení
+    if (state.navigation === '503') return res.status(503).type('text').send('Service Unavailable');
+    const source = rewriteGstatic(fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8'));
+    const html = state.legacy ? withoutIntegrity(source) : withStubIntegrity(source, state.badIntegrity ? `sha384-${'A'.repeat(64)}` : STUB_SRI);
+    if (state.csp) res.set('Content-Security-Policy', state.csp);
+    res.type('html').send(state.version === 'B' ? asVersionB(html).replace('<head>', '<head><meta name="e2e-version" content="B">') : html);
+  });
+  app.use((req, res, next) => (state.failPath && req.path === state.failPath ? res.status(503).send('e2e: výpadek') : next()));
+  app.use((req, res, next) => (state.holdPath === req.path && state.hold ? state.hold.then(() => next()) : next()));
+  app.use(express.static(PUBLIC));
+  return new Promise((resolve) => {
+    const server = app.listen(0, '127.0.0.1', () => resolve({
+      state,
+      origin: `http://127.0.0.1:${server.address().port}`,
+      close: () => new Promise((done) => { server.closeAllConnections(); server.close(done); }),
+    }));
+  });
+}
+
+const test = base.extend({
+  site: async ({ page }, use) => {
+    const server = await startServer();
+    await page.addInitScript(installFakeFirebase, {
+      docs: school.docs, offline: false, userId: USER_ID,
+      storage: { selectedType: 'Class', selectedValue: 'C2A', theme: 'dark' },
+    });
+    const site = {
+      ...server,
+      /** Otevře aplikaci a počká na vykreslený rozvrh. */
+      async open(url = '/') {
+        const response = await page.goto(server.origin + url, { waitUntil: 'domcontentloaded' });
+        await expect(page.locator('#valueDropdownLabel')).toHaveText('2.A');
+        return response;
+      },
+      /** Počká, až stránku řídí aktivní worker a žádný další se neinstaluje. */
+      async workerSettled() {
+        await expect.poll(() => page.evaluate(async () => {
+          const reg = await navigator.serviceWorker.getRegistration();
+          return !!(reg && reg.active && !reg.installing && !reg.waiting && navigator.serviceWorker.controller);
+        })).toBe(true);
+      },
+      /** Mezipaměti kostry: název → počet položek. */
+      caches: () => page.evaluate(async () => {
+        const out = {};
+        for (const name of await caches.keys()) out[name] = (await (await caches.open(name)).keys()).length;
+        return out;
+      }),
+      shellKeys: (name) => page.evaluate(async (n) => (await (await caches.open(n)).keys()).map((r) => new URL(r.url).pathname + new URL(r.url).search), name),
+      version: () => page.evaluate(() => document.querySelector('meta[name="e2e-version"]')?.content || 'A'),
+      /** Kolik skriptů Firebase stránka spustila (po jejich načtení, před modulem aplikace). */
+      sdkRuns: () => page.evaluate(() => window.__sdkRuns || 0),
+    };
+    await use(site);
+    await server.close();
+  },
+});
+
+test.use({
+  serviceWorkers: 'allow',
+  // Nic mimo lokální server: cizí jména se vůbec nepřeloží
+  launchOptions: { args: ['--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'] },
+});
+
+test.describe('Service worker', () => {
+  test('první návštěva: nainstaluje se, uloží jen kostru a aplikace se pak otevře i bez serveru', async ({ page, site }) => {
+    const pageRequests = [];
+    page.on('request', (r) => pageRequests.push(new URL(r.url()).pathname));
+    await site.open('/');
+    await site.workerSettled();
+
+    expect(await site.caches()).toEqual({ [SHELL_A]: PRECACHE_COUNT });
+    const keys = await site.shellKeys(SHELL_A);
+    expect(keys).toContain('/');
+    expect(keys.filter((k) => /icon-(180|512)|maskable|spsd_lo|index\.html/.test(k) && k !== '/spsd_logo_white.png')).toEqual([]);
+    // Ikona v zavřeném dialogu nastavení se se stránkou nestahuje
+    expect(pageRequests).not.toContain('/icon-192.png');
+
+    // Skripty Firebase prošly kontrolou otisku (atrapa má vlastní)
+    expect(await site.sdkRuns()).toBe(4);
+
+    site.state.navigation = 'down';
+    for (const url of ['/', '/index.html', '/?view=changes', '/?type=Class&id=C2A&schedule=Actual&hl=change&day=2']) {
+      const response = await site.open(url);
+      expect(response.status(), url).toBe(200);
+      expect(response.fromServiceWorker(), url).toBe(true);
+      expect(await site.sdkRuns(), `${url}: Firebase z mezipaměti s kontrolou otisku`).toBe(4);
+    }
+  });
+
+  test('různé adresy aplikace nepřidávají další kopie index.html', async ({ site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    for (const url of ['/?view=changes', '/?view=rooms', '/?type=Class&id=C2A&schedule=Actual&hl=change&day=1',
+      '/?type=Class&id=C2A&schedule=Next&hl=change', '/index.html?view=common']) {
+      await site.open(url);
+    }
+    expect(await site.caches()).toEqual({ [SHELL_A]: PRECACHE_COUNT });
+  });
+
+  test('server odpovídá 503: otevře se aplikace z mezipaměti, ne chybová stránka (N15)', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    site.state.navigation = '503';
+    const response = await site.open('/?view=rooms');
+    expect(response.status()).toBe(200);
+    await expect(page.locator('body')).not.toContainText('Service Unavailable');
+    // Chybová odpověď kostru v mezipaměti nepřepsala
+    site.state.navigation = 'down';
+    await site.open('/');
+  });
+
+  test('server neodpovídá: po zhruba 3 s se otevře aplikace z mezipaměti', async ({ site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    site.state.navigation = 'hang';
+    const started = Date.now();
+    const response = await site.open('/?view=changes');
+    const waited = Date.now() - started;
+    expect(response.fromServiceWorker()).toBe(true);
+    expect(waited).toBeGreaterThan(2500);
+    expect(waited).toBeLessThan(8000);
+  });
+
+  test('nasazení nové verze: další načtení běží na nové verzi, stará mezipaměť zmizí, hláška se neukáže', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    site.state.version = 'B';
+    await site.open('/');
+    expect(await site.version()).toBe('B');
+    await expect.poll(() => site.caches()).toEqual({ [SHELL_B]: PRECACHE_COUNT });
+    await site.workerSettled();
+    await expect(page.locator('#updateBanner')).toBeHidden();
+  });
+
+  test('otevřená karta se o nové verzi dozví a obnoví se až na pokyn uživatele', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    await expect(page.locator('#updateBanner')).toBeHidden();
+    await page.evaluate(() => { window.__notReloaded = true; });
+
+    site.state.version = 'B';
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    const banner = page.locator('#updateBanner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveText(/Je k dispozici nová verze\./);
+    await expect(banner).toHaveAttribute('role', 'status');
+    expect(await page.evaluate(() => window.__notReloaded), 'stránka se sama neobnovila').toBe(true);
+    expect(await site.version()).toBe('A');
+
+    await banner.getByRole('button', { name: 'Obnovit' }).click();
+    await expect.poll(() => site.version()).toBe('B');
+    await expect(page.locator('#valueDropdownLabel')).toHaveText('2.A');
+    await expect(page.locator('#updateBanner')).toBeHidden();
+  });
+
+  test('selhaná instalace nové verze nechá starou verzi i její mezipaměť funkční a příště se zopakuje', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+
+    // Nasazení, při kterém se jeden soubor kostry nestáhne
+    site.state.version = 'B';
+    site.state.failPath = '/icons.svg';
+    const before = site.state.hits['/icons.svg'] || 0;
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    await expect.poll(() => site.state.hits['/icons.svg'] || 0).toBeGreaterThan(before);
+    await site.workerSettled();
+
+    const caches = await site.caches();
+    expect(caches[SHELL_A], 'stará mezipaměť zůstala celá').toBe(PRECACHE_COUNT);
+    expect(caches[SHELL_B] || 0, 'nová mezipaměť je prázdná').toBe(0);
+    await expect(page.locator('#updateBanner')).toBeHidden();
+
+    // Stará verze dál funguje bez serveru
+    site.state.navigation = 'down';
+    const offline = await site.open('/?view=changes');
+    expect(offline.fromServiceWorker()).toBe(true);
+    expect(await site.version()).toBe('A');
+
+    // Další návštěva po odeznění výpadku instalaci zopakuje a dokončí
+    site.state.navigation = 'ok';
+    site.state.failPath = null;
+    await site.open('/');
+    await expect.poll(() => site.caches()).toEqual({ [SHELL_B]: PRECACHE_COUNT });
+  });
+
+  test('Vercel Analytics a Speed Insights (/_vercel/*) jdou vždy na server a do mezipaměti se neukládají', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    for (let i = 0; i < 2; i++) {
+      const responses = VERCEL_SCRIPTS.map((p) => page.waitForResponse((r) => new URL(r.url()).pathname === p));
+      await site.open('/');
+      for (const r of await Promise.all(responses)) {
+        expect(r.status(), r.url()).toBe(200);
+        expect(r.fromServiceWorker(), `${r.url()}: mimo service worker`).toBe(false);
+      }
+      await expect.poll(() => page.evaluate(() => window.__vercel || 0)).toBe(2);
+    }
+    for (const name of Object.keys(await site.caches())) {
+      expect((await site.shellKeys(name)).filter((k) => k.startsWith('/_vercel/')), name).toEqual([]);
+    }
+  });
+});
+
+/**
+ * Skutečné adresy gstatic (ne atrapa ze stejného serveru): worker je stahuje
+ * a podává sám, mezi původy, tedy tak, jako v produkci. Odpovídá na ně atrapa
+ * s hlavičkou Access-Control-Allow-Origin: * jako gstatic.
+ */
+test.describe('Service worker a SDK Firebase z gstatic (SRI)', () => {
+  const SDK_URLS = ['app', 'auth', 'firestore', 'messaging'].map((n) => `${GSTATIC}firebase-${n}-compat.js`);
+
+  test.beforeEach(async ({ context, site }) => {
+    site.state.gstatic = 'cdn';
+    site.cdn = { online: true, hits: 0 };
+    await context.route(`${GSTATIC}**`, (route) => {
+      site.cdn.hits++;
+      if (!site.cdn.online) return route.abort('internetdisconnected');
+      // hlavičky jako u skutečných souborů na gstatic (17. 11. 2026)
+      return route.fulfill({
+        status: 200, contentType: 'text/javascript; charset=UTF-8', body: SDK_STUB,
+        headers: { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=31536000', vary: 'Accept-Encoding', 'cross-origin-resource-policy': 'cross-origin' },
+      });
+    });
+  });
+
+  test('uloží se v režimu cors a s kontrolou otisku se spustí i z mezipaměti bez sítě', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    expect(await site.sdkRuns()).toBe(4);
+    const types = await page.evaluate(async (urls) => {
+      const name = (await caches.keys()).find((n) => n.startsWith('bakalari-shell-'));
+      const cache = await caches.open(name);
+      return Promise.all(urls.map(async (u) => (await cache.match(u))?.type || 'chybí'));
+    }, SDK_URLS);
+    // neprůhledná odpověď (no-cors) by u skriptu s crossorigin skončila chybou sítě
+    expect(types).toEqual(['cors', 'cors', 'cors', 'cors']);
+
+    // Bez sítě i bez serveru: stránka i SDK z mezipaměti, otisk sedí
+    site.cdn.online = false;
+    site.state.navigation = 'down';
+    const response = await site.open('/?view=changes');
+    expect(response.fromServiceWorker()).toBe(true);
+    expect(await site.sdkRuns()).toBe(4);
+  });
+
+  test('vynucená CSP aplikace (gstatic jen cesta SDK) pustí importScripts i fetch ve workeru a skripty stránky', async ({ page, site }) => {
+    const html = fs.readFileSync(path.join(PUBLIC, 'index.html'), 'utf8');
+    site.state.csp = buildAppCsp({ scriptHashes: inlineScriptHashes(html) }).replace(/; report-uri \S+$/, '');
+    await page.addInitScript(() => {
+      window.__csp = [];
+      document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
+    });
+    await site.open('/');
+    await site.workerSettled(); // importScripts z gstatic prošel, jinak by se worker nenainstaloval
+    expect(await site.sdkRuns()).toBe(4);
+    const cached = await page.evaluate(async (urls) => {
+      const cache = await caches.open((await caches.keys()).find((n) => n.startsWith('bakalari-shell-')));
+      return Promise.all(urls.map(async (u) => (await cache.match(u))?.type || 'chybí'));
+    }, SDK_URLS);
+    expect(cached, 'fetch() workeru na gstatic povolený v connect-src').toEqual(['cors', 'cors', 'cors', 'cors']);
+    await site.open('/');
+    expect(await site.sdkRuns()).toBe(4);
+    expect(await page.evaluate(() => window.__csp)).toEqual([]);
+  });
+
+  test('podvržený soubor Firebase zapsaný do mezipaměti se nespustí (scénář sw-poison)', async ({ page, site }) => {
+    const integrityErrors = [];
+    page.on('console', (m) => { if (/integrity/i.test(m.text())) integrityErrors.push(m.text()); });
+    await site.open('/');
+    await site.workerSettled();
+
+    // Jediné spuštění cizího kódu v původu aplikace (XSS, napadená knihovna) zapíše do mezipaměti workeru
+    await page.evaluate(async (url) => {
+      const name = (await caches.keys()).find((n) => n.startsWith('bakalari-shell-'));
+      const cache = await caches.open(name);
+      await cache.put(url, new Response('window.__planted = (window.__planted || 0) + 1;', { headers: { 'content-type': 'application/javascript' } }));
+    }, SDK_URLS[0]);
+
+    for (let i = 0; i < 3; i++) {
+      await site.open('/');
+      expect(await page.evaluate(() => window.__planted || 0), `načtení ${i + 1}: podvržený skript neproběhl`).toBe(0);
+      // ostatní tři skripty se spustily, zablokovaný je jen podvržený
+      expect(await site.sdkRuns()).toBe(3);
+    }
+    expect(integrityErrors.length, 'prohlížeč hlásí nesouhlasný otisk').toBeGreaterThan(0);
+    expect(integrityErrors.join('\n')).toContain(SDK_URLS[0]);
+  });
+});
+
+/**
+ * Přechod na SRI: první načtení po nasazení obslouží ještě worker staré verze
+ * a jeho neprůhledné kopie SDK stránka s integrity nepoužije. Nový worker
+ * stránku hned převezme a ta se jednou sama obnoví (sdk-recovery.js), po
+ * vstupu uživatele jen nabídne obnovení. Atrapa Firebase stránky se tu objeví
+ * až se skripty SDK, aby stránka viděla, že chybí.
+ */
+test.describe('Přechod ze staršího workeru na verzi se SRI', () => {
+  test.beforeEach(async ({ page, context, site }) => {
+    site.state.gstatic = 'cdn';
+    await context.route(`${GSTATIC}**`, (route) => route.fulfill({
+      status: 200, contentType: 'text/javascript; charset=UTF-8', body: SDK_STUB,
+      headers: { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=31536000', vary: 'Accept-Encoding' },
+    }));
+    await page.addInitScript(() => { window.__fakeFirebase = window.firebase; delete window.firebase; });
+  });
+
+  /** Stará verze nainstalovaná a řídí stránku, SDK z jejích neprůhledných kopií běží. */
+  async function legacyInstalled(site) {
+    site.state.legacy = true;
+    await site.open('/');
+    await site.workerSettled();
+    await site.open('/');
+    expect(await site.sdkRuns()).toBe(4);
+    site.state.legacy = false; // nasazení verze se SRI
+  }
+  /** Načtení stránky (navigace), ne stažení kostry workerem. */
+  const loads = (site) => site.state.navigations || 0;
+
+  test('první načtení po nasazení se jednou samo obnoví a SDK běží, bez druhého ručního načtení', async ({ page, site }) => {
+    await legacyInstalled(site);
+    const before = loads(site);
+    await page.goto(site.origin + '/', { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => site.sdkRuns().catch(() => -1), { timeout: 15_000 }).toBe(4);
+    expect(loads(site) - before, 'naše načtení + jedno automatické').toBe(2);
+    await expect(page.locator('#valueDropdownLabel')).toHaveText('2.A');
+    await expect(page.locator('#updateBanner')).toBeHidden();
+    expect(await page.evaluate(() => sessionStorage.getItem('sdkTakeoverReload')), 'pojistka uvolněná po úspěchu').toBeNull();
+    await page.waitForTimeout(1500);
+    expect(loads(site) - before, 'žádné další obnovení').toBe(2);
+  });
+
+  test('uživatel mezitím něco udělal: stránka se sama neobnoví, lišta nabídne obnovení', async ({ page, site }) => {
+    await legacyInstalled(site);
+    // instalace nového workeru čeká na jeden soubor kostry, který stránka sama nepotřebuje
+    let release;
+    site.state.hold = new Promise((resolve) => { release = resolve; });
+    site.state.holdPath = '/badge-96.png';
+    const before = loads(site);
+    await page.goto(site.origin + '/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#valueDropdownLabel')).toHaveText('2.A'); // záložní režim z uložených dat
+    expect(await site.sdkRuns()).toBe(0);
+    await page.keyboard.press('Shift');
+    release();
+    await expect(page.locator('#updateBanner')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('#updateBanner')).toHaveText(/Je k dispozici nová verze\./);
+    await page.waitForTimeout(1500);
+    expect(loads(site) - before, 'bez automatického obnovení').toBe(1);
+    await page.locator('#updateReload').click();
+    await expect.poll(() => site.sdkRuns().catch(() => -1)).toBe(4);
+    await expect(page.locator('#updateBanner')).toBeHidden();
+  });
+
+  test('SDK chybí bez nového workeru (otisk nesedí): žádné obnovování ani lišta, záložní režim jako dřív', async ({ page, site }) => {
+    await site.open('/');
+    await site.workerSettled();
+    site.state.badIntegrity = true;
+    const before = loads(site);
+    await page.goto(site.origin + '/', { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('#valueDropdownLabel')).toHaveText('2.A');
+    await page.waitForTimeout(2500);
+    expect(await site.sdkRuns()).toBe(0);
+    expect(loads(site) - before).toBe(1);
+    await expect(page.locator('#updateBanner')).toBeHidden();
+  });
+});

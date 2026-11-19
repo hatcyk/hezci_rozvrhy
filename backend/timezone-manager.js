@@ -3,13 +3,16 @@
  * Provides proper Prague timezone handling with DST support
  */
 
-const { toZonedTime, format } = require('date-fns-tz');
+const { toZonedTime, formatInTimeZone } = require('date-fns-tz');
 
 // Prague timezone constant
 const PRAGUE_TIMEZONE = 'Europe/Prague';
 
 /**
- * Get current time in Prague timezone with proper DST handling
+ * Get current time in Prague timezone with proper DST handling.
+ * NOTE: the result is a "wall clock" Date - its local getters (getHours, ...)
+ * read Prague time, but its toISOString() is NOT the real UTC instant. Use
+ * new Date().toISOString() for timestamps.
  * @param {Date} [mockTime] - Optional mock time for testing (in UTC)
  * @returns {Date} Date object in Prague timezone
  */
@@ -19,30 +22,60 @@ function getPragueTime(mockTime = null) {
 }
 
 /**
+ * Offset of Europe/Prague from UTC at the given instant, in hours (1 or 2).
+ * Computed from the tz database for Prague, not from the server's own zone:
+ * the old getTimezoneOffset() on the zoned Date reported the server's offset,
+ * so on Vercel/GitHub (UTC) isDST was always false.
+ * @param {Date} [instant]
+ * @returns {number}
+ */
+function getPragueUtcOffsetHours(instant = new Date()) {
+    // Read from the formatted offset ("+02:00"): date-fns-tz 3.2.0
+    // getTimezoneOffset() still reports the old offset for the first hour
+    // after each switch (checked for 2026-03-29 01:00-02:00 UTC and
+    // 2026-10-25 01:00-02:00 UTC), formatInTimeZone() gets it right.
+    const [, sign, hh, mm] = formatInTimeZone(instant, PRAGUE_TIMEZONE, 'xxx').match(/^([+-])(\d{2}):(\d{2})$/);
+    return (sign === '-' ? -1 : 1) * (Number(hh) + Number(mm) / 60);
+}
+
+/**
+ * Prague wall-clock time as "yyyy-MM-dd HH:mm:ss" (for logs and API responses).
+ * @param {Date} [instant]
+ */
+function formatPragueTime(instant = new Date(), pattern = 'yyyy-MM-dd HH:mm:ss') {
+    return formatInTimeZone(instant, PRAGUE_TIMEZONE, pattern);
+}
+
+/**
  * Get comprehensive Prague time information
  * @param {Date} [mockTime] - Optional mock time for testing (in UTC)
  * @returns {Object} Time information object
  */
 function getPragueTimeInfo(mockTime = null) {
-    const pragueTime = getPragueTime(mockTime);
+    const instant = mockTime || new Date();
+    const pragueTime = getPragueTime(instant);
 
-    // Get offset to determine if DST is active
-    // Prague is UTC+1 in winter, UTC+2 in summer
-    const offsetMinutes = pragueTime.getTimezoneOffset();
-    const offsetHours = -offsetMinutes / 60; // Negative because getTimezoneOffset returns negative for east of UTC
-    const isDST = offsetHours === 2; // DST when offset is +2
+    // Prague is UTC+1 in winter (CET) and UTC+2 in summer (CEST).
+    const offsetHours = getPragueUtcOffsetHours(instant);
+    const isDST = offsetHours === 2;
+
+    // Wall-clock fields straight from the tz database, so they do not depend on
+    // the server's own zone (a zoned Date's getters can be off by an hour when
+    // the server zone has its own DST switch on a different date).
+    const [hour, minute, second, isoWeekday] = formatPragueTime(instant, 'H m s i').split(' ').map(Number);
+    const dayOfWeek = isoWeekday % 7; // 0=Sunday, 1=Monday, ..., 6=Saturday
 
     return {
         time: pragueTime,
-        formatted: format(pragueTime, 'yyyy-MM-dd HH:mm:ss', { timeZone: PRAGUE_TIMEZONE }),
-        formattedTime: format(pragueTime, 'HH:mm:ss', { timeZone: PRAGUE_TIMEZONE }),
-        formattedDate: format(pragueTime, 'yyyy-MM-dd', { timeZone: PRAGUE_TIMEZONE }),
-        hour: pragueTime.getHours(),
-        minute: pragueTime.getMinutes(),
-        second: pragueTime.getSeconds(),
-        dayOfWeek: pragueTime.getDay(), // 0=Sunday, 1=Monday, ..., 6=Saturday
-        dayIndex: pragueTime.getDay() === 0 || pragueTime.getDay() === 6 ? -1 : pragueTime.getDay() - 1, // 0=Monday, 4=Friday, -1=weekend
-        timeInMinutes: pragueTime.getHours() * 60 + pragueTime.getMinutes(),
+        formatted: formatPragueTime(instant, 'yyyy-MM-dd HH:mm:ss'),
+        formattedTime: formatPragueTime(instant, 'HH:mm:ss'),
+        formattedDate: formatPragueTime(instant, 'yyyy-MM-dd'),
+        hour,
+        minute,
+        second,
+        dayOfWeek,
+        dayIndex: dayOfWeek === 0 || dayOfWeek === 6 ? -1 : dayOfWeek - 1, // 0=Monday, 4=Friday, -1=weekend
+        timeInMinutes: hour * 60 + minute,
         timezone: PRAGUE_TIMEZONE,
         utcOffset: offsetHours,
         isDST: isDST,
@@ -60,7 +93,10 @@ function isWeekend(mockTime = null) {
 }
 
 module.exports = {
+    PRAGUE_TIMEZONE,
     getPragueTime,
     getPragueTimeInfo,
+    getPragueUtcOffsetHours,
+    formatPragueTime,
     isWeekend,
 };
