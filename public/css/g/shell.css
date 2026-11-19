@@ -330,9 +330,11 @@
     .tb-bell { display: inline-grid; }
     .menu-mobile { display: none; }
     :root:not([data-view="timetable"]) .topbar { grid-template-areas: "actions actions actions actions"; justify-items: end; }
-    /* ostatní pohledy: zvonek a nastavení nedrží vlastní prázdný řádek, sedí v řádku nadpisu pohledu (integrace R + V) */
+    /* ostatní pohledy: zvonek a nastavení nedrží vlastní prázdný řádek, sedí v řádku nadpisu pohledu */
     :root:not([data-view="timetable"]) .topbar { position: absolute; top: calc(16px + env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); margin: 0; padding: 0; z-index: var(--z-sticky); }
     :root:not([data-view="timetable"]) .view-head { padding-right: calc(2 * var(--tap) + 24px); min-height: var(--tap); }
+    /* hlášky nad obsahem (zastaralá data, chyba, offline) jsou první řádek, proto roh obtékají také */
+    :root:not([data-view="timetable"]) .banners { padding-right: calc(2 * var(--tap) + 24px); }
 
     :root[data-screen="overview"] .tb-back { display: none; }
     .pane-tools { display: none; }
