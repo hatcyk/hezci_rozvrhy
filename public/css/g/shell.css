@@ -71,6 +71,11 @@
   }
   /* najetí myší ztmaví (světlejší tón by nad světlým obsahem snížil kontrast) */
   .search-fab:hover { background: var(--solid-strong); }
+  /* pod otevřeným panelem a nad klávesnicí (viewport.js) lišta a lupa nevisí přes obsah. Podle [open],
+     ne podle třídy: zavřený dialog vrací fokus na lupu dřív, než se uklidí, a skrytý prvek fokus nepřijme */
+  @media (max-width: 1079px) {
+    body:has(dialog.g-sheet[open]) :is(.view-nav, .search-fab), :root[data-keyboard] :is(.view-nav, .search-fab) { visibility: hidden; }
+  }
 
   /* ---------- horní lišta (mobil) ---------- */
   .topbar { display: flex; align-items: center; gap: 10px; min-height: 52px; margin-bottom: 4px; }

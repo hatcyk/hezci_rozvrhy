@@ -13,6 +13,20 @@
   .sheet .modal-close { width: var(--tap); height: var(--tap); --is: 20px; }
   .sheet .g-sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 16px 24px; }
   .sheet--tall, .sheet.bottom-sheet-full { height: min(86dvh, 820px); }
+  /* klávesnice na telefonu (viewport.js: data-keyboard, --vv-top, --vv-h): iOS layout viewport nezmenší,
+     klávesnice ho zakryje a viditelnou oblast případně posune dolů. Panel se drží viditelné oblasti nad
+     klávesnicí, nesahá pod stavový řádek a seznam se posouvá uvnitř; domovská lišta je pod klávesnicí. */
+  @media (max-width: 1079px) {
+    :root[data-keyboard] dialog.g-sheet:modal {
+      top: var(--vv-top, 0px);
+      bottom: calc(100% - var(--vv-top, 0px) - var(--vv-h, 100%));
+      max-height: calc(var(--vv-h, 100dvh) - env(safe-area-inset-top) - 8px);
+      padding-bottom: 0;
+    }
+    :root[data-keyboard] :is(dialog.sheet--tall, dialog.sheet.bottom-sheet-full):modal {
+      height: calc(var(--vv-h, 100dvh) - env(safe-area-inset-top) - 8px);
+    }
+  }
   .sheet .g-sheet-handle { flex: none; }
   @media (min-width: 1080px) {
     .sheet { width: min(520px, calc(100vw - 32px)); }
