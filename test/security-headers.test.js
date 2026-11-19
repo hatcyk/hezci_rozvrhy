@@ -30,7 +30,9 @@ test('CSP aplikace pokrývá všechny inline skripty a skutečné zdroje index.h
     const csp = sec.buildAppCsp({ scriptHashes: hashes });
     for (const h of hashes) assert.ok(csp.includes(h), h);
     // every external script / stylesheet / dynamic import host of index.html is allowed
-    const hosts = new Set([...INDEX_HTML.matchAll(/(?:src|href)="(https:\/\/[^/"]+)|import\('(https:\/\/[^/']+)/g)].map(m => m[1] || m[2]));
+    // (preconnect opens a connection only: it belongs to connect-src, checked below)
+    const withoutPreconnect = INDEX_HTML.replace(/<link rel="preconnect"[^>]*>/g, '');
+    const hosts = new Set([...withoutPreconnect.matchAll(/(?:src|href)="(https:\/\/[^/"]+)|import\('(https:\/\/[^/']+)/g)].map(m => m[1] || m[2]));
     const allowed = ['https://www.gstatic.com', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com', 'https://github.com', 'https://sunrisesunset.io'];
     for (const host of hosts) assert.ok(allowed.includes(host), `unexpected host in index.html: ${host}`);
     for (const src of ['https://firestore.googleapis.com', 'https://identitytoolkit.googleapis.com', 'https://securetoken.googleapis.com',
@@ -40,6 +42,19 @@ test('CSP aplikace pokrývá všechny inline skripty a skutečné zdroje index.h
     assert.match(csp, /object-src 'none'/);
     assert.match(csp, /frame-ancestors 'none'/);
     assert.ok(!/'unsafe-inline'[^;]*;/.test(csp.split('; ').find(d => d.startsWith('script-src'))), 'no unsafe-inline for scripts');
+});
+
+test('preconnect na Firestore a přihlášení: jen hostitelé z connect-src, bez cookies (crossorigin)', () => {
+    const csp = sec.buildAppCsp({ scriptHashes: sec.inlineScriptHashes(INDEX_HTML) });
+    const connect = csp.split('; ').find(d => d.startsWith('connect-src ')).split(' ').slice(1);
+    const links = [...INDEX_HTML.matchAll(/<link rel="preconnect"([^>]*)>/g)].map(m => m[1]);
+    const hosts = links.map(attrs => (attrs.match(/href="([^"]+)"/) || [])[1]);
+    assert.deepEqual(hosts, ['https://firestore.googleapis.com', 'https://identitytoolkit.googleapis.com']);
+    for (const host of hosts) assert.ok(connect.includes(host), `${host} in connect-src`);
+    // Firestore (WebChannel XHR) and Auth (fetch) send no cookies: the connection must be the anonymous one
+    for (const attrs of links) assert.match(attrs, /\scrossorigin(\s|$|=)/);
+    // before the stylesheet: the connections start while the CSS downloads
+    assert.ok(INDEX_HTML.indexOf('rel="preconnect"') < INDEX_HTML.indexOf('rel="stylesheet"'));
 });
 
 test('CSP: žádný celý CDN; gstatic jen pod cestou SDK Firebase, Analytics z vlastní domény', () => {

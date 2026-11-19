@@ -211,13 +211,30 @@ async function signIn(force = false) {
 // Shown in toasts (enabling notifications): Czech, with the limit's own text on 429
 const AUTH_FAILED_MESSAGE = 'Nepodařilo se přihlásit k serveru aplikace. Zkuste to prosím znovu.';
 
-/** One POST /api/auth, answer and body within STEP_LIMITS.authFetch. */
-function postAuth(headers, body) {
-    const controller = typeof AbortController === 'undefined' ? null : new AbortController();
-    const request = fetch('/api/auth', { method: 'POST', headers, body, ...(controller ? { signal: controller.signal } : {}) });
+/**
+ * The /api/auth request that index.html sends on a first visit (no saved ID,
+ * nothing to prove) while the SDK still downloads: the same request as below,
+ * only earlier. Used once.
+ */
+function takeEarlyAuth() {
+    const early = typeof window !== 'undefined' ? window.__authEarly : null;
+    if (!early || !early.response) return null;
+    window.__authEarly = null;
+    return early;
+}
+
+/** One POST /api/auth (or the early one), answer and body within STEP_LIMITS.authFetch. */
+function postAuth(early, headers, body) {
+    const controller = early || typeof AbortController === 'undefined' ? null : new AbortController();
+    const request = early
+        ? early.response
+        : fetch('/api/auth', { method: 'POST', headers, body, ...(controller ? { signal: controller.signal } : {}) });
     const read = request.then(async (response) => ({ response, data: response.ok ? await response.json() : null }));
     return withTimeout(read, STEP_LIMITS.authFetch).catch((err) => {
-        if (isTimeout(err) && controller) controller.abort();
+        if (isTimeout(err)) {
+            if (early && early.abort) early.abort();
+            else if (controller) controller.abort();
+        }
         throw err;
     });
 }
@@ -233,9 +250,10 @@ async function requestCustomToken(storedId, idToken) {
     const body = JSON.stringify({ userId: storedId });
     let lastError = null;
     for (let attempt = 0; attempt < 2; attempt++) {
+        const early = attempt === 0 && !storedId && !idToken ? takeEarlyAuth() : null;
         let result;
         try {
-            result = await postAuth(headers, body);
+            result = await postAuth(early, headers, body);
         } catch (err) {
             lastError = isTimeout(err) ? err : new Error(AUTH_FAILED_MESSAGE);
             continue;

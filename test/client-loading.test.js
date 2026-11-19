@@ -111,6 +111,19 @@ test('Firestore: long-polling auto-detection is set before the first read', asyn
     assert.equal(order.filter(([k]) => k === 'collection').length, 0, 'no read before the settings');
 });
 
+test('first visit: the /api/auth request that index.html already sent is used, no second one', async () => {
+    const { authenticateWithFirebase } = await import('../public/js/firebase-client.js');
+    store.delete('userId');
+    currentUser = null;
+    let aborted = false;
+    window.__authEarly = { response: reply(200, { token: `custom-${NEW_ID}`, userId: NEW_ID })(), abort: () => { aborted = true; } };
+    await authenticateWithFirebase();
+    assert.equal(calls.length, 0);
+    assert.equal(aborted, false);
+    assert.equal(window.__authEarly, null, 'used once');
+    assert.equal(localStorage.getItem('userId'), NEW_ID);
+});
+
 test('/api/auth: no answer within the limit → aborted and tried once more', async () => {
     const { authenticateWithFirebase, STEP_LIMITS } = await import('../public/js/firebase-client.js');
     signedInAs(NEW_ID);
