@@ -79,9 +79,12 @@ jobs:
         # --fail-with-body: exit 22 on HTTP >= 400, the JSON still in the log.
         # --retry: timeouts, refused connections and 408/429/5xx are retried
         # (a 503 too, so a missing secret fails after the retries); 401 is not.
+        # -L --max-redirs 0: a redirect (VERCEL_URL still on an old domain that
+        # now redirects) is exit 47 instead of a 308 that passes and sends
+        # nothing; the Authorization header would not survive it anyway.
         # A repeated call is safe: each change is claimed in a transaction.
         run: |
-          curl --fail-with-body -sS \
+          curl --fail-with-body -sS -L --max-redirs 0 \
             --connect-timeout 10 --max-time 30 \
             --retry 3 --retry-delay 10 --retry-connrefused \
             -H "Authorization: Bearer ${CRON_SECRET}" \
