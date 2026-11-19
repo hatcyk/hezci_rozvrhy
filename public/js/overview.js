@@ -36,6 +36,7 @@ const model = {
     next: null,       // lekce příštího týdne (když je potřeba)
     loading: null,    // Promise načítání
     signature: '',    // co je teď / další (změna → překreslit pás a týden)
+    dataSig: '',      // vykreslená data (stejná po obnovení → nepřekreslovat)
     rooms: null,      // { count, names, when }
 };
 
@@ -61,9 +62,10 @@ async function loadData(force = false) {
     model.loading = (async () => {
         try {
             const fetchNext = async () => {
-                try { return cleanLessons(await fetchTimetable(type, id, 'next', SESSION_DATE())); } catch { return null; }
+                try { return cleanLessons(await fetchTimetable(type, id, 'next', SESSION_DATE(), { early: true, noWait: true })); } catch { return null; }
             };
-            let actual = cleanLessons(await fetchTimetable(type, id, 'actual', SESSION_DATE()));
+            // early: při startu stačí uložená kopie, po přihlášení se přehled načte znovu (timetableloaded)
+            let actual = cleanLessons(await fetchTimetable(type, id, 'actual', SESSION_DATE(), { early: true }));
             let next = null;
             let sched = 'actual';
             let stale = '';
@@ -84,12 +86,16 @@ async function loadData(force = false) {
                 if (st.kind === 'weekend' || !st.next || st.next.nextWeek) next = await fetchNext();
             }
             if (keyOf() !== key) return false; // vybral se jiný rozvrh
+            const dataSig = JSON.stringify([actual, next, sched, stale]);
+            const same = !!model.actual && model.dataKey === `${type}|${id}` && model.dataSig === dataSig;
             model.key = key;
             model.dataKey = `${type}|${id}`;
             model.actual = actual;
             model.sched = sched;
             model.stale = stale;
             model.next = next;
+            model.dataSig = dataSig;
+            if (same) return 'same';
             model.signature = '';
             return true;
         } catch (err) {
@@ -503,7 +509,7 @@ function tilesHtml(st, now) {
 
 async function loadRooms(now = new Date()) {
     try {
-        const actual = await fetchAggregate('freeRooms_Actual');
+        const actual = await fetchAggregate('freeRooms_Actual', { early: true });
         const agg = actual && actual.data;
         if (!agg) { model.rooms = null; return; }
         const { primary } = defaultRoomSlots(now, rasterHours(agg));
@@ -529,6 +535,12 @@ async function loadRooms(now = new Date()) {
 }
 
 /* ── kostra při načítání ───────────────────────────────────────────────── */
+
+/** Kostra přehledu hned po spuštění, dokud se nic nenačetlo (první návštěva). */
+export function showOverviewSkeleton() {
+    const ov = $('overview');
+    if (ov && !ov.firstElementChild) ov.innerHTML = skeletonHtml();
+}
 
 function skeletonHtml() {
     return `<div class="ov-hero ov-hero--skel" aria-hidden="true">
@@ -654,9 +666,12 @@ export async function tickOverview({ force = false } = {}) {
     // jeho jménem starý přehled (hrdina, pás hodin i týden)
     if (model.dataKey && model.dataKey !== dataKeyOf()) invalidateOverview();
     const fresh = force || model.key !== key || !model.actual;
+    // Obnovená data stejná jako vykreslená (uložená kopie při startu, pak čerstvá): nepřekreslovat
+    let changed = fresh;
     if (fresh) {
         if (ov && (!model.actual || !ov.querySelector('.ov-hero'))) ov.innerHTML = skeletonHtml();
         const ok = await loadData(force);
+        changed = ok !== 'same';
         if (!ok) {
             if (keyOf() !== key) return; // mezitím se vybral jiný rozvrh, vykreslí ho jeho vlastní obnovení
             if (!model.actual) {
@@ -672,14 +687,15 @@ export async function tickOverview({ force = false } = {}) {
     const mobile = !!window.matchMedia && window.matchMedia('(max-width: 1079px)').matches;
     if (mobile && (fresh || !model.roomsAt || Date.now() - model.roomsAt > 5 * 60 * 1000)) {
         model.roomsAt = Date.now();
+        const before = JSON.stringify(model.rooms);
         await loadRooms(now);
-        if (!fresh) model.signature = ''; // dlaždice se překreslí
+        if (JSON.stringify(model.rooms) !== before) model.signature = ''; // dlaždice se překreslí
     }
     const st = model.stale ? STALE_STATE : nowState(model.actual, { now, nextWeek: model.next });
     const sig = `${st.kind}|${st.current ? st.current.hour : ''}|${st.next ? `${st.next.day}-${st.next.hour}` : ''}|${Math.floor(minutesOfDay(now) / 5)}`;
     const focusInside = ov && ov.contains(document.activeElement) && document.activeElement !== ov;
-    if (fresh || (sig !== model.signature && !focusInside) || !$('ovHero')) {
-        renderAll(st, now, { keepScroll: !fresh });
+    if (changed || (sig !== model.signature && !focusInside) || !$('ovHero')) {
+        renderAll(st, now, { keepScroll: !changed });
         model.signature = sig;
     } else {
         renderHero(st, now);
@@ -705,6 +721,7 @@ export function updateNavCounts() {
 export function invalidateOverview() {
     model.key = '';
     model.dataKey = '';
+    model.dataSig = '';
     model.actual = null;
     model.next = null;
     model.sched = 'actual';

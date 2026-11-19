@@ -248,6 +248,9 @@
     @keyframes g-sheet-in { from { transform: translateY(24px); opacity: 0; } }
     @keyframes g-fade-in { from { opacity: 0; } }
     ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--t-slow); }
+    /* zástupné bloky pomalu „dýchají“ (jen průhlednost, kompozitor): načítání nevypadá jako zamrzlé */
+    .g-skel { animation: g-skel-breathe 1.6s ease-in-out infinite; }
+    @keyframes g-skel-breathe { 50% { opacity: .55; } }
   }
   @media (prefers-reduced-motion: reduce) {
     /* přechody úplně vypnout (0s): „.01ms“ by zapnulo mikropřechod VŠECH vlastností na každém prvku

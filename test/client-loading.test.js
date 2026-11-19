@@ -204,6 +204,30 @@ test('timetable / definitions read without an answer and nothing saved: Czech ti
     }
 });
 
+test('while signing in: the first paint takes the saved copy at once, other reads wait for the sign-in', async () => {
+    const api = await import('../public/js/api.js');
+    api.clearSessionCache();
+    localStorage.setItem('bakalari_cache_timetable_Class_C2A_actual', saved([{ day: 0, hour: 1, subject: 'Uložená' }]));
+    let signedIn;
+    const gate = api.holdReadsUntil(new Promise((r) => { signedIn = r; }));
+    reads.length = 0;
+
+    assert.deepEqual(await api.fetchTimetable('Class', 'C2A', 'actual', '2026-11-02', { early: true }), [{ day: 0, hour: 1, subject: 'Uložená' }]);
+    let waiting = 'pending';
+    const later = api.fetchTimetable('Class', 'C2A', 'actual', '2026-11-02').then((d) => { waiting = d; });
+    await settle();
+    assert.equal(waiting, 'pending', 'a normal read waits for the sign-in');
+    assert.deepEqual(reads, [], 'Firestore is not read before the sign-in');
+
+    signedIn();
+    await gate;
+    await later;
+    assert.deepEqual(waiting, [{ day: 0, hour: 1, subject: 'Čerstvá' }]);
+    assert.deepEqual(reads, ['timetables/Class_C2A_Actual']);
+    // the saved copy did not end up in the session cache: the refresh after the sign-in got the fresh one
+    assert.deepEqual(await api.fetchTimetable('Class', 'C2A', 'actual', '2026-11-02', { early: true }), [{ day: 0, hour: 1, subject: 'Čerstvá' }]);
+});
+
 test('/api/status without an answer: after the limit the start goes on (treated as healthy)', async () => {
     const { fetchBackendStatus } = await import('../public/js/api.js');
     const { STEP_LIMITS } = await import('../public/js/firebase-client.js');
