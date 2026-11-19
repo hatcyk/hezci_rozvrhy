@@ -74,24 +74,62 @@ test('bezpečnostní hlavičky jsou na každé odpovědi', async () => {
     assert.equal(r.headers.get('x-powered-by'), null);
 });
 
-test('CORS: vlastní původ dostane povolení, cizí web ne', async () => {
-    const own = await fetch(base + '/api/debug/status', { headers: { origin: 'https://spsd-rozvrhy.vercel.app' } });
-    assert.equal(own.headers.get('access-control-allow-origin'), 'https://spsd-rozvrhy.vercel.app');
-
-    const evil = await fetch(base + '/api/debug/status', { headers: { origin: 'https://evil.example' } });
-    assert.equal(evil.headers.get('access-control-allow-origin'), null);
-
-    const preflight = await fetch(base + '/api/fcm/subscribe', {
-        method: 'OPTIONS',
-        headers: { origin: 'http://localhost:3000', 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization,content-type' },
+/** Request with a Host of our choice (fetch cannot set it): the address bar of the page. */
+function raw(method, p, headers = {}, body) {
+    const http = require('node:http');
+    const { port } = new URL(base);
+    return new Promise((resolve, reject) => {
+        const r = http.request({ host: '127.0.0.1', port, method, path: p,
+            headers: { ...headers, ...(body !== undefined ? { 'Content-Length': Buffer.byteLength(body) } : {}) } }, (res) => {
+            let text = '';
+            res.on('data', (c) => { text += c; });
+            res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: text }));
+        });
+        r.on('error', reject);
+        if (body !== undefined) r.write(body);
+        r.end();
     });
-    assert.equal(preflight.headers.get('access-control-allow-origin'), 'http://localhost:3000');
-    assert.match(preflight.headers.get('access-control-allow-headers'), /Authorization/i);
+}
+
+test('CORS: stránka na kterékoli doméně volá své API bez CORS_ORIGINS (Origin = vlastní Host)', async () => {
+    assert.equal(process.env.CORS_ORIGINS, undefined);
+    // The browser sends Origin on every POST and on fetch() even to its own
+    // origin; such a request is same-origin and needs no Access-Control-* answer.
+    for (const host of ['rozvrh.baratslab.eu', 'spsd-rozvrhy.vercel.app', 'spsd-rozvrhy-git-dev-hatcyk.vercel.app', 'rozvrh.skola.cz']) {
+        const page = { Host: host, Origin: `https://${host}`, 'Sec-Fetch-Site': 'same-origin', 'Sec-Fetch-Mode': 'cors' };
+        const auth = await raw('POST', '/api/auth', { ...page, 'Content-Type': 'application/json' }, '{}');
+        assert.equal(auth.status, 200, `${host}: ${auth.body}`);
+        const { token, userId } = JSON.parse(auth.body);
+        assert.match(userId, /^anon-/, host);
+        assert.equal(token, `custom:${userId}`, host);
+        const favorites = await raw('GET', `/api/favorites/${A}`, { ...page, ...asUser(A) });
+        assert.equal(favorites.status, 200, `${host}: ${favorites.body}`);
+    }
 });
 
-test('CORS_ORIGINS přepíše výchozí seznam', () => {
+test('CORS: cizí původ povolení nedostane, ani s podvrženým Host / X-Forwarded-Host', async () => {
+    const acao = (r) => r.headers['access-control-allow-origin'];
+    const evil = 'https://evil.example';
+    assert.equal(acao(await raw('GET', '/api/status', { Host: 'rozvrh.baratslab.eu', Origin: evil })), undefined);
+    // the server never derives "its own" origin from the request, so neither header can make it match
+    assert.equal(acao(await raw('GET', '/api/status', { Host: 'rozvrh.baratslab.eu', Origin: evil, 'X-Forwarded-Host': 'evil.example' })), undefined);
+    assert.equal(acao(await raw('GET', '/api/status', { Host: 'evil.example', Origin: evil })), undefined);
+    // the two domains of one deployment do not call each other: each page talks to its own origin
+    assert.equal(acao(await raw('GET', '/api/status', { Host: 'rozvrh.baratslab.eu', Origin: 'https://spsd-rozvrhy.vercel.app' })), undefined);
+
+    const preflight = (origin) => raw('OPTIONS', '/api/fcm/subscribe', {
+        Host: 'rozvrh.baratslab.eu', Origin: origin,
+        'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type',
+    });
+    assert.equal(acao(await preflight(evil)), undefined, 'preflight of a foreign page fails: the POST is never sent');
+    const dev = await preflight('http://localhost:3000');
+    assert.equal(acao(dev), 'http://localhost:3000');
+    assert.match(dev.headers['access-control-allow-headers'], /Authorization/i);
+});
+
+test('CORS_ORIGINS přepíše výchozí seznam; výchozí obsahuje jen vývojové původy, žádnou doménu nasazení', () => {
     assert.deepEqual(parseCorsOrigins('https://a.cz, https://b.cz/ ,'), ['https://a.cz', 'https://b.cz']);
-    assert.ok(parseCorsOrigins('').includes('https://spsd-rozvrhy.vercel.app'));
+    assert.deepEqual(parseCorsOrigins(''), ['http://localhost:3000', 'http://127.0.0.1:3000']);
 });
 
 test('nechráněné /api/prefetch/trigger a /status už neexistují', async () => {

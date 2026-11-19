@@ -104,7 +104,7 @@ const check = (name, ok, detail = '') => { (ok ? pass++ : fail++); console.log(`
     if (d.method === 'Network.requestWillBeSent' && d.params.request.url.includes('/api/fcm/')) { netLog.push(d.params.request.method + ' ' + d.params.request.url.replace(BASE, '')); if (d.params.request.url.includes('/preferences/')) prefLoads++; }
     if (d.method === 'Fetch.requestPaused') { const p = d.params;
       const h = Object.entries(p.request.headers).filter(([k]) => k.toLowerCase() !== 'referer').map(([name, value]) => ({ name, value }));
-      h.push({ name: 'Referer', value: 'https://spsd-rozvrhy.vercel.app/' });
+      h.push({ name: 'Referer', value: REFERER });
       ws.send(JSON.stringify({ id: ++id, method: 'Fetch.continueRequest', params: { requestId: p.requestId, headers: h } })); } };
   const send = (method, params = {}) => new Promise(res => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })); });
   const ev = async (expression) => { const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });

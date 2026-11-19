@@ -1,5 +1,8 @@
 // The app runs on any domain without code changes (a custom domain such as
 // rozvrh.<school or own domain> next to, or instead of, *.vercel.app):
+// - nothing the server, the browser or the scheduled jobs run names the
+//   address of a deployment; the address lives in GitHub's VERCEL_URL, on
+//   cron-job.org and in the docs (DEPLOYMENT.md, chapter 3);
 // - a job whose VERCEL_URL answers with a redirect (an old domain that now
 //   redirects to the new one) fails instead of passing without doing anything.
 // Only 127.0.0.1 is contacted (a local server stands in for the app).
@@ -11,6 +14,42 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const ROOT = path.join(__dirname, '..');
+
+// A hostname of a deployment: Vercel's own domains and the planned custom one.
+const DEPLOYMENT_HOST = /[a-z0-9-]+\.vercel\.app|baratslab\.eu/i;
+const TEXT = /\.(?:js|cjs|mjs|json|webmanifest|html|css|svg|map|yml|yaml|example|service|txt)$|^(?:Dockerfile|docker-compose\.yml)$/;
+
+function files(rel) {
+    const abs = path.join(ROOT, rel);
+    if (!fs.existsSync(abs)) return [];
+    if (fs.statSync(abs).isFile()) return [rel];
+    return fs.readdirSync(abs, { withFileTypes: true }).flatMap((d) => {
+        const child = path.join(rel, d.name);
+        if (d.isDirectory()) return files(child);
+        return TEXT.test(d.name) ? [child] : [];
+    });
+}
+
+test('doména: server, klient, vercel.json, úlohy ani nasazení neobsahují adresu nasazení', () => {
+    const scanned = ['index.js', 'vercel.json', 'backend', 'routes', 'public', 'scripts', '.github/workflows',
+        'Dockerfile', 'docker-compose.yml', 'deploy'].flatMap(files);
+    assert.ok(scanned.length > 100, `jen ${scanned.length} souborů - čte test správné adresáře?`);
+    const hits = [];
+    for (const rel of scanned) {
+        fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n').forEach((line, i) => {
+            const m = line.match(DEPLOYMENT_HOST);
+            if (m) hits.push(`${rel}:${i + 1}: ${m[0]}`);
+        });
+    }
+    assert.deepEqual(hits, [], 'adresa patří do VERCEL_URL / CORS_ORIGINS / dokumentace, ne do kódu');
+});
+
+test('doména: tools/e2e-notifications.js má adresu jen jako jednu výchozí hodnotu (E2E_REFERER)', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'tools', 'e2e-notifications.js'), 'utf8');
+    const literal = src.match(new RegExp(DEPLOYMENT_HOST.source, 'gi')) || [];
+    assert.equal(literal.length, 1, `adresa v nástroji ${literal.length}×: ${literal.join(', ')}`);
+    assert.match(src, /const REFERER = process\.env\.E2E_REFERER \|\|/);
+});
 
 // ---- scheduled jobs against a redirect ---------------------------------------
 
