@@ -6,7 +6,11 @@
    ========================================================================== */
 @layer views {
   :root[data-kiosk] { color-scheme: dark; overflow: hidden; }
-  :root[data-kiosk] body { overflow: hidden; }
+  /* min-height: 100lvh – v aplikaci na ploše (black-translucent) bral WebKit u stránky, která se neposouvá,
+     za viewport jen výšku bez stavového řádku (iPhone 17, iOS 26.5: 812 z 874 px): tabule position: fixed
+     končila nad spodním okrajem a pod ní zůstal tmavý pruh (snímek 7803). S dokumentem vysokým 100lvh
+     je viewport celá obrazovka (ověřeno v iOS Simulatoru). */
+  :root[data-kiosk] body { overflow: hidden; min-height: 100lvh; }
   :root[data-kiosk] .app-container,
   :root[data-kiosk] .toast-container { display: none; }
 
