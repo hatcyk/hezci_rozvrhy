@@ -19,6 +19,10 @@
   .view-intro { font-size: var(--fs-body); max-width: 62ch; line-height: 1.4; }
   .view-actions { display: flex; gap: 8px; flex: none; }
   .view-act { min-height: var(--tap); }
+  /* režim pro televizi (/?kiosk=changes) jen na počítači: telefon ani dotykový tablet tabuli nespouští */
+  @media (max-width: 1079px), (hover: none) and (pointer: coarse) {
+    .view-act--tv { display: none; }
+  }
 
   /* věta nahoře jako v Počasí */
   .view-lead {
