@@ -70,3 +70,31 @@ test.describe('Změny dnes', () => {
     await expect(rows(page)).toHaveCount(0);
   });
 });
+
+// Režim pro televizi (/?kiosk=changes) se nabízí jen na počítači: na telefonu a tabletu tabuli nikdo
+// nespouští a tlačítko jen zabíralo místo. Kiosk sám dál funguje na adrese.
+test.describe('Režim pro televizi', () => {
+  const tv = (page) => page.locator('#changesView a[href="/?kiosk=changes"]');
+
+  test('telefon ho nenabízí, počítač ano', async ({ page, app, isMobile }) => {
+    await app.open('/?view=changes');
+    await expect(rows(page).first()).toBeVisible();
+    if (isMobile) await expect(tv(page)).toBeHidden();
+    else await expect(tv(page)).toBeVisible();
+  });
+
+  test.describe('tablet na šířku (dotyk, 1180 px)', () => {
+    test.use({ viewport: { width: 1180, height: 820 }, isMobile: true, hasTouch: true });
+    test('nenabízí ho ani v rozvržení pro počítač', async ({ page, app }) => {
+      await app.open('/?view=changes');
+      await expect(rows(page).first()).toBeVisible();
+      await expect(page.locator('#sidebar')).toBeVisible(); // rozvržení pro počítač (≥ 1080 px)
+      await expect(tv(page)).toBeHidden();
+    });
+  });
+
+  test('kiosk dál funguje na adrese', async ({ page, app }) => {
+    await app.open('/?kiosk=changes');
+    await expect(page.locator('.k-row').first()).toBeVisible();
+  });
+});

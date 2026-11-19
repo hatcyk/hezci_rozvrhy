@@ -11,14 +11,16 @@
  * and blur costs a lot on cheap players), type sized by the screen height.
  */
 
-import { watchAggregate, fetchBackendStatus } from './api.js';
+import { watchAggregate, storedAggregate, fetchBackendStatus } from './api.js';
 import { boardDayOptions, pickBoardDate, boardEntries, groupByClass, dayLabel, czPlural, freshnessText } from './changes-core.js';
 import { briefHtml, afterHtml, hourHtml, kindTone } from './changes-render.js';
-import { KIOSK_SWITCH_AT, msUntilNightlyReload, lessonNowText, clockText, nextScroll } from './kiosk-core.js';
+import { KIOSK_SWITCH_AT, KIOSK_LOAD_TIMEOUT_MS, msUntilNightlyReload, lessonNowText, clockText, nextScroll, emptyBoardState } from './kiosk-core.js';
 import { esc, setPressed } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
 const aggs = { Actual: null, Next: null };
+/** Reading the aggregates failed / Firestore did not answer in time (the board says so instead of loading). */
+const load = { failed: false, timedOut: false };
 let status = null;
 let shownDate = null;
 let paused = false;
@@ -43,10 +45,13 @@ function render() {
     $('kioskCount').textContent = date ? (entries.length ? czPlural(entries.length, ['změna', 'změny', 'změn']) : 'bez změn') : '';
 
     let html;
-    if (!aggs.Actual && !aggs.Next) {
+    const empty = option ? null : emptyBoardState(aggs, load);
+    if (empty === 'loading') {
         html = '<p class="kiosk-empty">Načítám změny…</p>';
-    } else if (!option) {
-        html = '<p class="kiosk-empty">Přehled změn zatím není k dispozici.</p>';
+    } else if (empty === 'unavailable') {
+        html = '<p class="kiosk-empty"><strong>Změny se teď nedaří načíst.</strong><span>Tabule to bude dál zkoušet sama.</span></p>';
+    } else if (empty === 'missing') {
+        html = '<p class="kiosk-empty"><strong>Přehled změn zatím není k dispozici.</strong><span>Objeví se po příštím stažení dat z Bakalářů.</span></p>';
     } else if (groups.length === 0) {
         const when = dayLabel(date, now, { relative: true }).split(',')[0];
         const lead = when === 'dnes' || when === 'zítra' ? when.charAt(0).toUpperCase() + when.slice(1) : 'Tento den';
@@ -211,8 +216,16 @@ export function startKiosk() {
     view.hidden = false;
     document.title = 'Změny v rozvrhu – Lepší Rozvrh';
 
-    watchAggregate('changes_Actual', (v) => { aggs.Actual = v; render(); });
-    watchAggregate('changes_Next', (v) => { aggs.Next = v; render(); });
+    const failed = () => { load.failed = true; render(); };
+    watchAggregate('changes_Actual', (v) => { aggs.Actual = v; render(); }, failed);
+    watchAggregate('changes_Next', (v) => { aggs.Next = v; render(); }, failed);
+    // A stuck connection answers neither with data nor with an error: show the stored copy, if any
+    setTimeout(() => {
+        load.timedOut = true;
+        if (!aggs.Actual) aggs.Actual = storedAggregate('changes_Actual');
+        if (!aggs.Next) aggs.Next = storedAggregate('changes_Next');
+        render();
+    }, KIOSK_LOAD_TIMEOUT_MS);
     refreshStatus();
     setInterval(() => { if (!document.hidden) refreshStatus(); }, 5 * 60 * 1000);
 

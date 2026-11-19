@@ -8,10 +8,19 @@
  * the page behind and focus was lost on close.
  *
  * Kept from the old implementation: slide-up animation (.active class),
- * swipe-down on the handle, tap on the backdrop to close, keyboard offset.
+ * swipe-down on the handle, tap on the backdrop to close.
+ *
+ * On a phone the page behind an open sheet is locked in place, and with the
+ * on-screen keyboard open the sheet keeps to the visible area above it
+ * (viewport.js sets --vv-top, --vv-h and data-keyboard, sheets.css places
+ * the sheet).
  */
 
+import { watchVisibleArea, createScrollLock } from './viewport.js';
+
 const openSheets = new Set();
+const scrollLock = createScrollLock();
+const isPhoneLayout = () => !!(window.matchMedia && window.matchMedia('(max-width: 1079px)').matches);
 let openSeq = 0;
 
 // Disable CSS transitions during viewport resize to prevent cross-breakpoint sliding
@@ -24,26 +33,9 @@ window.addEventListener('resize', () => {
     }, 150);
 }, { passive: true });
 
-// Reposition active sheets when virtual keyboard appears/disappears (mobile)
-function adjustSheetsForViewport() {
-    if (!window.visualViewport || openSheets.size === 0) return;
-
-    const vv = window.visualViewport;
-    // Keyboard height = how much the visual viewport shrank from the layout viewport
-    const keyboardOffset = Math.max(0, window.innerHeight - vv.height);
-
-    openSheets.forEach(id => {
-        const sheet = document.getElementById(id);
-        if (!sheet || !sheet.classList.contains('active')) return;
-        sheet.style.bottom = keyboardOffset + 'px';
-        sheet.style.maxHeight = (vv.height * 0.95) + 'px';
-    });
-}
-
-if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', adjustSheetsForViewport, { passive: true });
-    window.visualViewport.addEventListener('scroll', adjustSheetsForViewport, { passive: true });
-}
+// Visible area above the on-screen keyboard (it used to set an inline bottom from
+// innerHeight - visualViewport.height, which ignored how far iOS panned the view)
+watchVisibleArea();
 
 const prefersReducedMotion = () =>
     window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -85,9 +77,11 @@ function cleanup(sheet, id) {
     clearTimeout(sheet._closeTimer);
     sheet.classList.remove('active');
     sheet.removeAttribute('data-closing');
-    sheet.style.bottom = '';
-    sheet.style.maxHeight = '';
     sheet.style.transform = '';
+    if (sheet._scrollLocked) {
+        sheet._scrollLocked = false;
+        scrollLock.unlock();
+    }
     openSheets.delete(id);
     if (openSheets.size === 0) {
         document.body.classList.remove('sheet-open');
@@ -116,6 +110,11 @@ export function openBottomSheet(id, options = {}) {
     sheet.removeAttribute('data-closing');
 
     if (!sheet.open) {
+        // Phone: the page behind stays where it is (also when iOS reveals the focused field)
+        if (!sheet._scrollLocked && isPhoneLayout()) {
+            sheet._scrollLocked = true;
+            scrollLock.lock();
+        }
         if (typeof sheet.showModal === 'function') {
             sheet.showModal();
         } else {

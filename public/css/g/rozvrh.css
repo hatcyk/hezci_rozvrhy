@@ -11,8 +11,6 @@
   /* skrytý text pro čtečku (.vh, .sr-only) je absolutní: tlačítko ho musí držet,
      jinak by v posouvaném pásu hodin rozšířil stránku */
   .lesson, .ov-h, .wr, .wg-dh, .ov-tile { position: relative; }
-  .tt:focus { outline: none; }
-  .tt:focus-visible { outline: 3px solid var(--now); outline-offset: 4px; border-radius: var(--r-mod); }
 
   /* mobil: Přehled, nebo Den; počítač: jen rozvržení */
   #overview { display: grid; gap: 12px; }

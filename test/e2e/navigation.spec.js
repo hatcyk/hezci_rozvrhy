@@ -43,6 +43,44 @@ test.describe('Navigace mezi pohledy', () => {
     await expect(page).toHaveURL(/\?view=rooms$/);
   });
 
+  // Fokus přesunutý skriptem na nadpis (tabindex="-1") čtečka oznámí, ale rámeček se nekreslí: nadpis
+  // není ovládací prvek. Safari na iPhonu ho po přechodu kreslilo (snímek 7804). Z klávesnice (Enter)
+  // :focus-visible platí i v Chromiu, proto test jde touto cestou; ovládací prvky rámeček mají dál.
+  test('nadpis po přechodu nemá rámeček fokusu, další ovládací prvek z klávesnice ano', async ({ page, app, isMobile }) => {
+    await app.open('/');
+    await app.timetableReady();
+    const ring = (sel) => page.locator(sel).evaluate(el => {
+      const cs = getComputedStyle(el);
+      return cs.outlineStyle === 'none' || parseFloat(cs.outlineWidth) === 0 ? 'žádný' : `${cs.outlineStyle} ${cs.outlineWidth}`;
+    });
+    for (const [v, title] of [['changes', '#changesTitle'], ['rooms', '#roomsTitle'], ['common', '#commonTitle']]) {
+      await page.focus(`#viewNav a[data-view="${v}"]`);
+      await page.keyboard.press('Enter');
+      await expect(page.locator(title)).toBeFocused();
+      expect(await page.locator(title).evaluate(el => el.matches(':focus-visible')), `${title} je fokus z klávesnice`).toBe(true);
+      expect(await ring(title), title).toBe('žádný');
+    }
+    await page.keyboard.press('Tab');
+    expect(await page.evaluate(() => document.activeElement.matches('button, a, select, input, [tabindex="0"]')), 'Tab z nadpisu vede na ovládací prvek').toBe(true);
+    expect(await page.evaluate(() => { const cs = getComputedStyle(document.activeElement); return `${cs.outlineStyle} ${cs.outlineWidth}`; })).toBe('solid 3px');
+
+    // Rozvrh: hlavní oblast po odkazu z jiného pohledu a nadpis Dne na mobilu
+    await page.focus('#viewNav a[data-view="timetable"]');
+    await page.keyboard.press('Enter');
+    await expect.poll(() => view(page)).toBe('timetable');
+    if (isMobile) {
+      const today = page.locator('#overview .wr.today');
+      await (await today.count() ? today : page.locator('#overview .wr').first()).focus();
+      await page.keyboard.press('Enter');
+      await expect(page.locator('#ttTitle')).toBeFocused();
+      expect(await ring('#ttTitle'), '#ttTitle').toBe('žádný');
+    }
+    await page.locator('#skipLink').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#timetableView')).toBeFocused();
+    expect(await ring('#timetableView'), '#timetableView').toBe('žádný');
+  });
+
   test('přímý odkaz /?view=… otevře pohled hned (zkratky manifestu)', async ({ page, app }) => {
     await app.open('/?view=common');
     await expect(page.locator('#commonView')).toBeVisible();

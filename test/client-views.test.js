@@ -357,3 +357,14 @@ test('kiosk: nightly reload time, lesson status line, auto-scroll steps', async 
     assert.deepEqual(nextScroll({ top: 900, max: 900, viewport: 500, mode: 'paged' }), { top: 0, wait: 12000 });
     assert.deepEqual(nextScroll({ top: 0, max: 0, viewport: 500, mode: 'paged' }), { top: 0, wait: 6000 }, 'fits on screen → no scrolling');
 });
+
+test('kiosk: an empty board ends in a clear state, never endless loading', async () => {
+    const { emptyBoardState } = await kiosk();
+    const none = { Actual: null, Next: null };
+    const missing = { data: null, fromCache: false, cacheAgeMs: null };
+    assert.equal(emptyBoardState(none), 'loading', 'nothing answered yet');
+    assert.equal(emptyBoardState(none, { failed: true }), 'unavailable', 'reading failed (rules, no Firestore, offline without a copy)');
+    assert.equal(emptyBoardState(none, { timedOut: true }), 'unavailable', 'Firestore did not answer in time');
+    assert.equal(emptyBoardState({ Actual: missing, Next: null }), 'missing', 'the server answered: the documents are not there yet');
+    assert.equal(emptyBoardState({ Actual: missing, Next: missing }, { failed: true }), 'missing', 'an answer beats an earlier failure');
+});

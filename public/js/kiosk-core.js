@@ -20,6 +20,25 @@ export function msUntilNightlyReload(now = new Date(), { hour = 3, jitterMs = 0 
     return target - now + Math.max(0, jitterMs);
 }
 
+/** How long the board waits for the first answer from Firestore before it says it cannot load. */
+export const KIOSK_LOAD_TIMEOUT_MS = 15000;
+
+/**
+ * What the board shows when it has no day to list:
+ *  - 'loading'     nothing answered yet (and no failure, still within the time limit),
+ *  - 'unavailable' the aggregates cannot be read: Firestore rules, no SDK, offline without a copy,
+ *                  or no answer within KIOSK_LOAD_TIMEOUT_MS,
+ *  - 'missing'     the server answered, but there is no board yet (e.g. before the first
+ *                  collection after a release, when aggregates/changes_* do not exist).
+ * @param {{ Actual: object|null, Next: object|null }} aggs - last value of each aggregate, null = no answer yet
+ * @param {{ failed?: boolean, timedOut?: boolean }} [state]
+ * @returns {'loading'|'unavailable'|'missing'}
+ */
+export function emptyBoardState(aggs, { failed = false, timedOut = false } = {}) {
+    if (aggs.Actual || aggs.Next) return 'missing';
+    return failed || timedOut ? 'unavailable' : 'loading';
+}
+
 const hm = ([h, m]) => `${h}:${String(m).padStart(2, '0')}`;
 
 /** "Probíhá 3. hodina (do 10:30)" / "Přestávka – 4. hodina začne v 10:50" / "Mimo vyučování" */

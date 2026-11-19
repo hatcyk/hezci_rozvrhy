@@ -71,6 +71,11 @@
   }
   /* najetí myší ztmaví (světlejší tón by nad světlým obsahem snížil kontrast) */
   .search-fab:hover { background: var(--solid-strong); }
+  /* pod otevřeným panelem a nad klávesnicí (viewport.js) lišta a lupa nevisí přes obsah. Podle [open],
+     ne podle třídy: zavřený dialog vrací fokus na lupu dřív, než se uklidí, a skrytý prvek fokus nepřijme */
+  @media (max-width: 1079px) {
+    body:has(dialog.g-sheet[open]) :is(.view-nav, .search-fab), :root[data-keyboard] :is(.view-nav, .search-fab) { visibility: hidden; }
+  }
 
   /* ---------- horní lišta (mobil) ---------- */
   .topbar { display: flex; align-items: center; gap: 10px; min-height: 52px; margin-bottom: 4px; }
@@ -88,8 +93,6 @@
   .who-chev { --is: 16px; }
   .tb-head { min-width: 0; flex: 1; }
   .tb-title { font-size: var(--fs-title); font-weight: 700; letter-spacing: -.01em; line-height: 1.1; }
-  .tb-title:focus { outline: none; }
-  .tb-title:focus-visible { outline: 3px solid var(--now); outline-offset: 4px; border-radius: 6px; }
   .tb-sub { margin-top: 2px; font-size: var(--fs-body); font-weight: 500; color: var(--tx-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tb-sub:empty { display: none; }
   .tb-tools, .tb-nav, .tb-layout { display: none; }

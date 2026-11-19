@@ -6,7 +6,11 @@
    ========================================================================== */
 @layer views {
   :root[data-kiosk] { color-scheme: dark; overflow: hidden; }
-  :root[data-kiosk] body { overflow: hidden; }
+  /* min-height: 100lvh – v aplikaci na ploše (black-translucent) bral WebKit u stránky, která se neposouvá,
+     za viewport jen výšku bez stavového řádku (iPhone 17, iOS 26.5: 812 z 874 px): tabule position: fixed
+     končila nad spodním okrajem a pod ní zůstal tmavý pruh (snímek 7803). S dokumentem vysokým 100lvh
+     je viewport celá obrazovka (ověřeno v iOS Simulatoru). */
+  :root[data-kiosk] body { overflow: hidden; min-height: 100lvh; }
   :root[data-kiosk] .app-container,
   :root[data-kiosk] .toast-container { display: none; }
 
@@ -110,7 +114,13 @@
 
   /* úzká / svislá obrazovka: řádek ve dvou patrech */
   @media (max-aspect-ratio: 4/3) {
-    .kiosk { --k: clamp(15px, min(2.2vh, 3.6vw), 64px); padding: 1em; }
+    /* telefon: hlavička nesmí pod stavový řádek a výřez, patička nad domovskou lištu */
+    .kiosk {
+      --k: clamp(15px, min(2.2vh, 3.6vw), 64px);
+      padding:
+        max(1em, env(safe-area-inset-top)) max(1em, env(safe-area-inset-right))
+        max(1em, env(safe-area-inset-bottom)) max(1em, env(safe-area-inset-left));
+    }
     .kiosk-head { flex-direction: column; gap: .6em; }
     .kiosk-clock { justify-items: start; text-align: left; }
     .kiosk-time { font-size: 3.2em; }

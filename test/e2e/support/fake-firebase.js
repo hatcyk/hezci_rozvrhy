@@ -4,16 +4,27 @@
 // nesmí sahat na nic mimo sebe.
 
 /**
- * @param {{ docs: Record<string, object>, storage: Record<string, string>, offline: boolean, userId: string }} opts
+ * @param {{ docs: Record<string, object>, storage: Record<string, string>, offline: boolean, userId: string,
+ *   denied?: string[], stalled?: string[] }} opts
+ *   denied: dokumenty, jejichž čtení pravidla odmítnou (permission-denied);
+ *   stalled: dokumenty, na které Firestore vůbec neodpoví (zaseknuté spojení)
  */
-function installFakeFirebase({ docs, storage, offline, userId }) {
+function installFakeFirebase({ docs, storage, offline, userId, denied = [], stalled = [] }) {
   const store = docs;
   const listeners = {};
   const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
   const snap = (p) => ({ exists: store[p] != null, data: () => clone(store[p]) });
+  const refused = () => Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
   const ref = (p) => ({
-    get: async () => { (window.__reads ||= []).push(p); return snap(p); },
-    onSnapshot(next) {
+    get: async () => {
+      (window.__reads ||= []).push(p);
+      if (stalled.includes(p)) return new Promise(() => {});
+      if (denied.includes(p)) throw refused();
+      return snap(p);
+    },
+    onSnapshot(next, error) {
+      if (stalled.includes(p)) return () => {};
+      if (denied.includes(p)) { setTimeout(() => error && error(refused()), 0); return () => {}; }
       (listeners[p] ||= []).push(next);
       setTimeout(() => next(snap(p)), 0);
       return () => { listeners[p] = listeners[p].filter(f => f !== next); };
