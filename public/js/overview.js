@@ -540,9 +540,12 @@ function skeletonHtml() {
 
 /* ── vykreslení ─────────────────────────────────────────────────────────── */
 
+const HERO_LABEL = '<h2 class="vh" id="ovHeroLabel">Teď</h2>';
+
 function renderHero(st, now) {
     const hero = $('ovHero');
-    if (hero) hero.innerHTML = heroHtml(st, now);
+    // i s nadpisem, na který odkazuje aria-labelledby sekce
+    if (hero) hero.innerHTML = `${HERO_LABEL}${heroHtml(st, now)}`;
     const card = $('nowCard');
     if (card) {
         card.innerHTML = nowCardHtml(st, now);
@@ -556,7 +559,7 @@ function renderAll(st, now, { keepScroll = true } = {}) {
     const strip = $('ovStrip');
     const scroll = strip && keepScroll ? strip.scrollLeft : null;
     ov.innerHTML = `<section class="ov-hero" id="ovHero" aria-labelledby="ovHeroLabel">
-            <h2 class="vh" id="ovHeroLabel">Teď</h2>
+            ${HERO_LABEL}
             ${heroHtml(st, now)}
         </section>
         ${todayHtml(st, now)}
